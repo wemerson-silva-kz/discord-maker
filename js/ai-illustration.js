@@ -41,10 +41,11 @@
 
   function promptFor(cat, theme, provider, hasRefs) {
     const bg = provider === 'gemini'
-      ? 'BACKGROUND: perfectly flat solid pure green (#00FF00) everywhere outside the artwork, with no gradient, texture, shadow or vignette. Do not use any green-screen green inside the artwork itself (if the theme needs green, use jade, emerald or teal tones that are clearly darker or bluer).'
+      ? 'BACKGROUND: perfectly flat solid pure green (#00FF00) everywhere outside the artwork — including any empty hole in the middle — with no gradient, texture, shadow, vignette or white margin. Do not use any green-screen green inside the artwork itself (if the theme needs green, use jade, emerald or teal tones that are clearly darker or bluer).'
       : 'BACKGROUND: fully transparent.';
     return [
-      `Create a Discord ${CAT_WORD[cat]} with this theme: ${theme}.`,
+      `Create ONE single Discord ${CAT_WORD[cat]} with this theme: ${theme}.`,
+      `Draw ONLY this one ${CAT_WORD[cat]}, centered and filling the format below. Even if the theme mentions a sprite sheet, bundle, kit, set, collection, mockup or several items, ignore that: no grid, no multiple objects side by side, no labels, no presentation board.`,
       LAYOUT[cat],
       STYLE,
       bg,
@@ -87,7 +88,12 @@
       if (!res.ok) {
         const msg = (data && data.error && data.error.message) || '';
         if (withAspect && res.status === 400 && /image_?config|aspect/i.test(msg)) continue;
-        if (res.status === 429) throw new Error('Limite do Gemini atingido (modelos de imagem têm cota menor). Aguarde um pouco.');
+        if (res.status === 429) {
+          const det = ((data && data.error && data.error.details) || []).find((x) => x && x.retryDelay);
+          const err = new Error('Limite do Gemini atingido (modelos de imagem têm cota menor). Aguarde um pouco.');
+          err.retryAfter = det ? Math.min(60, parseFloat(det.retryDelay) || 20) : 20;
+          throw err;
+        }
         if (res.status === 404) throw new Error(`O modelo de imagem "${model}" não existe nesta chave. Use ${DEFAULT_GEMINI_IMAGE} ou outro "…-image".`);
         throw new Error('Gemini: ' + (msg || 'HTTP ' + res.status));
       }
@@ -119,7 +125,11 @@
     }
     let data = null;
     try { data = await res.json(); } catch (e) { data = null; }
-    if (!res.ok) throw new Error('OpenAI: ' + ((data && data.error && data.error.message) || 'HTTP ' + res.status));
+    if (!res.ok) {
+      const err = new Error('OpenAI: ' + ((data && data.error && data.error.message) || 'HTTP ' + res.status));
+      if (res.status === 429) err.retryAfter = Math.min(60, +res.headers.get('retry-after') || 20);
+      throw err;
+    }
     const b64 = data && data.data && data.data[0] && data.data[0].b64_json;
     if (!b64) throw new Error('A OpenAI não devolveu imagem.');
     return { mime: 'image/png', data: b64, model, keyed: false };
@@ -138,7 +148,81 @@
   }
   const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-  /** Remove o fundo verde (#00FF00) com borda suave e tira o reflexo verde das bordas. */
+  /**
+   * Remove o fundo chapado, seja qual for a cor (verde pedido, branco, cinza…):
+   * descobre a cor pela borda da imagem, marca as regiões dessa cor que tocam a
+   * borda OU são grandes (ex.: o furo do meio da moldura) e suaviza o contorno.
+   */
+  function removeBackground(img) {
+    const { width: w, height: h, data: d } = img;
+    // Já transparente (OpenAI): nada a remover
+    let clear = 0, tot = 0;
+    for (let x = 0; x < w; x += 4) { tot += 2; if (d[x * 4 + 3] < 16) clear++; if (d[((h - 1) * w + x) * 4 + 3] < 16) clear++; }
+    if (clear > tot * 0.6) return;
+    // Cor do fundo: amostra a borda E o centro (nos formatos o centro deve ficar vazio).
+    // A arte pode encostar nas bordas (frame), então: verde-chroma se aparecer; senão a cor mais frequente.
+    const bins = new Map();
+    let green = 0, total = 0;
+    const sample = (x, y) => {
+      const i = (y * w + x) * 4;
+      if (d[i + 3] < 16) return;
+      total++;
+      if (d[i + 1] > 150 && d[i + 1] - Math.max(d[i], d[i + 2]) > 80) green++;
+      const k = ((d[i] >> 4) << 8) | ((d[i + 1] >> 4) << 4) | (d[i + 2] >> 4);
+      const e = bins.get(k) || [0, 0, 0, 0];
+      e[0]++; e[1] += d[i]; e[2] += d[i + 1]; e[3] += d[i + 2];
+      bins.set(k, e);
+    };
+    for (let x = 0; x < w; x += 2) { sample(x, 0); sample(x, h - 1); }
+    for (let y = 0; y < h; y += 2) { sample(0, y); sample(w - 1, y); }
+    for (let y = Math.round(h * 0.45); y < h * 0.55; y += 3) for (let x = Math.round(w * 0.4); x < w * 0.6; x += 3) sample(x, y);
+    if (!total) return;
+    const isGreen = green > total * 0.08;
+    let best = null;
+    for (const e of bins.values()) if (!best || e[0] > best[0]) best = e;
+    const bg = isGreen ? [0, 255, 0] : [best[1] / best[0], best[2] / best[0], best[3] / best[0]];
+    const dist = (i) => {
+      if (isGreen) { const sp = d[i + 1] - Math.max(d[i], d[i + 2]); return sp > 60 ? 0 : 140 - sp; }
+      return Math.hypot(d[i] - bg[0], d[i + 1] - bg[1], d[i + 2] - bg[2]);
+    };
+    const T = isGreen ? 70 : 34; // "é fundo" abaixo disto
+    const n = w * h;
+    const lab = new Int32Array(n).fill(-1); // -1 não visitado; 0 arte; >0 componente de fundo
+    const sizes = [0], touches = [false];
+    const stack = new Int32Array(n);
+    for (let start = 0; start < n; start++) {
+      if (lab[start] !== -1) continue;
+      if (dist(start * 4) >= T) { lab[start] = 0; continue; }
+      const id = sizes.length; sizes.push(0); touches.push(false);
+      let sp = 0; stack[sp++] = start; lab[start] = id;
+      while (sp) {
+        const p = stack[--sp]; sizes[id]++;
+        const x = p % w, y = (p / w) | 0;
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1) touches[id] = true;
+        const nb = [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, y > 0 ? p - w : -1, y < h - 1 ? p + w : -1];
+        for (const q of nb) {
+          if (q < 0 || lab[q] !== -1) continue;
+          if (dist(q * 4) < T) { lab[q] = id; stack[sp++] = q; }
+        }
+      }
+    }
+    const minArea = n * 0.004;
+    const kill = sizes.map((sz, id) => id > 0 && (touches[id] || sz > minArea));
+    // alpha: fundo some; pixels vizinhos ao fundo ganham alpha proporcional à distância de cor
+    for (let p = 0; p < n; p++) {
+      const i = p * 4;
+      if (kill[lab[p]]) { d[i + 3] = 0; continue; }
+      const x = p % w, y = (p / w) | 0;
+      const nearBg = (x > 0 && kill[lab[p - 1]]) || (x < w - 1 && kill[lab[p + 1]]) || (y > 0 && kill[lab[p - w]]) || (y < h - 1 && kill[lab[p + w]]);
+      if (nearBg) {
+        const a = smooth(T * 0.6, T * 2.2, dist(i));
+        d[i + 3] = Math.round(d[i + 3] * a);
+      }
+      if (isGreen) { const spill = d[i + 1] - Math.max(d[i], d[i + 2]); if (spill > 20) d[i + 1] = Math.max(d[i], d[i + 2]) + 20; }
+    }
+  }
+
+  /** (legado) Remove o fundo verde (#00FF00) com borda suave. */
   function chromaKey(img) {
     const d = img.data;
     for (let i = 0; i < d.length; i += 4) {
@@ -218,7 +302,7 @@
     const tctx = tmp.getContext('2d', { willReadFrequently: true });
     tctx.drawImage(src, 0, 0);
     const raw = tctx.getImageData(0, 0, tmp.width, tmp.height);
-    if (gen.keyed) chromaKey(raw);
+    removeBackground(raw);
     tctx.putImageData(raw, 0, 0);
     const bb = alphaBounds(raw);
     if (!bb) throw new Error('A imagem gerada veio vazia depois de remover o fundo.');
@@ -244,9 +328,24 @@
     }
     protectZones(ctx, cat, W, H);
     const palette = paletteOf(ctx, W, H);
-    let url = out.toDataURL('image/webp', 0.86);
-    if (!/^data:image\/webp/.test(url)) url = out.toDataURL('image/png');
-    return { url, palette, W, H };
+    const enc = (c) => { const u = c.toDataURL('image/webp', 0.86); return /^data:image\/webp/.test(u) ? u : c.toDataURL('image/png'); };
+    // Camada de brilhos: só as partes claras e saturadas (fogo, runas, joias, magia) — elas vão pulsar e tremeluzir
+    const hl = document.createElement('canvas');
+    hl.width = W; hl.height = H;
+    const hctx = hl.getContext('2d');
+    const src2 = ctx.getImageData(0, 0, W, H);
+    const hd = hctx.createImageData(W, H);
+    let lit = 0;
+    for (let i = 0; i < src2.data.length; i += 4) {
+      const r = src2.data[i], g = src2.data[i + 1], b = src2.data[i + 2], a = src2.data[i + 3];
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      const k = smooth(0.62, 0.92, mx / 255) * (0.35 + 0.65 * smooth(0.15, 0.6, mx ? (mx - mn) / mx : 0));
+      if (k <= 0.02 || a < 10) continue;
+      hd.data[i] = r; hd.data[i + 1] = g; hd.data[i + 2] = b; hd.data[i + 3] = Math.round(a * k);
+      lit++;
+    }
+    hctx.putImageData(hd, 0, 0);
+    return { url: enc(out), hl: lit > (W * H) * 0.002 ? enc(hl) : '', palette, W, H };
   }
 
   /* ---------------------------------------------------------------- */
@@ -272,53 +371,65 @@
   }
 
   function buildSvgs(cat, art, seed) {
-    const { url, palette, W, H } = art;
+    const { url, hl, palette, W, H } = art;
     const R = rnd(seed || 7);
-    const n = { decorations: 10, nameplates: 7, effects: 16, frames: 14 }[cat];
+    const n = { decorations: 12, nameplates: 8, effects: 18, frames: 16 }[cat];
     const pts = sparklePoints(cat, W, H, n, R);
     const sz = { decorations: 5, nameplates: 4, effects: 7, frames: 10 }[cat];
     const sparkles = pts.map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * (0.6 + R() * 0.8))}" fill="${palette[i % palette.length]}"/>`).join('');
-    const motes = cat === 'effects'
-      ? pts.slice(0, 10).map(([x], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(H - 120 - R() * 200)}" r="${f(2 + R() * 3)}" fill="${palette[(i + 1) % palette.length]}"/>`).join('')
-      : '';
+    // brasas/partículas subindo a partir das áreas com arte (todas as categorias)
+    const rise = { decorations: 60, nameplates: 30, effects: Math.round(H * 0.3), frames: 120 }[cat];
+    const motes = sparklePoints(cat, W, H, cat === 'nameplates' ? 8 : 14, R).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f((cat === 'frames' ? 3 : 1.6) + R() * (cat === 'frames' ? 4 : 2.2))}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
     const shineW = Math.round(W * 0.28);
-    const imgTag = (cls) => `<image class="${cls}" href="${url}" x="0" y="0" width="${W}" height="${H}"/>`;
-    const sway = { decorations: 'scale(1.012)', nameplates: 'translateY(-1.5px)', effects: 'translateY(-5px)', frames: 'translateY(0)' }[cat];
+    const sway = { decorations: 'scale(1.015)', nameplates: 'translateY(-1.5px)', effects: 'translateY(-5px)', frames: 'translateY(-2px)' }[cat];
+    const dispScale = { decorations: 5, nameplates: 3, effects: 8, frames: 9 }[cat];
+    const freq = { decorations: 0.035, nameplates: 0.05, effects: 0.025, frames: 0.018 }[cat];
+    const defs = `<defs>
+<image id="art" href="${url}" x="0" y="0" width="${W}" height="${H}"/>${hl ? `<image id="hl" href="${hl}" x="0" y="0" width="${W}" height="${H}"/>` : ''}
+<filter id="blur" x="-15%" y="-15%" width="130%" height="130%"><feGaussianBlur stdDeviation="${cat === 'frames' ? 10 : 5}"/></filter>
+${[1, 2, 3].map((k) => `<filter id="w${k}" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="${freq}" numOctaves="2" seed="${k * 7}"/><feDisplacementMap in="SourceGraphic" scale="${dispScale}" xChannelSelector="R" yChannelSelector="G"/></filter>`).join('')}
+<linearGradient id="sg" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".6"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<mask id="am" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><use href="#art"/></mask></defs>`;
     const css = `
 mask{mask-type:alpha}
 .art{transform-box:view-box;transform-origin:50% 50%;animation:breathe 4s ease-in-out infinite}
-.glow{filter:url(#blur);opacity:0;mix-blend-mode:screen;animation:glow 4s ease-in-out infinite}
+.glow{filter:url(#blur);mix-blend-mode:screen;opacity:.25;animation:glow 2s ease-in-out infinite}
+.hl{mix-blend-mode:screen;animation:flick 1s steps(1) infinite,heat .5s steps(1) infinite}
+.hlb{filter:url(#blur);mix-blend-mode:screen;opacity:.5;animation:glow 1s ease-in-out infinite}
 .shine{animation:shine 4s cubic-bezier(.45,0,.25,1) infinite}
 .s{transform-box:fill-box;transform-origin:center;opacity:0;animation:tw 2s ease-in-out infinite}
 .s1{animation-delay:.5s}.s2{animation-delay:1s}.s3{animation-delay:1.5s}
-.m{opacity:0;animation:rise 4s ease-in infinite}.m1{animation-delay:1s}.m2{animation-delay:2s}.m3{animation-delay:3s}
+.m{opacity:0;animation:rise 2s ease-in infinite}.m1{animation-delay:.5s}.m2{animation-delay:1s}.m3{animation-delay:1.5s}
 @keyframes breathe{50%{transform:${sway}}}
-@keyframes glow{50%{opacity:.45}}
+@keyframes glow{0%,100%{opacity:.2}50%{opacity:.75}}
+@keyframes flick{0%{opacity:.55}12%{opacity:1}25%{opacity:.7}37%{opacity:.95}50%{opacity:.6}62%{opacity:1}75%{opacity:.75}87%{opacity:.9}}
+@keyframes heat{0%{filter:url(#w1)}33%{filter:url(#w2)}66%{filter:url(#w3)}}
 @keyframes shine{0%{transform:translateX(-${shineW * 2}px)}55%,100%{transform:translateX(${W + shineW}px)}}
 @keyframes tw{0%,100%{opacity:0;transform:scale(.3) rotate(0)}50%{opacity:1;transform:scale(1) rotate(45deg)}}
-@keyframes rise{0%{opacity:0;transform:translateY(0)}20%{opacity:.9}100%{opacity:0;transform:translateY(-${Math.round(H * 0.35)}px)}}`;
-    const defs = `<defs><filter id="blur" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="${cat === 'frames' ? 8 : 4}"/></filter>
-<linearGradient id="sg" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-<mask id="am" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><image href="${url}" x="0" y="0" width="${W}" height="${H}"/></mask></defs>`;
+@keyframes rise{0%{opacity:0;transform:translateY(0)}20%{opacity:1}100%{opacity:0;transform:translateY(-${rise}px)}}`;
     const shine = `<g mask="url(#am)"><rect class="shine" x="0" y="0" width="${shineW}" height="${H}" fill="url(#sg)" transform="skewX(-20)"/></g>`;
+    const lights = hl ? `<use class="hlb" href="#hl"/><use class="hl" href="#hl"/>` : '';
     const head = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">`;
-    const loop = `${head}<style>${css}</style>${defs}<g class="art">${imgTag('glow')}${imgTag('')}${shine}</g>${motes}${sparkles}</svg>`;
+    const loop = `${head}<style>${css}</style>${defs}<g class="art"><use class="glow" href="#art"/><use href="#art"/>${lights}${shine}</g>${motes}${sparkles}</svg>`;
     if (cat !== 'effects') return { svg: loop, loopSeconds: 4 };
 
-    // Entrada (3 s): a arte surge de cima para baixo com brilho, partículas estourando
+    // Entrada (3 s): a arte surge de cima para baixo com clarão, partículas estourando
     const icss = `
 mask{mask-type:alpha}
 .rv{animation:rv 1.6s cubic-bezier(.2,.8,.2,1) both}
 .in{transform-box:view-box;transform-origin:50% 20%;animation:pop 1.8s cubic-bezier(.2,.9,.3,1.2) both}
 .fl{opacity:0;mix-blend-mode:screen;filter:url(#blur);animation:fl 3s ease-out both}
+.hl{mix-blend-mode:screen;animation:flick 1s steps(1) infinite,heat .5s steps(1) infinite}
 .s{transform-box:fill-box;transform-origin:center;opacity:0;animation:burst 1.4s ease-out both}
 ${pts.map((_, i) => `.b${i}{animation-delay:${f(0.4 + (i % 8) * 0.12)}s}`).join('')}
 @keyframes rv{from{height:0}to{height:${H}px}}
 @keyframes pop{from{transform:scale(1.08);opacity:0}60%{opacity:1}to{transform:scale(1);opacity:1}}
-@keyframes fl{0%{opacity:0}25%{opacity:.9}100%{opacity:0}}
+@keyframes fl{0%{opacity:0}25%{opacity:1}100%{opacity:0}}
+@keyframes flick{0%{opacity:.55}25%{opacity:1}50%{opacity:.65}75%{opacity:.95}}
+@keyframes heat{0%{filter:url(#w1)}33%{filter:url(#w2)}66%{filter:url(#w3)}}
 @keyframes burst{0%{opacity:0;transform:scale(0)}40%{opacity:1;transform:scale(1.4) rotate(45deg)}100%{opacity:0;transform:scale(.4) rotate(90deg)}}`;
     const isparks = pts.map(([x, y], i) => `<path class="s b${i}" d="${star(x, y, sz * 1.2)}" fill="${palette[i % palette.length]}"/>`).join('');
-    const intro = `${head}<style>${icss}</style>${defs.replace('</defs>', `<clipPath id="rc"><rect class="rv" x="0" y="0" width="${W}" height="${H}"/></clipPath></defs>`)}<g clip-path="url(#rc)"><g class="in">${imgTag('fl')}${imgTag('')}</g></g>${isparks}</svg>`;
+    const intro = `${head}<style>${icss}</style>${defs.replace('</defs>', `<clipPath id="rc"><rect class="rv" x="0" y="0" width="${W}" height="${H}"/></clipPath></defs>`)}<g clip-path="url(#rc)"><g class="in"><use class="fl" href="#art"/><use href="#art"/>${hl ? '<use class="hl" href="#hl"/>' : ''}</g></g>${isparks}</svg>`;
     return { svg: loop, loopSeconds: 4, introSvg: intro, introSeconds: 3 };
   }
 
@@ -352,11 +463,26 @@ ${pts.map((_, i) => `.b${i}{animation-delay:${f(0.4 + (i % 8) * 0.12)}s}`).join(
     let done = 0;
     const tick = () => opts.onProgress && opts.onProgress(`Pintando as ilustrações… ${done}/${req.cats.length}`);
     tick();
-    const results = await Promise.all(req.cats.map(async (cat, i) => {
+    const results = [];
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    // Uma por vez: modelos de imagem têm cota por minuto baixa (em paralelo, metade voltava 429)
+    for (const [i, cat] of req.cats.entries()) results.push(await (async () => {
       try {
-        const gen = provider === 'gemini'
-          ? await geminiImage(cat, theme, cfg, (opts.refs && opts.refs[cat]) || [])
-          : await openaiImage(cat, theme, cfg);
+        let gen = null;
+        for (let attempt = 0; ; attempt++) {
+          try {
+            gen = provider === 'gemini'
+              ? await geminiImage(cat, theme, cfg, (opts.refs && opts.refs[cat]) || [])
+              : await openaiImage(cat, theme, cfg);
+            break;
+          } catch (e) {
+            if (!e.retryAfter || attempt >= 2) throw e;
+            for (let t = Math.ceil(e.retryAfter); t > 0; t--) {
+              opts.onProgress && opts.onProgress(`Limite do provedor: tentando de novo em ${t} s… (${done}/${req.cats.length})`);
+              await sleep(1000);
+            }
+          }
+        }
         const art = await processImage(gen, cat);
         const anim = buildSvgs(cat, art, 1 + i * 97 + theme.length);
         const label = (provider === 'gemini' ? 'Gemini · ' : 'OpenAI · ') + gen.model;
@@ -371,7 +497,7 @@ ${pts.map((_, i) => `.b${i}{animation-delay:${f(0.4 + (i % 8) * 0.12)}s}`).join(
       } finally {
         done++; tick();
       }
-    }));
+    })());
     const ok = results.filter((r) => !r.error);
     if (!ok.length) throw results[0].error;
     results.filter((r) => r.error).forEach((r) => console.warn('[Ilustração]', r.cat, r.error));
@@ -379,5 +505,5 @@ ${pts.map((_, i) => `.b${i}{animation-delay:${f(0.4 + (i % 8) * 0.12)}s}`).join(
     return ok;
   }
 
-  window.CosmeticIllustration = { generate, processImage, buildSvgs, chromaKey, promptFor, geminiImageModel, openaiImageModel, CANVAS };
+  window.CosmeticIllustration = { generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
 })();
