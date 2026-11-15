@@ -92,7 +92,7 @@
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['category', 'name', 'description', 'rarity', 'tags', 'palette', 'base', 'ring', 'layers'],
+          required: ['category', 'name', 'description', 'rarity', 'tags', 'palette', 'base', 'ring', 'layers', 'intro'],
           properties: {
             category: { type: 'string', enum: ['nameplate', 'decoration', 'effect'] },
             name: { type: 'string' },
@@ -122,6 +122,16 @@
               properties: { style: { type: 'string', enum: GEN.rings } },
             },
             layers: { type: 'array', items: LAYER_SCHEMA },
+            intro: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['style', 'duration', 'layers'],
+              properties: {
+                style: { type: 'string', enum: GEN.introStyles },
+                duration: { type: 'number', description: 'Segundos da entrada (0.5 a 6). Use 0 e style "none" fora de effect.' },
+                layers: { type: 'array', items: LAYER_SCHEMA },
+              },
+            },
           },
         },
       },
@@ -129,6 +139,12 @@
   };
 
   const SYSTEM_PROMPT = `Você é um designer de cosméticos de perfil no estilo do Discord. A partir do tema do usuário, você cria itens animados descritos por uma especificação JSON; um motor CSS/SVG transforma essa especificação em animação.
+
+Como os cosméticos funcionam no Discord (siga estes formatos):
+- Avatar decoration: APNG 288×288 desenhado em volta do avatar (1,2× o tamanho dele), com estado estático e animado (anima ao passar o mouse), em loop.
+- Nameplate: APNG 448×84 atrás do nome na lista de membros, com estado estático e animado, em loop.
+- Profile effect: APNG 450×880 sobre o card de perfil, em DUAS FASES: uma ENTRADA que toca uma única vez quando o perfil abre (no máximo 6 segundos; os oficiais duram cerca de 3 a 5 s) e depois um LOOP que se repete. A entrada deve ser o momento mais impactante (explosão, cortina, varredura de luz) e terminar suave, entregando para o loop, que é mais calmo e contínuo.
+- Os assets oficiais rodam a cerca de 12 fps; aqui a animação é CSS e roda na taxa da tela (60 fps), então evite quantidades exageradas de partículas para manter a fluidez: prefira "some" a "many" quando houver três ou mais camadas.
 
 Categorias:
 - nameplate: faixa de cerca de 300×44 px atrás do nome do usuário na lista de membros. O avatar e o nome (texto branco) ficam à esquerda, então mantenha o lado esquerdo escuro o bastante para leitura e concentre os detalhes intensos à direita.
@@ -142,6 +158,7 @@ Vocabulário da especificação:
 - layers, de 1 a 4 camadas. kind: petal (pétalas caindo), star (estrelas piscando), ember (brasas quadradas subindo), streak (riscos de luz horizontais), bolt (raios), sparkle (brilhos de quatro pontas), sparkle-rise (brilhos subindo), warp (linhas de hiperespaço saindo do centro; só effect), rain (colunas de caracteres caindo; só effect), orb (bolhas ou bokeh), drop (chuva), ring (objetos orbitando o avatar; só decoration, defina shape), glyph (emojis ou símbolos de "glyphs" com o movimento "motion").
 - shape (para kind ring): petal, blossom, flame, bolt, crystal, planet, star, pixel, glyph (usa glyphs). Nas demais camadas use "none".
 - motion (para kind glyph): fall, rise, float, twinkle. Nas demais camadas use "fall".
+- intro (só em effect): style = burst (explosão + onda de choque), sweep (faixa de luz atravessando), rise (onda subindo), zoom (vinheta que fecha), curtain (cortinas que se abrem), flash (clarões) ou none; duration em segundos, de 0.5 a 6 (ideal 2 a 4); layers: 1 a 3 camadas extras que só aparecem durante a entrada (ex.: warp, sparkle many, ember many). Em nameplate e decoration use style "none", duration 0 e layers vazio.
 - glyphs: até 4 emojis ou símbolos Unicode do tema (ex.: "🐉🔥", "❄✦", "♪♫"); string vazia quando a camada não usa.
 - count: few, some ou many. size: small, medium ou large. speed: slow, normal ou fast.
 - Todas as cores em hex #RRGGBB. palette.background é o tom escuro de fundo; primary, secondary e accent são as cores do tema, com bom contraste sobre fundo escuro.
@@ -165,6 +182,13 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     palette: { primary: '#2BE38B', secondary: '#9BFF6B', accent: '#E8FFF4', background: '#04170F' },
     base: { style: 'none', animation: 'none', speed: 'normal' }, ring: { style: 'conic' },
     layers: [{ kind: 'ring', color: '#2BE38B', count: 'some', size: 'medium', speed: 'normal', shape: 'flame', motion: 'fall', glyphs: '' }],
+    intro: { style: 'none', duration: 0, layers: [] },
+  }, {
+    category: 'effect', name: 'Sopro de Jade', description: 'Explosão de brasas verdes que vira uma chuva suave.', rarity: 'Épico', tags: ['fogo'],
+    palette: { primary: '#2BE38B', secondary: '#9BFF6B', accent: '#E8FFF4', background: '#04170F' },
+    base: { style: 'none', animation: 'none', speed: 'normal' }, ring: { style: 'none' },
+    layers: [{ kind: 'ember', color: '#9BFF6B', count: 'some', size: 'medium', speed: 'normal', shape: 'none', motion: 'fall', glyphs: '' }],
+    intro: { style: 'burst', duration: 3, layers: [{ kind: 'warp', color: '#E8FFF4', count: 'many', size: 'large', speed: 'fast', shape: 'none', motion: 'fall', glyphs: '' }] },
   }] });
 
   async function generateWithOpenAICompat(prompt, cats, cfg) {
@@ -285,7 +309,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
           prompt,
           engine: provider.id,
           engineLabel: provider.label,
-          asset: { palette: raw.palette, base: raw.base, ring: raw.ring, layers: raw.layers },
+          asset: { palette: raw.palette, base: raw.base, ring: raw.ring, layers: raw.layers, intro: raw.intro },
         },
       });
     }
@@ -473,6 +497,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
       let layers;
       let base = { style: 'none', animation: 'none', speed: choice(['slow', 'normal', 'normal', 'fast']) };
       let ring = { style: 'none' };
+      let intro = { style: 'none', duration: 0, layers: [] };
       if (cat === 'nameplates') {
         base = { ...base, style: main.np, animation: main.anim };
         layers = main.layers.map((d) => makeLayer(d, palette, main));
@@ -489,6 +514,13 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
         base = { ...base, style: Math.random() < 0.5 ? 'none' : main.np === 'pixelfire' ? 'pixelfire' : 'radial', animation: 'pulse' };
         layers = main.fx.map((d) => makeLayer(d, palette, main));
         if (second) layers.push(makeLayer(second.fx[0], palette, second));
+        // Fase de ENTRADA (toca 1×): mais intensa que o loop, até 6 s
+        const introStyle = { fire: 'burst', ice: 'zoom', sakura: 'sweep', space: 'burst', neon: 'curtain', storm: 'flash', ocean: 'rise', forest: 'rise', spooky: 'zoom', love: 'burst', gold: 'sweep', candy: 'curtain', music: 'sweep', pixel: 'flash' }[main.id] || choice(['burst', 'sweep', 'rise', 'zoom']);
+        const introLayers = [makeLayer(main.fx[0], palette, main)];
+        introLayers[0].count = 'many';
+        introLayers[0].speed = 'fast';
+        if (introStyle === 'burst' || main.id === 'space') introLayers.push({ kind: 'warp', count: 'many', color: palette.accent, size: 'large', speed: 'fast', shape: 'none', motion: 'fall', glyphs: '' });
+        intro = { style: introStyle, duration: Math.round(rnd(2.2, 4.2) * 10) / 10, layers: introLayers };
       }
       const noun = choice(NOUNS[cat]);
       return {
@@ -500,7 +532,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
           tags: [...new Set([...themes.map((t) => t.id), 'gerado', 'local'])].slice(0, 5),
           prompt,
           engine: 'local',
-          asset: { palette, base, ring, layers },
+          asset: { palette, base, ring, layers, intro },
         },
       };
     });
@@ -512,6 +544,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     const deg = choice([-1, 1]) * rnd(25, 70);
     for (const k of ['primary', 'secondary', 'accent']) a.palette[k] = shiftHex(a.palette[k], deg);
     a.base.speed = choice(Object.keys(GEN.speeds));
+    (a.intro && a.intro.layers || []).forEach((l) => { l.color = shiftHex(l.color, deg); });
     a.layers.forEach((l) => {
       l.count = choice(['few', 'some', 'many']);
       l.color = shiftHex(l.color, deg);

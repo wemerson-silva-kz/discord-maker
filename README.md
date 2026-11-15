@@ -69,6 +69,26 @@ asset: {
 
 Toda spec (da IA, do gerador local ou de um link) passa por validação: cores só em hex, valores só das listas permitidas e textos limpos, sem HTML.
 
+## Cosméticos oficiais do Discord
+
+A galeria também mostra itens reais carregados direto do CDN do Discord (coleção **Discord**), no mesmo formato do app:
+
+| Tipo | Arquivo | Estados / fases |
+|---|---|---|
+| Moldura (avatar decoration) | APNG 288×288, desenhado em 1,2× o avatar | `…/collectibles-shop/<sku>/static` e `/animated` |
+| Nameplate | APNG 448×84 | `…/static` e `/animated` (anima no hover) |
+| Efeito de perfil | APNG 450×880 | **entrada** (toca 1×, até 6 s) → **loop** (infinito) |
+
+- **Importar do Discord** (botão na galeria): cole o ID/URL de uma moldura ou nameplate, ou os hashes de entrada e loop de um efeito. O item entra na galeria e já é equipado.
+- **Métricas**: cada card mostra quadros, duração, FPS e repetições. O app lê o APNG quando o host libera CORS (ex.: `avatar-decoration-presets`). O caminho `cdn.discordapp.com/media/v1/collectibles-shop/` **não** libera, então nesses itens as métricas vêm do campo `meta`, gerado com:
+
+  ```bash
+  node tools/measure-apng.mjs intro=<url-da-entrada> loop=<url-do-loop>
+  ```
+- Atenção: atrasos de quadro de 10 ms ou menos são exibidos como 100 ms pelos navegadores. O card avisa quando isso acontece (FPS nominal × efetivo).
+- **Medidor de FPS**: o botão **FPS** no popout mostra a taxa real de quadros e a fase atual (entrada/loop). Ao equipar um efeito, o app mede 1,5 s e avisa se ficar abaixo de 40 fps.
+- **Gerador IA**: os efeitos gerados também têm entrada (até 6 s: burst, sweep, rise, zoom, curtain ou flash) seguida do loop.
+
 ## Estrutura
 
 ```
@@ -78,6 +98,8 @@ css/cosmetics.css   Todas as animações dos cosméticos + partículas
 js/data.js          CATÁLOGO DE ITENS — edite aqui
 js/app.js           Renderização, estado, partículas e eventos
 js/ai-generator.js  Gerador IA (vários provedores + motor local)
+js/discord-import.js Importador de IDs/URLs do CDN do Discord
+tools/measure-apng.mjs Mede quadros/duração/FPS de APNGs (gera o `meta`)
 .github/workflows/  Deploy automático no GitHub Pages
 ```
 
