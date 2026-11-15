@@ -173,9 +173,11 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
   /* ------------------------------------------------------------------ */
   const ZONES = {
     effects: { w: 450, h: 880, zones: [
-      { id: 'avatar', label: 'avatar', shape: 'circle', cx: 82, cy: 138, r: 66, avg: 0.12, peak: 0.55 },
-      { id: 'name', label: 'nome e @usuário', shape: 'rect', x: 21, y: 199, w: 323, h: 72, avg: 0.15, peak: 0.55 },
-      { id: 'content', label: 'texto do perfil (Sobre mim)', shape: 'rect', x: 21, y: 283, w: 408, h: 273, avg: 0.22, peak: 0.6 },
+      // Calibrado com 40 effects oficiais (catalog/style-guide.json): avatar mediana 8%,
+      // nome 34% e texto 33% — o efeito atravessa o perfil, mas não fica parado no avatar.
+      { id: 'avatar', label: 'avatar', shape: 'circle', cx: 82, cy: 138, r: 66, avg: 0.12, peak: 0.5 },
+      { id: 'name', label: 'nome e @usuário', shape: 'rect', x: 21, y: 199, w: 323, h: 72, avg: 0.35, peak: 0.75 },
+      { id: 'content', label: 'texto do perfil (Sobre mim)', shape: 'rect', x: 21, y: 283, w: 408, h: 273, avg: 0.35, peak: 0.7 },
     ] },
     frames: { w: 1312, h: 716, zones: [
       { id: 'avatar', label: 'avatar', shape: 'circle', cx: 239, cy: 401, r: 195, avg: 0.1, peak: 0.2 },
@@ -195,6 +197,80 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
   const ZONES_PROMPT = Object.entries({ nameplates: 'nameplate', decorations: 'decoration', effects: 'effect', frames: 'frame' })
     .map(([cat, api]) => `- ${api} (canvas ${ZONES[cat].w}×${ZONES[cat].h}): ` + ZONES[cat].zones.map((z) => `${z.label} = ${zoneText(z)}, no máximo ${Math.round(z.avg * 100)}% coberto em média`).join('; '))
     .join('\n');
+
+  /* ------------------------------------------------------------------ */
+  /* Guia de estilo do Discord, medido em itens oficiais da loja           */
+  /* (tools/analyze_discord_style.py → catalog/style-guide.json).          */
+  /* Os valores abaixo são o padrão; o JSON, se carregar, os atualiza.     */
+  /* ------------------------------------------------------------------ */
+  const STYLE = {
+    n: 160,
+    effects: { intro: 4.2, introLo: 3, introHi: 5, loop: 4.1, loopDelay: 2.4, coverage: 0.14, colors: 22, sat: 0.38, bright: 0.78, outline: 0.02 },
+    decorations: { coverage: 0.11, colors: 18, bright: 0.88 },
+    nameplates: { right: 0.66, nameSide: 0.01, colors: 10, coverage: 0.15 },
+    frames: { colors: 16, outline: 0.01 },
+    examples: {},
+  };
+  const pct = (v) => Math.round(v * 100) + '%';
+  function loadStyleGuide() {
+    return fetch('catalog/style-guide.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!d) return;
+      const m = (o) => (o && typeof o.mediana === 'number' ? o.mediana : undefined);
+      const set = (obj, k, v) => { if (typeof v === 'number' && isFinite(v)) obj[k] = v; };
+      STYLE.n = Object.values(d.amostra || {}).reduce((a, b) => a + b, 0) || STYLE.n;
+      const e = d.effects || {}, t = e.tempos || {}, es = e.estilo || {};
+      set(STYLE.effects, 'intro', m(t.introMs) / 1000); set(STYLE.effects, 'loop', m(t.loopMs) / 1000);
+      set(STYLE.effects, 'introLo', (t.introMs || {}).p25 / 1000); set(STYLE.effects, 'introHi', (t.introMs || {}).p75 / 1000);
+      set(STYLE.effects, 'loopDelay', m(t.loopDelayMs) / 1000);
+      set(STYLE.effects, 'coverage', m(es.coverage)); set(STYLE.effects, 'colors', m(es.colors90));
+      set(STYLE.effects, 'sat', m(es.saturation)); set(STYLE.effects, 'bright', m(es.brightness)); set(STYLE.effects, 'outline', m(es.darkOutline));
+      const dc = d.decorations || {};
+      set(STYLE.decorations, 'coverage', m(dc.coberturaAvatar)); set(STYLE.decorations, 'colors', m((dc.estilo || {}).colors90)); set(STYLE.decorations, 'bright', m((dc.estilo || {}).brightness));
+      const np = d.nameplates || {};
+      if (Array.isArray(np.perfilHorizontal8)) set(STYLE.nameplates, 'right', np.perfilHorizontal8[7]);
+      set(STYLE.nameplates, 'nameSide', m(np.coberturaLadoDoNome)); set(STYLE.nameplates, 'colors', m((np.estilo || {}).colors90)); set(STYLE.nameplates, 'coverage', m((np.estilo || {}).coverage));
+      const fr = d.frames || {};
+      set(STYLE.frames, 'colors', m((fr.estilo || {}).colors90)); set(STYLE.frames, 'outline', m((fr.estilo || {}).darkOutline));
+      STYLE.examples = d.exemplos || {};
+    }).catch(() => { /* fica com os padrões */ });
+  }
+
+  function styleGuidePrompt() {
+    const e = STYLE.effects, dc = STYLE.decorations, np = STYLE.nameplates, fr = STYLE.frames;
+    const f1 = (v) => (Math.round(v * 10) / 10).toString();
+    return `
+
+GUIA DE ESTILO DO DISCORD (medido em ${STYLE.n} itens oficiais da loja — siga para o resultado parecer um item PROFISSIONAL da loja, não um rascunho):
+Acabamento
+- Ilustração estilo cartoon/cel-shading limpo, como os itens da loja: cada forma com 2–3 tons da mesma cor (base, sombra, luz) em vez de gradientes lamacentos; um brilho/realce forte nas bordas viradas para a luz; leve glow (feGaussianBlur, stdDeviation 2–6) só nos elementos mágicos (fogo, energia, estrelas).
+- Paleta CURTA e harmônica: 1 cor dominante, 1 de apoio e 1 de destaque (as cores principais somam ~${Math.round(np.colors)}–${Math.round(e.colors)} tons contando as variações). Cores vivas, mas não neon: saturação média (~${f1(e.sat)}) e brilho alto (~${f1(e.bright)}). Nada de áreas grandes pretas ou marrom-escuras.
+- Contorno: ou nenhum, ou fino e escuro da própria cor (ex.: verde-escuro em volta do verde). Contorno preto grosso só em ~${pct(e.outline)} dos pixels dos oficiais — evite.
+- Silhuetas legíveis em tamanho pequeno: poucos elementos grandes e bem desenhados valem mais que dezenas de detalhes miúdos. Formas orgânicas com curvas (path com C/Q), nunca só retângulos e círculos soltos.
+- Profundidade: 3 planos (fundo suave e translúcido, plano principal nítido, partículas/brilhos na frente).
+Movimento
+- Movimento com intenção e easing (ease-in-out, cubic-bezier), nunca linear em tudo; partes que balançam a partir de um ponto de apoio (transform-origin no ponto preso). Sobreponha ritmos (ex.: 4 s respiração, 2 s brilho, 1 s cintilar) sempre divisores do loop.
+Composição por formato
+- effect: entrada ≈ ${f1(e.intro)} s (oficiais entre ${f1(e.introLo)} e ${f1(e.introHi)} s) e loop ≈ ${f1(e.loop)} s; no Discord o loop repete com ~${f1(e.loopDelay)} s de pausa, então o loop deve começar e terminar calmo. Use pouca área: os oficiais ocupam só ~${pct(e.coverage)} do canvas, concentrados nos 60% de cima (banner e laterais), base quase vazia. Elementos podem PASSAR sobre o nome e o texto (rajadas, pétalas, faíscas), mas nunca ficar parados sobre o avatar.
+- decoration: o centro é VAZIO; a arte é um anel colado ao avatar, mais denso entre 70% e 90% do raio do canvas, espalhada pelos 4 lados (um ornamento principal em cima ou em um canto e elementos menores equilibrando do outro lado). Cobre o avatar só ~${pct(dc.coverage)} (bordinha). Brilho alto (~${f1(dc.bright)}), sem contorno preto.
+- nameplate: densidade crescente da esquerda para a direita — vazio até x≈150, a ilustração principal nos 40% da direita (até ~${pct(np.right)} preenchido na ponta direita); o lado do nome fica quase limpo (~${pct(np.nameSide)}). Total ~${pct(np.coverage)} do retângulo, ~${Math.round(np.colors)} cores. A paleta do Discord faz o fundo: a arte não precisa de fundo.
+- frame: ornamento concentrado numa faixa no topo (até ~45% da altura) e laterais finas descendo até a base; centro e área do nome 0% cobertos. ~${Math.round(fr.colors)} cores; contorno fino.`;
+  }
+
+  /** Exemplos oficiais da mesma categoria, para anexar como referência de estilo. */
+  const API_TO_STYLE = { nameplates: 'nameplates', decorations: 'decorations', effects: 'effects', frames: 'frames' };
+  function styleExamples(cats, prompt, perCat = 1) {
+    const words = (prompt || '').toLowerCase().split(/[^a-zà-ú0-9]+/).filter((w) => w.length > 3);
+    const out = [];
+    cats.forEach((cat) => {
+      const list = (STYLE.examples[API_TO_STYLE[cat]] || []).filter((x) => x && x.img);
+      if (!list.length) return;
+      const scored = list.map((x, i) => ({ x, i, s: words.filter((w) => (x.nome || '').toLowerCase().includes(w)).length }));
+      const seed = [...(prompt || 'x')].reduce((a, c) => a + c.charCodeAt(0), 0);
+      scored.sort((a, b) => b.s - a.s || ((a.i + seed) % list.length) - ((b.i + seed) % list.length));
+      scored.slice(0, perCat).forEach(({ x }) => out.push({ cat, name: x.nome, url: x.img }));
+    });
+    return out;
+  }
 
   /* ------------------------------------------------------------------ */
   /* Modo ARTE: a IA desenha SVG animado (CSS @keyframes)                 */
@@ -275,11 +351,15 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
         else if (a.className) t += `\n(efeito CSS da coleção ${r.item.collection})`;
       });
     }
+    const st = (req.styleRefs || []).filter((x) => x.hasImage);
+    if (st.length) {
+      t += `\n\nEXEMPLOS DE ESTILO OFICIAL (imagens anexas${req.refs.some((r) => r.hasImage) ? ', depois das referências' : ''}): ${st.map((x) => `${CAT_TO_API[x.cat]} "${x.name}"`).join(', ')}. Copie o NÍVEL DE ACABAMENTO, a composição e a paleta enxuta desses itens da loja — não o tema nem o desenho.`;
+    }
     return t;
   }
   const schemaFor = (req) => (req.mode === 'svg' ? SVG_OUTPUT_SCHEMA : OUTPUT_SCHEMA);
   const systemFor = (req, withExample) => {
-    const base = req.mode === 'svg' ? SVG_SYSTEM_PROMPT : SYSTEM_PROMPT;
+    const base = req.mode === 'svg' ? SVG_SYSTEM_PROMPT + styleGuidePrompt() : SYSTEM_PROMPT;
     if (!withExample) return base;
     return base + '\n\nResponda SOMENTE com um objeto JSON válido, sem markdown, neste formato (o exemplo mostra um item; gere um por categoria pedida, com todos os campos):\n' + (req.mode === 'svg' ? SVG_JSON_EXAMPLE : JSON_EXAMPLE);
   };
@@ -904,8 +984,10 @@ ${sparks}
   /* ------------------------------------------------------------------ */
   const MODE_STORAGE = 'cosmetic-studio:gen-mode';
   const REVIEW_KEY = 'cosmetic-studio:gen-review';
+  const STYLE_KEY = 'cosmetic-studio:gen-style-refs';
   const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', mode: store.get(MODE_STORAGE) === 'particles' ? 'particles' : 'svg', busy: false, results: [], refs: [],
-    review: (() => { try { return localStorage.getItem(REVIEW_KEY) !== '0'; } catch (e) { return true; } })(), quality: new Map() };
+    review: (() => { try { return localStorage.getItem(REVIEW_KEY) !== '0'; } catch (e) { return true; } })(), quality: new Map(),
+    styleRefs: (() => { try { return localStorage.getItem(STYLE_KEY) !== '0'; } catch (e) { return true; } })() };
 
   /* ---------- Verificação automática + correção pela IA ---------- */
   const MAX_ROUNDS = 2;
@@ -1405,6 +1487,15 @@ ${lines.join('\n\n')}`;
           try { req.images.push(await toBase64(url)); r.hasImage = true; } catch (e) { /* segue sem a imagem */ }
         }
       }
+      if (mode === 'svg' && ui.styleRefs) {
+        req.styleRefs = styleExamples(cats, prompt, cats.length > 2 ? 1 : 2).slice(0, Math.max(0, 4 - req.images.length));
+        for (const x of req.styleRefs) {
+          if (ai.provider === 'anthropic' || ai.provider === 'openai') { req.images.push({ url: x.url }); x.hasImage = true; }
+          else if (PROVIDERS[ai.provider].native === 'gemini') {
+            try { req.images.push(await toBase64(x.url)); x.hasImage = true; } catch (e) { /* segue sem */ }
+          }
+        }
+      }
       const call = (rq) => (ai.provider === 'anthropic'
         ? generateWithClaude(rq, cfg.key, cfg.model)
         : PROVIDERS[ai.provider].native === 'gemini'
@@ -1420,6 +1511,7 @@ ${lines.join('\n\n')}`;
           console.warn('[Gerador IA] tentando sem imagens:', err.message);
           req.images = [];
           req.refs.forEach((r) => { r.hasImage = false; });
+          (req.styleRefs || []).forEach((x) => { x.hasImage = false; });
           list = await call(req);
         }
         if (mode === 'svg' && ui.review && window.CosmeticExport && window.CosmeticExport.sampleSvg) {
@@ -1590,6 +1682,15 @@ ${lines.join('\n\n')}`;
     $('#gen-form').addEventListener('submit', onGenerate);
     $('#gen-refs-add').addEventListener('click', openPicker);
     const rv = $('#gen-review');
+    const sr = $('#gen-style');
+    if (sr) {
+      sr.checked = ui.styleRefs;
+      sr.addEventListener('change', () => {
+        ui.styleRefs = sr.checked;
+        try { localStorage.setItem(STYLE_KEY, ui.styleRefs ? '1' : '0'); } catch (e) { /* ok */ }
+      });
+    }
+    loadStyleGuide();
     rv.checked = ui.review;
     rv.addEventListener('change', () => {
       ui.review = rv.checked;
@@ -1623,5 +1724,5 @@ ${lines.join('\n\n')}`;
   else init();
 
   // Exposto para testes / depuração
-  window.CosmeticGenerator = { generateLocal, varyItem, addRef, checkArt, ZONES, OUTPUT_SCHEMA, SYSTEM_PROMPT, SVG_OUTPUT_SCHEMA, SVG_SYSTEM_PROMPT, userTextFor };
+  window.CosmeticGenerator = { STYLE, styleGuidePrompt, styleExamples, generateLocal, varyItem, addRef, checkArt, ZONES, OUTPUT_SCHEMA, SYSTEM_PROMPT, SVG_OUTPUT_SCHEMA, SVG_SYSTEM_PROMPT, userTextFor };
 })();
