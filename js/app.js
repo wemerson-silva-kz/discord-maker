@@ -368,7 +368,7 @@
   /* Arte SVG animada (gerada pela IA)                                 */
   /* ---------------------------------------------------------------- */
   /** Tamanho oficial de cada formato do Discord (viewBox do SVG). */
-  const SVG_SIZE = { nameplates: [448, 84], decorations: [288, 288], effects: [450, 880] };
+  const SVG_SIZE = { nameplates: [448, 84], decorations: [288, 288], effects: [450, 880], frames: [1312, 716] };
   const SVG_TAGS = new Set(['svg', 'g', 'defs', 'style', 'title', 'desc', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon',
     'lineargradient', 'radialgradient', 'stop', 'clippath', 'mask', 'pattern', 'symbol', 'use', 'text', 'tspan', 'filter',
     'fegaussianblur', 'feoffset', 'feblend', 'fecolormatrix', 'fecomposite', 'feflood', 'femerge', 'femergenode', 'femorphology',
@@ -418,7 +418,7 @@
 
   function buildSvg(layer, a, cat) {
     if (cat === 'decorations') layer.classList.add('is-img');
-    const img = el('img', 'asset-anim' + (cat === 'effects' ? ' fx-img' : ''));
+    const img = el('img', cat === 'frames' ? 'frame-img' : 'asset-anim' + (cat === 'effects' ? ' fx-img' : ''));
     img.alt = '';
     layer.appendChild(img);
     const want = layer._phase || 'both';
@@ -1221,14 +1221,14 @@
     }
     if (a.type === 'svg') {
       if (!(cat === 'effects' && a.introSvg)) {
-        badge.textContent = `Arte SVG · loop ${a.loopSeconds}s · 60 fps`;
+        badge.textContent = cat === 'frames' ? `Frame · arte SVG 1312×716` : `Arte SVG · loop ${a.loopSeconds}s · 60 fps`;
         preview.appendChild(badge);
       }
       return;
     }
     if (a.type !== 'image') return;
     if (cat === 'frames') {
-      badge.textContent = 'Frame estático';
+      badge.textContent = 'Frame estático · PNG 1312 px';
       preview.appendChild(badge);
       return;
     }

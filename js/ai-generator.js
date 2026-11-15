@@ -39,8 +39,8 @@
     ollama: { label: 'Ollama (no seu PC)', base: 'http://localhost:11434/v1', model: 'llama3.1', format: 'json_object', keyPh: 'opcional', keyOptional: true, editableBase: true, hint: 'Grátis e local. Inicie o Ollama com OLLAMA_ORIGINS=* para o navegador poder acessá-lo.' },
     custom: { label: 'Outro (compatível com OpenAI)', base: '', model: '', format: 'json_object', keyPh: 'opcional', keyOptional: true, editableBase: true, hint: 'LM Studio, Together, Fireworks, xAI, vLLM… qualquer API com /chat/completions.' },
   };
-  const CAT_TO_API = { nameplates: 'nameplate', decorations: 'decoration', effects: 'effect' };
-  const API_TO_CAT = { nameplate: 'nameplates', decoration: 'decorations', effect: 'effects' };
+  const CAT_TO_API = { nameplates: 'nameplate', decorations: 'decoration', effects: 'effect', frames: 'frame' };
+  const API_TO_CAT = { nameplate: 'nameplates', decoration: 'decorations', effect: 'effects', frame: 'frames' };
 
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -180,7 +180,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
           additionalProperties: false,
           required: ['category', 'name', 'description', 'rarity', 'tags', 'loopSeconds', 'svg', 'introSeconds', 'introSvg'],
           properties: {
-            category: { type: 'string', enum: ['nameplate', 'decoration', 'effect'] },
+            category: { type: 'string', enum: ['nameplate', 'decoration', 'effect', 'frame'] },
             name: { type: 'string' },
             description: { type: 'string' },
             rarity: { type: 'string', enum: GEN.rarities },
@@ -203,6 +203,7 @@ Formatos (use exatamente estes viewBox):
 - nameplate: viewBox="0 0 448 84". Faixa atrás do nome na lista de membros, preenchendo todo o retângulo. O avatar e o nome (texto branco) ficam à esquerda (x < 200): mantenha essa área mais escura e calma para leitura; concentre a ilustração e o movimento à direita.
 - decoration: viewBox="0 0 288 288", fundo transparente. O avatar circular fica no centro (cx 144, cy 144, raio 120) e NÃO pode ser coberto: desenhe em volta, na faixa entre o raio 112 e as bordas (pode invadir levemente a borda do avatar, como uma moldura). Ex.: um dragão enrolado em volta do círculo, chamas saindo das bordas.
 - effect: viewBox="0 0 450 880", fundo transparente, sobreposto ao card de perfil. O conteúdo do perfil fica no meio (x 40–410, y 260–720): deixe essa área livre ou só com elementos translúcidos e de passagem. Use as bordas, o topo (área do banner, y < 230) e a base.
+- frame (profile frame): viewBox="0 0 1312 716", fundo transparente. É a moldura do CARD de perfil inteiro, presa ao topo e na largura do card (no Discord são PNGs de 1312 px). A faixa do topo (y < 400) fica sobre o banner: desenhe ali o ornamento principal (ex.: o dragão deitado sobre o topo do card, telhados do templo, nuvens). Desça pelas laterais (x < 70 e x > 1242) até a base do canvas, com cantos arredondados (raio ~60). O centro (x 70–1242, y 400–716) e a área do avatar e do nome (x 60–620, y 220–600) ficam livres: são o conteúdo do perfil. Pode ter animação sutil em loop (brilho, chamas, nuvens), mas precisa ficar bonito parado também, porque no Discord o frame é estático. introSeconds 0 e introSvg "".
   O efeito tem DUAS FASES, como no Discord: introSvg é a ENTRADA, que toca uma única vez ao abrir o perfil (introSeconds entre 1 e 6, ideal 2 a 4): o momento mais impactante (ex.: o dragão surge e cospe uma rajada de fogo que atravessa o card), terminando suave. svg é o LOOP contínuo e mais calmo que vem depois (ex.: o dragão respirando, brasas subindo, nuvens passando).
 
 Regras técnicas do SVG (obrigatórias):
@@ -212,7 +213,7 @@ Regras técnicas do SVG (obrigatórias):
 - LOOP perfeito: todas as animações do svg do loop são infinite e com duração que divide loopSeconds exatamente (ex.: loop 4 s → 1 s, 2 s ou 4 s; delays também em frações desse ciclo).
 - ENTRADA: animações com animation-iteration-count 1 e animation-fill-mode both, terminando até introSeconds.
 - Cores em hex; prefira gradientes. Qualidade alta, mas cada SVG com no máximo cerca de 14 mil caracteres e 150 elementos.
-- Em nameplate e decoration: introSeconds 0 e introSvg "".
+- Em nameplate, decoration e frame: introSeconds 0 e introSvg "".
 
 Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit coerente. Escreva em português do Brasil: nome curto e criativo (até 28 caracteres), descrição de uma frase, 3 a 5 tags em minúsculas, rarity conforme a complexidade.`;
 
@@ -624,7 +625,45 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
     nameplates: ['Placa', 'Faixa', 'Letreiro', 'Brasão'],
     decorations: ['Halo', 'Coroa', 'Anel', 'Aura'],
     effects: ['Chuva', 'Aura', 'Brilho', 'Explosão'],
+    frames: ['Moldura', 'Arco', 'Portal', 'Brasão'],
   };
+
+  /**
+   * Frame procedural (motor local): SVG 1312×716 com faixa ornamental no topo,
+   * laterais que descem e somem, motivos do tema e brilhos animados.
+   */
+  function localFrameSvg(palette, theme) {
+    const g = Array.from(theme.glyphs || '✦');
+    const glyphs = Array.from({ length: 7 }, (_, i) => {
+      const x = 130 + i * 175;
+      const y = 70 + (i % 2) * 18;
+      return `<text class="tw" x="${x}" y="${y}" font-size="54" text-anchor="middle" style="animation-delay:-${(i * 0.3).toFixed(1)}s">${g[i % g.length]}</text>`;
+    }).join('');
+    const sparks = Array.from({ length: 10 }, (_, i) => {
+      const x = i % 2 ? 30 + rnd(0, 20) : 1262 + rnd(0, 20);
+      const y = 180 + i * 50;
+      return `<circle class="tw" cx="${x.toFixed(0)}" cy="${y}" r="${(rnd(4, 9)).toFixed(1)}" fill="${palette.accent}" style="animation-delay:-${rnd(0, 2).toFixed(2)}s"/>`;
+    }).join('');
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1312 716">
+<defs>
+<linearGradient id="fb" x1="0" x2="1"><stop offset="0" stop-color="${palette.primary}"/><stop offset=".5" stop-color="${palette.secondary}"/><stop offset="1" stop-color="${palette.primary}"/></linearGradient>
+<linearGradient id="fs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${palette.primary}"/><stop offset=".75" stop-color="${palette.secondary}" stop-opacity=".55"/><stop offset="1" stop-color="${palette.secondary}" stop-opacity="0"/></linearGradient>
+<filter id="gl" x="-10%" y="-10%" width="120%" height="140%"><feGaussianBlur stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<style>
+.tw{transform-box:fill-box;transform-origin:center;animation:tw 2s ease-in-out infinite}
+@keyframes tw{50%{transform:scale(.7);opacity:.45}}
+.edge{stroke-dasharray:60 40;animation:run 2s linear infinite}
+@keyframes run{to{stroke-dashoffset:-100}}
+</style>
+<path d="M60 0H1252Q1312 0 1312 60V716H1270V120Q1270 92 1240 96Q980 150 656 140Q332 150 72 96Q42 92 42 120V716H0V60Q0 0 60 0Z" fill="url(#fb)" opacity=".95" filter="url(#gl)"/>
+<rect x="0" y="120" width="42" height="596" fill="url(#fs)"/>
+<rect x="1270" y="120" width="42" height="596" fill="url(#fs)"/>
+<path class="edge" d="M48 716V124Q48 104 72 106Q332 160 656 150Q980 160 1240 106Q1264 104 1264 124V716" fill="none" stroke="${palette.accent}" stroke-width="5" stroke-linecap="round" opacity=".9"/>
+<g fill="${palette.accent}" filter="url(#gl)">${glyphs}</g>
+${sparks}
+</svg>`;
+  }
 
   function hashStr(s) {
     let h = 2166136261;
@@ -740,6 +779,20 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
         intro = { style: introStyle, duration: Math.round(rnd(2.2, 4.2) * 10) / 10, layers: introLayers };
       }
       const noun = choice(NOUNS[cat]);
+      if (cat === 'frames') {
+        return {
+          cat,
+          raw: {
+            name: `${noun} ${main.id === 'proc' ? 'de ' + subject : main.word}`.slice(0, 40),
+            description: `Frame procedural a partir de “${prompt.slice(0, 70)}”.`,
+            rarity,
+            tags: [...new Set([...themes.map((t) => t.id), 'frame', 'local'])].slice(0, 5),
+            prompt,
+            engine: 'local',
+            asset: { type: 'svg', svg: localFrameSvg(palette, main), loopSeconds: 2 },
+          },
+        };
+      }
       return {
         cat,
         raw: {
@@ -883,6 +936,7 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
                 <button type="button" data-cat="effects" class="is-active">Efeitos</button>
                 <button type="button" data-cat="decorations">Molduras</button>
                 <button type="button" data-cat="nameplates">Nameplates</button>
+                <button type="button" data-cat="frames">Frames</button>
               </div>
             </div>
             <p class="text-[11px] text-dc-faint">Escolha até ${MAX_REFS}. A IA recebe a arte/spec dos itens gerados e a imagem dos itens oficiais (Claude, Gemini e OpenAI enxergam imagens).</p>
@@ -1125,7 +1179,8 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
       }
       ai.keys[ai.provider] = cfg.key;
       persistAiSettings();
-      const mode = ui.mode;
+      const mode = cats.includes('frames') ? 'svg' : ui.mode;
+      if (mode !== ui.mode) CS.toast('Profile frames são desenhados no estilo Arte (SVG).', 'info');
       setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está ${mode === 'svg' ? 'desenhando a arte' : 'montando'} do seu kit… ${mode === 'svg' ? 'isso pode levar até 1–2 minutos.' : 'isso leva alguns segundos.'}`);
       showSkeletons(cats.length);
       const req = { prompt, cats, mode, refs: refs.map((r) => ({ ...r })), images: [] };

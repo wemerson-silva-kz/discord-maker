@@ -31,7 +31,10 @@
     nameplates: { w: 448, h: 84, rw: 448, rh: 84 },
     decorations: { w: 288, h: 288, rw: 288, rh: 288 },
     effects: { w: 450, h: 880, rw: 340, rh: 665 },
+    // Frame: o Discord usa PNG estático de 1312 px; o APNG animado sai em meia resolução
+    frames: { w: 656, h: 358, rw: 656, rh: 358 },
   };
+  const FRAME_FULL = { w: 1312, h: 716 };
 
   const nextFrame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
@@ -59,8 +62,8 @@
     'stroke-dasharray', 'stroke-dashoffset', 'visibility', 'd', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y',
     'width', 'height', 'stop-color', 'stop-opacity', 'transform-origin'];
 
-  async function svgFrames(svgText, cat, seconds, fps, loop, onFrame, isCancelled) {
-    const { w, h } = OUT[cat];
+  async function svgFrames(svgText, cat, seconds, fps, loop, onFrame, isCancelled, size) {
+    const { w, h } = size || OUT[cat];
     const iframe = document.createElement('iframe');
     iframe.setAttribute('sandbox', 'allow-same-origin'); // sem allow-scripts
     iframe.style.cssText = `position:fixed;left:-30000px;top:0;width:${w}px;height:${h}px;border:0;visibility:hidden`;
@@ -207,6 +210,10 @@
     const introSecs = CS.introOf(cat, a);
     const loopSecs = a.type === 'svg' ? a.loopSeconds : opt.loopSeconds;
     const jobs = [];
+    if (cat === 'frames' && a.type === 'svg') {
+      // Formato do Discord: um PNG estático 1312×716 (+ APNG animado, se quiser animar fora do Discord)
+      jobs.push({ phase: 'loop', label: 'PNG estático 1312×716 (formato do Discord)', secs: 1 / opt.fps, plays: 0, file: `${slug}-frame.png`, size: FRAME_FULL, still: true });
+    }
     if (introSecs) jobs.push({ phase: 'intro', label: 'Entrada', secs: introSecs, plays: 1, file: `${slug}-entrada.png` });
     jobs.push({ phase: 'loop', label: introSecs ? 'Loop' : 'Animação', secs: loopSecs, plays: 0, file: `${slug}${introSecs ? '-loop' : ''}.png` });
 
@@ -217,7 +224,7 @@
       const onFrame = () => opt.onProgress(++done, total, job.label);
       const loop = job.phase === 'loop';
       const cap = a.type === 'svg'
-        ? await svgFrames(job.phase === 'intro' ? a.introSvg : a.svg, cat, job.secs, opt.fps, loop, onFrame, opt.isCancelled)
+        ? await svgFrames(job.phase === 'intro' ? a.introSvg : a.svg, cat, job.secs, opt.fps, loop, onFrame, opt.isCancelled, job.size)
         : await domFrames(item, cat, job.phase, job.secs, opt.fps, loop, onFrame, opt.isCancelled);
       opt.onProgress(done, total, job.label + ' — compactando');
       const buf = await encode(cap, job.plays, opt.lossless);
@@ -285,13 +292,15 @@
     current = { cat, item };
     const a = item.asset || {};
     const introSecs = CS.introOf(cat, a);
-    const size = { nameplates: '448×84', decorations: '288×288', effects: '450×880' }[cat];
+    const size = { nameplates: '448×84', decorations: '288×288', effects: '450×880', frames: '1312×716' }[cat];
     $('#apng-title').innerHTML = '';
     $('#apng-title').append(Object.assign(document.createElement('b'), { textContent: item.name }), ` · ${CS.CATS[cat].singular} · ${size}`);
     $('#apng-loop-box').classList.toggle('hidden', a.type === 'svg');
-    $('#apng-note').textContent = introSecs
-      ? `Efeito em duas fases, como no Discord: um arquivo de ENTRADA (${introSecs.toFixed(1)} s, toca 1×) e um de LOOP (repete).`
-      : 'Um arquivo em loop infinito, com fundo transparente.';
+    $('#apng-note').textContent = cat === 'frames'
+      ? 'No Discord o frame é um PNG estático de 1312 px: sai esse PNG e também um APNG animado em meia resolução (656×358).'
+      : introSecs
+        ? `Efeito em duas fases, como no Discord: um arquivo de ENTRADA (${introSecs.toFixed(1)} s, toca 1×) e um de LOOP (repete).`
+        : 'Um arquivo em loop infinito, com fundo transparente.';
     $('#apng-results').innerHTML = '';
     $('#apng-progress').classList.add('hidden');
     $('#apng-go').disabled = false;
@@ -333,7 +342,9 @@
         const i = r.info;
         meta.innerHTML = `<div class="text-sm font-semibold text-dc-text"></div><div></div>`;
         meta.firstChild.textContent = r.label;
-        meta.lastChild.textContent = `${i.width}×${i.height} · ${i.frames} quadros · ${i.duration.toFixed(2)} s · ${i.fps} fps · ${i.plays === 0 ? 'loop infinito' : 'toca ' + i.plays + '×'} · ${(r.blob.size / 1024).toFixed(0)} KB`;
+        meta.lastChild.textContent = i.frames > 1
+          ? `${i.width}×${i.height} · ${i.frames} quadros · ${i.duration.toFixed(2)} s · ${i.fps} fps · ${i.plays === 0 ? 'loop infinito' : 'toca ' + i.plays + '×'} · ${(r.blob.size / 1024).toFixed(0)} KB`
+          : `${i.width}×${i.height} · PNG estático · ${(r.blob.size / 1024).toFixed(0)} KB`;
         const a = document.createElement('a');
         a.href = url;
         a.download = r.filename;
