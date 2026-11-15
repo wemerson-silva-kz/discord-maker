@@ -178,7 +178,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['category', 'name', 'description', 'rarity', 'tags', 'loopSeconds', 'svg', 'introSeconds', 'introSvg'],
+          required: ['category', 'name', 'description', 'rarity', 'tags', 'loopSeconds', 'svg', 'introSeconds', 'introSvg', 'discordPalette'],
           properties: {
             category: { type: 'string', enum: ['nameplate', 'decoration', 'effect', 'frame'] },
             name: { type: 'string' },
@@ -187,6 +187,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
             tags: { type: 'array', items: { type: 'string' } },
             loopSeconds: { type: 'number', description: 'Duração do loop em segundos (2 a 6).' },
             svg: { type: 'string', description: 'SVG completo do LOOP, animado só com CSS @keyframes.' },
+            discordPalette: { type: 'string', enum: [...Object.keys(CS.DATA.discordPalettes || {}), 'none'], description: 'Só nameplate: paleta do Discord pintada por baixo da arte. Nos outros, "none".' },
             introSeconds: { type: 'number', description: 'Só effect: duração da entrada (1 a 6). Nos outros, 0.' },
             introSvg: { type: 'string', description: 'Só effect: SVG da ENTRADA (toca uma vez). Nos outros, string vazia.' },
           },
@@ -200,7 +201,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
 O que importa acima de tudo: a arte precisa representar de forma reconhecível o tema pedido. Se o tema fala de um dragão, desenhe um dragão (silhueta com cabeça, chifres, corpo serpenteante, escamas sugeridas por gradientes); templo = telhados curvos em camadas, colunas; nuvens escuras e sombrias = massas de nuvem em cinza-azulado escuro com gradientes, céu carregado; fogo verde = chamas com gradiente verde-jade e brilho. Componha em camadas (fundo, plano médio, destaque), use gradientes e filtros de brilho (feGaussianBlur) para dar acabamento de item premium. Nunca use letras, ideogramas ou emojis para representar objetos.
 
 Formatos (use exatamente estes viewBox):
-- nameplate: viewBox="0 0 448 84". Faixa atrás do nome na lista de membros, preenchendo todo o retângulo. O avatar e o nome (texto branco) ficam à esquerda (x < 200): mantenha essa área mais escura e calma para leitura; concentre a ilustração e o movimento à direita.
+- nameplate: viewBox="0 0 448 84", FUNDO TRANSPARENTE, como as nameplates oficiais: o Discord pinta por baixo uma PALETA (campo discordPalette), um degradê da cor escura (à esquerda) para a clara (à direita). Escolha a paleta que combina com o tema: ${Object.entries(CS.DATA.discordPalettes || {}).map(([k, v]) => `${k} (${v.label})`).join(', ')}. Desenhe só a ilustração, concentrada à direita (x > 200); o avatar e o nome (texto branco) ficam à esquerda, então deixe essa área vazia ou com detalhes leves.
 - decoration: viewBox="0 0 288 288", fundo transparente. O avatar circular fica no centro (cx 144, cy 144, raio 120) e NÃO pode ser coberto: desenhe em volta, na faixa entre o raio 112 e as bordas (pode invadir levemente a borda do avatar, como uma moldura). Ex.: um dragão enrolado em volta do círculo, chamas saindo das bordas.
 - effect: viewBox="0 0 450 880", fundo transparente, sobreposto ao card de perfil. O conteúdo do perfil fica no meio (x 40–410, y 260–720): deixe essa área livre ou só com elementos translúcidos e de passagem. Use as bordas, o topo (área do banner, y < 230) e a base.
 - frame (profile frame): viewBox="0 0 1312 716", fundo transparente. É a moldura do CARD de perfil inteiro, presa ao topo e na largura do card (no Discord são PNGs de 1312 px). A faixa do topo (y < 400) fica sobre o banner: desenhe ali o ornamento principal (ex.: o dragão deitado sobre o topo do card, telhados do templo, nuvens). Desça pelas laterais (x < 70 e x > 1242) até a base do canvas, com cantos arredondados (raio ~60). O centro (x 70–1242, y 400–716) e a área do avatar e do nome (x 60–620, y 220–600) ficam livres: são o conteúdo do perfil. Pode ter animação sutil em loop (brilho, chamas, nuvens), mas precisa ficar bonito parado também, porque no Discord o frame é estático. introSeconds 0 e introSvg "".
@@ -220,8 +221,8 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
   const SVG_JSON_EXAMPLE = JSON.stringify({ items: [{
     category: 'nameplate', name: 'Rajada de Jade', description: 'Chamas verdes correndo à direita da faixa.', rarity: 'Épico', tags: ['fogo', 'jade'],
     loopSeconds: 4,
-    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 84"><defs><linearGradient id="bg" x1="0" x2="1"><stop offset="0" stop-color="#05140e"/><stop offset="1" stop-color="#0c3a26"/></linearGradient></defs><style>.f{transform-box:fill-box;transform-origin:50% 100%;animation:fl 1s ease-in-out infinite}@keyframes fl{50%{transform:scaleY(1.2)}}</style><rect width="448" height="84" fill="url(#bg)"/><path class="f" d="M380 84c-20-30 10-40 0-70 30 25 40 50 20 70z" fill="#2be38b"/></svg>',
-    introSeconds: 0, introSvg: '',
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 84"><style>.f{transform-box:fill-box;transform-origin:50% 100%;animation:fl 1s ease-in-out infinite}@keyframes fl{50%{transform:scaleY(1.2)}}</style><path class="f" d="M380 84c-20-30 10-40 0-70 30 25 40 50 20 70z" fill="#2be38b"/></svg>',
+    introSeconds: 0, introSvg: '', discordPalette: 'teal',
   }] });
 
   /** Monta o texto do pedido com tema, categorias e referências da biblioteca. */
@@ -526,7 +527,7 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
           engine: provider.id,
           engineLabel: provider.label,
           asset: raw.svg
-            ? { type: 'svg', svg: raw.svg, loopSeconds: raw.loopSeconds, introSvg: cat === 'effects' ? raw.introSvg : '', introSeconds: raw.introSeconds }
+            ? { type: 'svg', svg: raw.svg, loopSeconds: raw.loopSeconds, introSvg: cat === 'effects' ? raw.introSvg : '', introSeconds: raw.introSeconds, discordPalette: cat === 'nameplates' ? raw.discordPalette : undefined }
             : { palette: raw.palette, base: raw.base, ring: raw.ring, layers: raw.layers, intro: raw.intro },
         },
       });
@@ -754,8 +755,11 @@ ${sparks}
       let base = { style: 'none', animation: 'none', speed: choice(['slow', 'normal', 'normal', 'fast']) };
       let ring = { style: 'none' };
       let intro = { style: 'none', duration: 0, layers: [] };
+      let npPalette;
       if (cat === 'nameplates') {
         base = { ...base, style: main.np, animation: main.anim };
+        npPalette = nearestDiscordPalette(palette.primary);
+        base = { ...base, style: 'none' }; // o fundo vem da paleta do Discord
         layers = main.layers.map((d) => makeLayer(d, palette, main));
         if (second) layers.push(makeLayer(second.layers[0], palette, second));
       } else if (cat === 'decorations') {
@@ -802,10 +806,23 @@ ${sparks}
           tags: [...new Set([...themes.map((t) => t.id), 'gerado', 'local'])].slice(0, 5),
           prompt,
           engine: 'local',
-          asset: { palette, base, ring, layers, intro },
+          asset: { palette, base, ring, layers, intro, ...(npPalette ? { discordPalette: npPalette } : {}) },
         },
       };
     });
+  }
+
+  /** Paleta do Discord mais próxima de uma cor (por matiz e luminosidade). */
+  function nearestDiscordPalette(hex) {
+    const toRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    const [r, g, b] = toRgb(hex);
+    let best = null, bestD = Infinity;
+    for (const [name, p] of Object.entries(CS.DATA.discordPalettes || {})) {
+      const [r2, g2, b2] = toRgb(p.light);
+      const d = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2;
+      if (d < bestD) { bestD = d; best = name; }
+    }
+    return best;
   }
 
   /** Variação rápida de um item: gira a paleta e embaralha velocidades/quantidades. */

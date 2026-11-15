@@ -159,7 +159,7 @@
     }
     if (it.type === 'Profile Effect') {
       // A API só traz uma miniatura estática; entrada/loop podem ser adicionados pelo importador.
-      return { cat: 'effects', raw: { ...base, id: 'dc-fx-' + it.id, description: (desc ? desc + ' · ' : '') + 'prévia estática',
+      return { cat: 'effects', raw: { ...base, id: 'dc-fx-' + it.id, description: desc,
         asset: { type: 'image', loop: card } } };
     }
     return null;
@@ -210,16 +210,26 @@
         reduced: fx.reducedMotionSrc || '',
       };
     }
+    const np = (p.items || []).find((it) => String(it.type) === '2' && it.palette);
+    if (np) out.palette = np.palette;
     if ((p.items || []).length > 1 || p.type === 1000) out.contents = (p.items || []).map((it) => ({ type: it.type, sku: String(it.sku_id || '') }));
     return out;
   }
+  /** Fila: no máximo uma chamada ao Discord a cada 250 ms. */
+  let queueTail = Promise.resolve();
+  function enqueue(fn) {
+    const run = queueTail.then(fn);
+    queueTail = run.catch(() => {}).then(() => new Promise((r) => setTimeout(r, 250)));
+    return run;
+  }
+
   async function fetchProduct(sku) {
     if (!/^\d{15,21}$/.test(sku)) throw new Error('SKU inválido');
     const cached = readProducts()[sku];
     if (cached && Date.now() - cached.t < PRODUCT_TTL) return cached;
     if (Date.now() < productBlockedUntil) throw new Error('limite de requisições do Discord; tente em instantes');
     if (productInflight.has(sku)) return productInflight.get(sku);
-    const job = (async () => {
+    const job = enqueue(async () => {
       const res = await fetch(PRODUCT_API + sku, { credentials: 'omit' });
       if (res.status === 429) {
         let secs = 30;
@@ -231,7 +241,7 @@
       const compact = compactProduct(await res.json());
       saveProduct(sku, compact);
       return compact;
-    })().finally(() => productInflight.delete(sku));
+    }).finally(() => productInflight.delete(sku));
     productInflight.set(sku, job);
     return job;
   }
@@ -255,13 +265,37 @@
   function applyCachedEffects(entries) {
     const all = readProducts();
     for (const e of entries) {
+      if (e.cat === 'nameplates') {
+        const c = all[e.raw.id.replace(/^dc-np-/, '')];
+        if (c && c.palette && Date.now() - c.t < PRODUCT_TTL) e.raw.asset = { ...e.raw.asset, discordPalette: c.palette };
+        continue;
+      }
       if (e.cat !== 'effects') continue;
       const c = all[e.raw.id.replace(/^dc-fx-/, '')];
       if (c && c.effect && Date.now() - c.t < PRODUCT_TTL) e.raw.asset = effectAsset(c.effect);
     }
   }
+  /** Nameplate da loja: aplica a paleta oficial (nome da API; cor da tabela em data.js). */
+  async function paletteShopNameplate(id) {
+    const it = CS.findItem('nameplates', id);
+    if (!it || it.source !== 'shop' || it.asset.discordPalette) return;
+    try {
+      const prod = await fetchProduct(id.replace(/^dc-np-/, ''));
+      if (!prod.palette) return;
+      CS.updateAsset('nameplates', id, { ...it.asset, discordPalette: prod.palette });
+    } catch (e) {
+      console.warn('[Discord] paleta', id, e.message);
+    }
+  }
+  document.addEventListener('cs:visible', (ev) => {
+    if (ev.detail.cat === 'effects') animateShopEffect(ev.detail.id, { play: true });
+    if (ev.detail.cat === 'nameplates') paletteShopNameplate(ev.detail.id);
+  });
   document.addEventListener('cs:need-effect', (ev) => animateShopEffect(ev.detail.id, { play: !!ev.detail.hover }));
-  document.addEventListener('cs:equip', (ev) => { if (ev.detail.cat === 'effects') animateShopEffect(ev.detail.id); });
+  document.addEventListener('cs:equip', (ev) => {
+    if (ev.detail.cat === 'effects') animateShopEffect(ev.detail.id);
+    if (ev.detail.cat === 'nameplates') paletteShopNameplate(ev.detail.id);
+  });
 
   /* ---------------- Pacotes (bundles) da loja ---------------- */
   let shopBundles = [];
