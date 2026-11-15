@@ -13,7 +13,15 @@ python3 -m http.server 8080
 # abra http://localhost:8080
 ```
 
-(Abrir o `index.html` direto também funciona; só o "Copiar Link" depende de clipboard, que alguns navegadores bloqueiam em `file://` — nesse caso o link fica na barra de endereço.)
+## Publicar no GitHub Pages
+
+O repositório já tem o workflow `.github/workflows/pages.yml`, que publica o site a cada push na branch `main`.
+
+1. No GitHub, abra **Settings → Pages** e, em **Build and deployment → Source**, escolha **GitHub Actions** (só na primeira vez).
+2. Faça merge deste PR na `main` (ou rode o workflow em **Actions → Deploy no GitHub Pages → Run workflow**).
+3. O site fica em `https://<seu-usuario>.github.io/discord-maker/`.
+
+Como o site é 100% estático e cada visitante usa a própria chave de IA (que fica só no navegador dele), ele funciona no Pages sem servidor nenhum.
 
 ## Funcionalidades
 
@@ -30,12 +38,19 @@ python3 -m http.server 8080
 
 A aba **Gerador IA** cria nameplates, molduras e efeitos de perfil **animados** a partir de uma descrição ("dragão de jade cuspindo fogo verde", "café lo-fi numa tarde chuvosa"…).
 
-- **Motor Claude (IA):** cole sua chave da API da Anthropic (fica só no seu navegador). O app chama o modelo `claude-opus-5-5` direto do navegador pelo SDK oficial (`@anthropic-ai/sdk`, com `dangerouslyAllowBrowser`) e usa **saída estruturada (JSON Schema)** para receber uma especificação válida de cada item. Cada geração consome créditos da sua conta.
+- **Motor IA (qualquer provedor):** escolha o provedor, o modelo e cole a sua chave (fica só no seu navegador; o site não tem servidor). Provedores prontos:
+  - **Anthropic (Claude)**: SDK oficial `@anthropic-ai/sdk` no navegador, modelo padrão `claude-opus-5-5`, saída estruturada por JSON Schema.
+  - **OpenAI**, **Google Gemini**: saída estruturada (`json_schema`).
+  - **OpenRouter** (centenas de modelos, inclusive gratuitos), **Groq**, **DeepSeek**, **Mistral**: modo JSON.
+  - **Ollama (no seu PC)**: grátis e local; rode com `OLLAMA_ORIGINS=*` para o navegador conseguir acessar.
+  - **Outro (compatível com OpenAI)**: qualquer API com `/chat/completions` (LM Studio, Together, Fireworks, xAI, vLLM…), informando a URL base.
+
+  O campo **Modelo** é editável (os nomes sugeridos são só um ponto de partida). Se o provedor não aceitar o modo de JSON pedido, o app tenta automaticamente um modo mais simples. Cada geração usa a sua conta no provedor.
 - **Motor Local (offline):** gerador procedural por palavras-chave (fogo, gelo, galáxia, neon, Halloween, oceano…), instantâneo e sem internet. Temas desconhecidos ganham uma paleta derivada do texto.
 
 Nos resultados você pode **Testar no Perfil**, **Salvar** (entra na galeria, coleção *Criações IA*), **Variar** (nova paleta/ritmo) e ver o **JSON** para colar em `js/data.js`. O "Copiar Link" inclui as criações equipadas, então quem abrir o link vê exatamente o mesmo kit.
 
-> Como a chave é usada no navegador, use o motor Claude apenas na sua própria máquina. Para publicar o site para outras pessoas, o ideal é mover a chamada para um backend.
+> A chave é usada direto do navegador de quem está gerando. Não salve chaves em computadores compartilhados e prefira chaves com limite de gastos.
 
 ### Spec gerativa (`asset.type: 'gen'`)
 
@@ -62,7 +77,8 @@ css/app.css         Interface (botões, abas, toasts, status…)
 css/cosmetics.css   Todas as animações dos cosméticos + partículas
 js/data.js          CATÁLOGO DE ITENS — edite aqui
 js/app.js           Renderização, estado, partículas e eventos
-js/ai-generator.js  Gerador IA (Claude + motor local)
+js/ai-generator.js  Gerador IA (vários provedores + motor local)
+.github/workflows/  Deploy automático no GitHub Pages
 ```
 
 ## Trocando os efeitos CSS por imagens reais

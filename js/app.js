@@ -365,7 +365,8 @@
       description: cleanText(raw.description, 160),
       tags: (Array.isArray(raw.tags) ? raw.tags : []).slice(0, 6).map((t) => cleanText(t, 24)).filter(Boolean),
       prompt: cleanText(raw.prompt, 300),
-      engine: pick(raw.engine, ['claude', 'local'], 'local'),
+      engine: /^[a-z0-9-]{2,20}$/.test(raw.engine) ? raw.engine : 'local',
+      engineLabel: cleanText(raw.engineLabel, 30),
       asset: sanitizeGenAsset(raw.asset, cat),
       _custom: true,
     };

@@ -140,23 +140,40 @@
                   <div>
                     <span class="field-label">Motor</span>
                     <div class="seg" id="gen-engine">
-                      <button type="button" data-engine="claude">✨ Claude (IA)</button>
+                      <button type="button" data-engine="ai">✨ IA (sua chave)</button>
                       <button type="button" data-engine="local">⚡ Local (offline)</button>
                     </div>
                     <p class="text-[11px] text-dc-faint mt-1.5" id="gen-engine-hint"></p>
                   </div>
                 </div>
 
-                <div id="gen-key-box" class="rounded-xl bg-dc-dark/60 border border-white/5 p-3 space-y-2">
-                  <label class="field-label !mb-1" for="gen-key">Chave da API Anthropic</label>
-                  <div class="flex gap-2">
-                    <input id="gen-key" type="password" class="dc-input font-mono text-sm" placeholder="sk-ant-..." spellcheck="false" />
-                    <button type="button" id="gen-key-toggle" class="btn btn-secondary !h-10 shrink-0" aria-label="Mostrar ou ocultar chave">👁</button>
+                <div id="gen-key-box" class="rounded-xl bg-dc-dark/60 border border-white/5 p-3 space-y-3">
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label class="field-label !mb-1" for="gen-provider">Provedor de IA</label>
+                      <select id="gen-provider" class="dc-input text-sm"></select>
+                    </div>
+                    <div>
+                      <label class="field-label !mb-1" for="gen-model">Modelo</label>
+                      <input id="gen-model" type="text" class="dc-input font-mono text-sm" spellcheck="false" />
+                    </div>
+                  </div>
+                  <div id="gen-baseurl-box">
+                    <label class="field-label !mb-1" for="gen-baseurl">URL base da API (compatível com OpenAI)</label>
+                    <input id="gen-baseurl" type="url" class="dc-input font-mono text-sm" placeholder="https://api.exemplo.com/v1" spellcheck="false" />
+                  </div>
+                  <div>
+                    <label class="field-label !mb-1" for="gen-key" id="gen-key-label">Chave da API</label>
+                    <div class="flex gap-2">
+                      <input id="gen-key" type="password" class="dc-input font-mono text-sm" spellcheck="false" />
+                      <button type="button" id="gen-key-toggle" class="btn btn-secondary !h-10 shrink-0" aria-label="Mostrar ou ocultar chave">👁</button>
+                    </div>
                   </div>
                   <label class="flex items-center gap-2 text-xs text-dc-muted cursor-pointer select-none">
                     <input type="checkbox" id="gen-key-remember" class="accent-[#5865F2]" /> Lembrar neste navegador
                   </label>
-                  <p class="text-[11px] leading-snug text-dc-faint">A chave fica só no seu navegador e é enviada direto para a API da Anthropic. Não use a chave em computadores compartilhados. Sem chave? Use o motor <b>Local</b>.</p>
+                  <p class="text-[11px] leading-snug text-dc-faint" id="gen-provider-hint"></p>
+                  <p class="text-[11px] leading-snug text-dc-faint">A chave fica só no seu navegador e vai direto para o provedor escolhido — este site não tem servidor. Não salve a chave em computadores compartilhados. Sem chave? Use o motor <b>Local</b>.</p>
                 </div>
 
                 <div class="flex flex-wrap items-center gap-3">

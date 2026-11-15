@@ -4,8 +4,10 @@
    Dois motores produzem a MESMA especificação JSON (asset.type = 'gen'),
    que o renderizador de js/app.js transforma em animação CSS/SVG:
 
-   • Claude (IA): chama a API da Anthropic direto do navegador com a chave do
-     usuário e usa saída estruturada (JSON Schema) para receber a spec.
+   • IA (qualquer provedor): Anthropic via SDK oficial, ou qualquer API
+     compatível com OpenAI (OpenAI, Gemini, OpenRouter, Groq, DeepSeek,
+     Mistral, Ollama, LM Studio…), chamada direto do navegador com a chave do
+     usuário. Pede JSON (estruturado quando o provedor suporta) com a spec.
    • Local (offline): gerador procedural por palavras-chave, sem rede.
    ========================================================================== */
 (function () {
@@ -16,9 +18,27 @@
   const { CATS, GEN } = CS;
 
   const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.3.0/+esm';
-  const MODEL = 'claude-opus-5-5';
-  const KEY_STORAGE = 'cosmetic-studio:anthropic-key';
+  const AI_STORAGE = 'cosmetic-studio:ai-settings:v1';
   const ENGINE_STORAGE = 'cosmetic-studio:engine';
+
+  /**
+   * Provedores suportados. Todos, exceto Anthropic, usam o endpoint
+   * /chat/completions no formato da OpenAI — então qualquer API compatível
+   * funciona pelo item "Outro". `format` diz como pedir JSON:
+   *   json_schema → saída estruturada estrita | json_object → modo JSON simples
+   * Os modelos são só sugestões: o campo "Modelo" é editável.
+   */
+  const PROVIDERS = {
+    anthropic: { label: 'Anthropic (Claude)', model: 'claude-opus-5-5', keyPh: 'sk-ant-...', hint: 'Usa o SDK oficial da Anthropic com saída estruturada (JSON Schema).' },
+    openai: { label: 'OpenAI', base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', format: 'json_schema', keyPh: 'sk-...', hint: 'Usa saída estruturada estrita (json_schema).' },
+    gemini: { label: 'Google Gemini', base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', format: 'json_schema', keyPh: 'AIza...', hint: 'Endpoint compatível com OpenAI do Gemini. Chave em aistudio.google.com.' },
+    openrouter: { label: 'OpenRouter (centenas de modelos)', base: 'https://openrouter.ai/api/v1', model: 'openrouter/auto', format: 'json_object', keyPh: 'sk-or-...', hint: 'Troque o modelo por qualquer um do catálogo do OpenRouter (ex.: um modelo gratuito).' },
+    groq: { label: 'Groq', base: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', format: 'json_object', keyPh: 'gsk_...', hint: 'Muito rápido; tem plano gratuito.' },
+    deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com/v1', model: 'deepseek-chat', format: 'json_object', keyPh: 'sk-...' },
+    mistral: { label: 'Mistral', base: 'https://api.mistral.ai/v1', model: 'mistral-large-latest', format: 'json_object', keyPh: '...' },
+    ollama: { label: 'Ollama (no seu PC)', base: 'http://localhost:11434/v1', model: 'llama3.1', format: 'json_object', keyPh: 'opcional', keyOptional: true, editableBase: true, hint: 'Grátis e local. Inicie o Ollama com OLLAMA_ORIGINS=* para o navegador poder acessá-lo.' },
+    custom: { label: 'Outro (compatível com OpenAI)', base: '', model: '', format: 'json_object', keyPh: 'opcional', keyOptional: true, editableBase: true, hint: 'LM Studio, Together, Fireworks, xAI, vLLM… qualquer API com /chat/completions.' },
+  };
   const CAT_TO_API = { nameplates: 'nameplate', decorations: 'decoration', effects: 'effect' };
   const API_TO_CAT = { nameplate: 'nameplates', decoration: 'decorations', effect: 'effects' };
 
@@ -139,14 +159,79 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     return sdkPromise;
   }
 
-  async function generateWithClaude(prompt, cats, apiKey) {
+  /* Formato de exemplo enviado aos provedores sem JSON Schema estrito */
+  const JSON_EXAMPLE = JSON.stringify({ items: [{
+    category: 'decoration', name: 'Coroa do Dragão', description: 'Chamas verdes orbitando o avatar.', rarity: 'Lendário', tags: ['dragão', 'fogo'],
+    palette: { primary: '#2BE38B', secondary: '#9BFF6B', accent: '#E8FFF4', background: '#04170F' },
+    base: { style: 'none', animation: 'none', speed: 'normal' }, ring: { style: 'conic' },
+    layers: [{ kind: 'ring', color: '#2BE38B', count: 'some', size: 'medium', speed: 'normal', shape: 'flame', motion: 'fall', glyphs: '' }],
+  }] });
+
+  async function generateWithOpenAICompat(prompt, cats, cfg) {
+    const preset = PROVIDERS[cfg.provider];
+    const base = (cfg.baseUrl || preset.base || '').replace(/\/+$/, '');
+    if (!/^https?:\/\//.test(base)) throw new Error('Informe a URL base da API (ex.: https://api.exemplo.com/v1).');
+    if (!cfg.model) throw new Error('Informe o nome do modelo.');
+    const system = SYSTEM_PROMPT + '\n\nResponda SOMENTE com um objeto JSON válido, sem markdown, neste formato (o exemplo mostra um item; gere um por categoria pedida, com todos os campos):\n' + JSON_EXAMPLE;
+    const user = `Tema: ${prompt}\nCategorias, nesta ordem: ${cats.map((c) => CAT_TO_API[c]).join(', ')}`;
+    const headers = { 'Content-Type': 'application/json' };
+    if (cfg.key) headers.Authorization = 'Bearer ' + cfg.key;
+    if (cfg.provider === 'openrouter') {
+      headers['HTTP-Referer'] = location.origin;
+      headers['X-Title'] = 'Cosmetic Studio';
+    }
+    const formats = { json_schema: ['json_schema', 'json_object', 'none'], json_object: ['json_object', 'none'] }[preset.format] || ['none'];
+
+    let lastErr;
+    for (const fmt of formats) {
+      const body = { model: cfg.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
+      if (fmt === 'json_schema') body.response_format = { type: 'json_schema', json_schema: { name: 'cosmeticos', strict: true, schema: OUTPUT_SCHEMA } };
+      if (fmt === 'json_object') body.response_format = { type: 'json_object' };
+      let res;
+      try {
+        res = await fetch(base + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(body) });
+      } catch (e) {
+        throw new Error(`Não foi possível conectar a ${preset.label} (rede ou CORS). ${cfg.provider === 'ollama' ? 'O Ollama está rodando com OLLAMA_ORIGINS=*?' : 'Esse endereço pode não aceitar chamadas direto do navegador.'}`);
+      }
+      const raw = await res.text();
+      let data = null;
+      try { data = JSON.parse(raw); } catch (e) { data = null; }
+      if (!res.ok) {
+        const msg = (data && (data.error?.message || data.message || (typeof data.error === 'string' && data.error))) || raw.slice(0, 160);
+        // O provedor não suporta esse modo de JSON? tenta o próximo, mais simples
+        if (res.status === 400 && fmt !== 'none' && /response_format|json_schema|json_object|structured|schema/i.test(msg)) {
+          lastErr = new Error(msg);
+          continue;
+        }
+        throw httpError(res.status, msg, preset.label);
+      }
+      const choice = data && data.choices && data.choices[0];
+      if (!choice) throw new Error('Resposta vazia do provedor.');
+      if (choice.message && choice.message.refusal) throw new Error('A IA recusou esse tema. Tente descrevê-lo de outro jeito.');
+      if (choice.finish_reason === 'length') throw new Error('A resposta da IA veio incompleta. Tente gerar menos categorias de uma vez.');
+      let content = choice.message && choice.message.content;
+      if (Array.isArray(content)) content = content.map((part) => part.text || '').join('');
+      return itemsFromText(content, prompt, cats, { id: cfg.provider, label: preset.label.replace(/\s*\(.*\)$/, '') + (cfg.model ? ' · ' + cfg.model : '') });
+    }
+    throw lastErr || new Error('O provedor não aceitou o pedido.');
+  }
+
+  function httpError(status, msg, label) {
+    if (status === 401 || status === 403) return new Error(`Chave inválida ou sem permissão em ${label}.`);
+    if (status === 404) return new Error(`Modelo ou endereço não encontrado em ${label}. Confira o nome do modelo.`);
+    if (status === 429) return new Error(`Limite de uso atingido em ${label}. Aguarde um pouco e tente de novo.`);
+    if (status >= 500) return new Error(`${label} está instável agora. Tente novamente em instantes.`);
+    return new Error(`${label} recusou o pedido: ${msg || 'erro ' + status}`);
+  }
+
+  async function generateWithClaude(prompt, cats, apiKey, model) {
     const mod = await loadSdk();
     const Anthropic = mod.default;
     const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
     let response;
     try {
       response = await client.beta.messages.create({
-        model: MODEL,
+        model: model || PROVIDERS.anthropic.model,
         max_tokens: 16000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
@@ -168,16 +253,27 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
       throw new Error('A resposta da IA veio incompleta. Tente gerar menos categorias de uma vez.');
     }
     const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error('A IA respondeu em um formato inesperado. Tente novamente.');
+    return itemsFromText(text, prompt, cats, { id: 'anthropic', label: 'Claude' });
+  }
+
+  /** Extrai o JSON da resposta (aceita blocos ```json e texto em volta). */
+  function parseJsonLoose(text) {
+    const t = String(text || '').replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, '').trim();
+    try { return JSON.parse(t); } catch (e) { /* tenta recortar */ }
+    const a = t.indexOf('{'), b = t.lastIndexOf('}');
+    if (a >= 0 && b > a) {
+      try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { /* cai no erro abaixo */ }
     }
-    const items = Array.isArray(data.items) ? data.items : [];
+    throw new Error('A IA respondeu em um formato inesperado. Tente novamente ou use outro modelo.');
+  }
+
+  function itemsFromText(text, prompt, cats, provider) {
+    const data = parseJsonLoose(text);
+    const items = Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
     const out = [];
-    for (const raw of items) {
-      const cat = API_TO_CAT[raw.category];
+    for (const [i, raw] of items.entries()) {
+      if (!raw || typeof raw !== 'object') continue;
+      const cat = API_TO_CAT[raw.category] || (!raw.category ? cats[i] : null);
       if (!cat || !cats.includes(cat)) continue;
       out.push({
         cat,
@@ -187,7 +283,8 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
           rarity: raw.rarity,
           tags: raw.tags,
           prompt,
-          engine: 'claude',
+          engine: provider.id,
+          engineLabel: provider.label,
           asset: { palette: raw.palette, base: raw.base, ring: raw.ring, layers: raw.layers },
         },
       });
@@ -434,7 +531,41 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
   /* ------------------------------------------------------------------ */
   /* Interface                                                           */
   /* ------------------------------------------------------------------ */
-  const ui = { engine: store.get(ENGINE_STORAGE) || 'claude', busy: false, results: [] };
+  const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', busy: false, results: [] };
+
+  /* Configuração por provedor: { provider, models: {}, baseUrls: {}, keys: {} } */
+  function loadAiSettings() {
+    let cfg = {};
+    try { cfg = JSON.parse(store.get(AI_STORAGE) || '{}') || {}; } catch (e) { cfg = {}; }
+    return {
+      provider: PROVIDERS[cfg.provider] ? cfg.provider : 'anthropic',
+      models: cfg.models || {},
+      baseUrls: cfg.baseUrls || {},
+      keys: cfg.keys || {},
+      remember: !!cfg.remember,
+    };
+  }
+  const ai = loadAiSettings();
+  function persistAiSettings() {
+    store.set(AI_STORAGE, JSON.stringify({
+      provider: ai.provider, models: ai.models, baseUrls: ai.baseUrls, remember: ai.remember,
+      keys: ai.remember ? ai.keys : {},
+    }));
+  }
+
+  function renderProvider() {
+    const p = PROVIDERS[ai.provider];
+    $('#gen-provider').value = ai.provider;
+    $('#gen-model').value = ai.models[ai.provider] ?? p.model;
+    $('#gen-model').placeholder = p.model || 'nome-do-modelo';
+    $('#gen-baseurl').value = ai.baseUrls[ai.provider] ?? p.base ?? '';
+    $('#gen-baseurl-box').classList.toggle('hidden', !p.editableBase);
+    $('#gen-key').value = ai.keys[ai.provider] || '';
+    $('#gen-key').placeholder = p.keyPh || '';
+    $('#gen-key-label').textContent = `Chave da API — ${p.label}${p.keyOptional ? ' (opcional)' : ''}`;
+    $('#gen-key-remember').checked = ai.remember;
+    $('#gen-provider-hint').textContent = p.hint || '';
+  }
 
   function selectedCats() {
     return $$('#gen-cats input:checked').map((i) => i.value);
@@ -442,9 +573,9 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
 
   function renderEngine() {
     $$('#gen-engine button').forEach((b) => b.classList.toggle('is-active', b.dataset.engine === ui.engine));
-    $('#gen-key-box').classList.toggle('hidden', ui.engine !== 'claude');
-    $('#gen-engine-hint').textContent = ui.engine === 'claude'
-      ? 'Usa o modelo Claude Opus 5.5 com sua chave da API. Cada geração consome créditos da sua conta.'
+    $('#gen-key-box').classList.toggle('hidden', ui.engine !== 'ai');
+    $('#gen-engine-hint').textContent = ui.engine === 'ai'
+      ? 'Use a IA que preferir: Claude, GPT, Gemini, Llama, DeepSeek, Mistral, Ollama… Cada geração usa a sua conta no provedor.'
       : 'Gerador procedural por palavras-chave: instantâneo, grátis e sem internet.';
   }
 
@@ -467,7 +598,10 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
       const card = CS.buildCard(cat, item, { variant: 'gen' });
       card.style.animationDelay = i * 60 + 'ms';
       const prev = card.querySelector('.card-preview');
-      prev.insertAdjacentHTML('beforeend', `<span class="engine-badge">${item.engine === 'claude' ? '✨ Claude' : '⚡ Local'} · ${CATS[cat].singular}</span>`);
+      const badge = document.createElement('span');
+      badge.className = 'engine-badge';
+      badge.textContent = `${item.engine === 'local' ? '⚡ Local' : '✨ ' + (item.engineLabel || 'IA')} · ${CATS[cat].singular}`;
+      prev.appendChild(badge);
       frag.appendChild(card);
     });
     box.appendChild(frag);
@@ -507,18 +641,26 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     }
     if (!cats.length) return CS.toast('Escolha pelo menos uma categoria.', 'danger');
 
-    if (ui.engine === 'claude') {
-      const key = $('#gen-key').value.trim();
-      if (!key) {
+    if (ui.engine === 'ai') {
+      const preset = PROVIDERS[ai.provider];
+      const cfg = {
+        provider: ai.provider,
+        key: $('#gen-key').value.trim(),
+        model: $('#gen-model').value.trim() || preset.model,
+        baseUrl: $('#gen-baseurl').value.trim() || preset.base,
+      };
+      if (!cfg.key && !preset.keyOptional) {
         $('#gen-key').focus();
-        return CS.toast('Cole sua chave da API ou troque para o motor Local.', 'danger');
+        return CS.toast(`Cole sua chave da ${preset.label} ou troque para o motor Local.`, 'danger');
       }
-      if ($('#gen-key-remember').checked) store.set(KEY_STORAGE, key);
-      else store.del(KEY_STORAGE);
-      setBusy(true, 'A IA está desenhando o seu kit… isso leva alguns segundos.');
+      ai.keys[ai.provider] = cfg.key;
+      persistAiSettings();
+      setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está desenhando o seu kit… isso leva alguns segundos.`);
       showSkeletons(cats.length);
       try {
-        const list = await generateWithClaude(prompt, cats, key);
+        const list = ai.provider === 'anthropic'
+          ? await generateWithClaude(prompt, cats, cfg.key, cfg.model)
+          : await generateWithOpenAICompat(prompt, cats, cfg);
         $$('#gen-results .gen-skeleton').forEach((n) => n.remove());
         addResults(list);
         CS.toast(`${list.length} ${list.length === 1 ? 'cosmético gerado' : 'cosméticos gerados'} pela IA!`, 'success');
@@ -626,11 +768,36 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('#gen-form').requestSubmit();
     });
 
-    const savedKey = store.get(KEY_STORAGE);
-    if (savedKey) {
-      $('#gen-key').value = savedKey;
-      $('#gen-key-remember').checked = true;
+    const sel = $('#gen-provider');
+    for (const id in PROVIDERS) {
+      const o = document.createElement('option');
+      o.value = id;
+      o.textContent = PROVIDERS[id].label;
+      sel.appendChild(o);
     }
+    sel.addEventListener('change', () => {
+      ai.provider = sel.value;
+      persistAiSettings();
+      renderProvider();
+      if (ai.provider === 'anthropic') loadSdk().catch(() => {});
+    });
+    $('#gen-model').addEventListener('change', (e) => {
+      ai.models[ai.provider] = e.target.value.trim();
+      persistAiSettings();
+    });
+    $('#gen-baseurl').addEventListener('change', (e) => {
+      ai.baseUrls[ai.provider] = e.target.value.trim();
+      persistAiSettings();
+    });
+    $('#gen-key').addEventListener('change', (e) => {
+      ai.keys[ai.provider] = e.target.value.trim();
+      persistAiSettings();
+    });
+    $('#gen-key-remember').addEventListener('change', (e) => {
+      ai.remember = e.target.checked;
+      persistAiSettings();
+    });
+    renderProvider();
     $('#gen-key-toggle').addEventListener('click', () => {
       const i = $('#gen-key');
       i.type = i.type === 'password' ? 'text' : 'password';
@@ -642,7 +809,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
       ui.engine = b.dataset.engine;
       store.set(ENGINE_STORAGE, ui.engine);
       renderEngine();
-      if (ui.engine === 'claude') loadSdk().catch(() => {});
+      if (ui.engine === 'ai' && ai.provider === 'anthropic') loadSdk().catch(() => {});
     });
 
     $('#gen-form').addEventListener('submit', onGenerate);
@@ -653,7 +820,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     });
 
     document.addEventListener('cs:generator-open', () => {
-      if (ui.engine === 'claude') loadSdk().catch(() => {});
+      if (ui.engine === 'ai' && ai.provider === 'anthropic') loadSdk().catch(() => {});
       renderResults();
     });
 
