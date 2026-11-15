@@ -98,15 +98,18 @@
           <!-- Filtros por coleção -->
           <div class="flex items-center gap-2 overflow-x-auto pb-2 mb-4 -mx-1 px-1" id="collection-chips" aria-label="Filtrar por coleção"></div>
 
-          <div class="flex items-center justify-between mb-3" id="results-row">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3" id="results-row">
             <div class="flex items-center gap-3 min-w-0">
               <p class="text-xs font-bold uppercase tracking-wide text-dc-muted" id="results-label"></p>
               <a id="shop-attribution" class="hidden text-[11px] text-[#00A8FC] hover:underline whitespace-nowrap" href="https://itemshop.gg/discord" target="_blank" rel="noopener">Data from itemshop.gg</a>
             </div>
+            <div class="flex items-center gap-2">
+            <button type="button" id="btn-autoanim" class="btn btn-sm btn-primary" aria-pressed="true">⏸ Animação automática</button>
             <button type="button" id="btn-import" class="btn btn-sm btn-secondary">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Importar do Discord
             </button>
+            </div>
           </div>
 
           <!-- Grid -->

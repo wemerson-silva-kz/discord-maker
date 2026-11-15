@@ -1126,6 +1126,7 @@ ${sparks}
       frag.appendChild(card);
     });
     box.appendChild(frag);
+    if (CS.observeCards) CS.observeCards(box);
     $('#gen-empty').classList.toggle('hidden', ui.results.length > 0);
     $('#gen-clear').classList.toggle('hidden', ui.results.length === 0);
     $('#gen-results-label').textContent = ui.results.length ? `Resultados — ${ui.results.length} ${ui.results.length === 1 ? 'item' : 'itens'}` : 'Resultados';

@@ -94,6 +94,7 @@ A galeria também mostra itens reais carregados direto do CDN do Discord (coleç
   ```bash
   node tools/measure-apng.mjs intro=<url-da-entrada> loop=<url-do-loop>
   ```
+- **Animação na galeria**: molduras, nameplates e itens temáticos animam sozinhos quando o card está visível na tela e param ao sair; o APNG animado só é baixado nessa hora. O botão **⏸ Animação automática / ▶ Animar na galeria** liga ou desliga (aí anima só no hover). No celular, vale sempre só para os cards visíveis.
 - **Pacotes (bundles)**: cole o ID de um pacote da loja (ex.: `1476292494755889153`) no importador para ver o que ele contém e usar **Testar pacote completo**, que equipa a moldura, a nameplate e o efeito de uma vez.
 - **Efeitos da loja animados (config oficial)**: a API pública do Discord `GET discord.com/api/v9/collectibles-products/<sku>` responde sem login e com CORS, e traz a configuração completa do efeito: camadas de entrada e loop com `start`, `duration`, `loop`, `loopDelay` e `zIndex`, a versão de movimento reduzido e a miniatura. Ao passar o mouse no card ou equipar um efeito da loja, o app busca essa config (só sob demanda, com cache de 7 dias) e toca as camadas como o app do Discord. Se o sistema pede movimento reduzido, mostra a versão estática oficial. O mesmo endpoint dá o conteúdo exato dos **pacotes**.
 - Atenção: atrasos de quadro de 10 ms ou menos são exibidos como 100 ms pelos navegadores. O card avisa quando isso acontece (FPS nominal × efetivo).
