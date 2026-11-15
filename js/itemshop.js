@@ -24,7 +24,7 @@
 
   const BASE = 'https://itemshop.gg/api/v1';
   const TTL = 2 * 60 * 1000;
-  const PREFIX = 'cosmetic-studio:itemshop:v2:';
+  const PREFIX = 'cosmetic-studio:itemshop:v3:';
 
   class ItemShopError extends Error {
     constructor(status, code, message, retryAfter) {

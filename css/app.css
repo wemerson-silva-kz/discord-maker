@@ -653,3 +653,6 @@ input[type='color'].swatch::-moz-color-swatch { border: none; border-radius: 6px
 .ref-row.is-on { border-color: var(--dc-blurple); background: rgba(88, 101, 242, .15); }
 /* Nos cards com entrada/loop lado a lado, a etiqueta do motor vai para o topo */
 .card-preview:has(.mini-profile--half) .engine-badge { top: 6px; bottom: auto; left: 6px; z-index: 45; }
+
+.metrics-badge.is-action { cursor: pointer; color: #FEE75C; pointer-events: auto; }
+.metrics-badge.is-action:hover { background: rgba(88, 101, 242, .85); color: #fff; }
