@@ -325,12 +325,13 @@
     layer.appendChild(img);
     if (phased) return runPhases(layer, img, a);
     // Pausado com estado estático: só baixa o APNG animado quando alguém passar o mouse
-    if (a.staticSrc && layer.classList.contains('is-paused') && !layer._userTriggered && !NO_HOVER) {
+    if (a.staticSrc && layer.classList.contains('is-paused') && !layer._userTriggered) {
+      // Só baixa o APNG animado quando o card aparece na tela (galeria) ou no hover
       layer._activate = () => { if (!img.getAttribute('src')) img.src = a.src; };
       requestAnimationFrame(() => {
         const host = layer.closest('.hover-host');
         if (host) host.addEventListener('mouseenter', layer._activate, { once: true });
-        else layer._activate();
+        if (!layer.closest('.cosmetic-card') && (!host || NO_HOVER)) layer._activate();
         if (layer.closest('.force-anim')) layer._activate();
       });
     } else img.src = a.src;
@@ -983,6 +984,34 @@
   /* ---------------------------------------------------------------- */
   let state = { ...DEFAULT_STATE };
   const PAGE = 48;
+  const AUTO_KEY = 'cosmetic-studio:auto-anim';
+  let autoAnim = (() => { try { return localStorage.getItem(AUTO_KEY) !== '0'; } catch (e) { return true; } })();
+  /**
+   * Anima sozinho só os cards visíveis (molduras, nameplates e itens temáticos):
+   * entrou na tela → anima (e baixa o APNG, se ainda não baixou); saiu → para.
+   * No celular (sem hover) vale sempre; no desktop, segue o interruptor.
+   */
+  const cardObserver = 'IntersectionObserver' in window ? new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      const card = e.target;
+      const on = e.isIntersecting && (autoAnim || NO_HOVER);
+      card.classList.toggle('force-anim', on);
+      if (on) card.querySelectorAll('.deco-layer, .cosmetic-layer').forEach((l) => l._activate && l._activate());
+    }
+  }, { rootMargin: '120px 0px' }) : null;
+  function observeCards(root) {
+    if (!cardObserver) return;
+    root.querySelectorAll('.cosmetic-card').forEach((c) => cardObserver.observe(c));
+  }
+  function renderAutoAnim() {
+    const b = $('#btn-autoanim');
+    if (!b) return;
+    b.setAttribute('aria-pressed', String(autoAnim));
+    b.classList.toggle('btn-primary', autoAnim);
+    b.classList.toggle('btn-secondary', !autoAnim);
+    b.textContent = autoAnim ? '⏸ Animação automática' : '▶ Animar na galeria';
+    b.title = autoAnim ? 'Os cards visíveis animam sozinhos. Clique para animar só ao passar o mouse.' : 'Animar sozinhos os cards que estão na tela';
+  }
   const ui = { tab: 'nameplates', query: '', collection: 'Todas', listMode: 'members', limit: PAGE, pageKey: '' };
 
   function sanitizeState(s) {
@@ -1360,7 +1389,9 @@
       c.style.animationDelay = Math.min(i, 24) * 30 + 'ms';
       frag.appendChild(c);
     });
+    if (cardObserver) cardObserver.disconnect();
     grid.appendChild(frag);
+    observeCards(grid);
     const more = $('#grid-more');
     more.classList.toggle('hidden', items.length <= ui.limit);
     more.textContent = `Mostrar mais (${Math.max(0, items.length - ui.limit)} restantes)`;
@@ -1846,6 +1877,14 @@
     });
     if (/Mac|iPhone|iPad/.test(navigator.platform || '')) $('#kbd-hint').textContent = '⌘ K';
 
+    renderAutoAnim();
+    $('#btn-autoanim').addEventListener('click', () => {
+      autoAnim = !autoAnim;
+      try { localStorage.setItem(AUTO_KEY, autoAnim ? '1' : '0'); } catch (e) { /* ok */ }
+      renderAutoAnim();
+      // Reavalia os cards visíveis
+      if (cardObserver) $$('#grid .cosmetic-card').forEach((c) => { cardObserver.unobserve(c); cardObserver.observe(c); });
+    });
     $('#grid-more').addEventListener('click', () => {
       ui.limit += PAGE;
       renderGrid();
@@ -2006,6 +2045,7 @@
     CATS, DATA, GEN, buildAsset, buildCard, toast, syncUserBits, updateCardStates, findItem,
     sanitizeGenItem, sanitizeCustomItem, registerCustom, saveCustom, deleteCustom, publicItem,
     loadApng, getMetrics, canFetch, metricsLabel, renderGallery, addCatalogItems, catalogReady,
+    observeCards,
     sanitizeSvg, SVG_SIZE, parseApng, parseWebp, introOf, mediaProxyUrl,
     setShopAttribution(url, terms, shopDate, stale) {
       const a = $('#shop-attribution');
@@ -2022,7 +2062,9 @@
       const card = document.querySelector(`#grid .cosmetic-card[data-cat="${cat}"][data-id="${CSS.escape(id)}"]`);
       if (card) {
         const fresh = buildCard(cat, it);
+        if (cardObserver) cardObserver.unobserve(card);
         card.replaceWith(fresh);
+        if (cardObserver) cardObserver.observe(fresh);
         syncUserBits(fresh);
         updateCardStates();
         if (play) fresh.querySelector('.cosmetic-layer')?._replay?.();
