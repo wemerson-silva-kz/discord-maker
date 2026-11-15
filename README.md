@@ -95,7 +95,7 @@ A galeria também mostra itens reais carregados direto do CDN do Discord (coleç
   node tools/measure-apng.mjs intro=<url-da-entrada> loop=<url-do-loop>
   ```
 - **Pacotes (bundles)**: cole o ID de um pacote da loja (ex.: `1476292494755889153`) no importador para ver o que ele contém e usar **Testar pacote completo**, que equipa a moldura, a nameplate e o efeito de uma vez.
-- **Efeitos da loja**: a API pública só traz a miniatura estática dos efeitos de perfil. Clique em **🎬 animar** no card do efeito e cole os hashes da entrada e do loop (o importador explica como achá-los na aba Rede do navegador, abrindo a loja do Discord). O item da loja passa a ser animado e fica salvo.
+- **Efeitos da loja animados (config oficial)**: a API pública do Discord `GET discord.com/api/v9/collectibles-products/<sku>` responde sem login e com CORS, e traz a configuração completa do efeito: camadas de entrada e loop com `start`, `duration`, `loop`, `loopDelay` e `zIndex`, a versão de movimento reduzido e a miniatura. Ao passar o mouse no card ou equipar um efeito da loja, o app busca essa config (só sob demanda, com cache de 7 dias) e toca as camadas como o app do Discord. Se o sistema pede movimento reduzido, mostra a versão estática oficial. O mesmo endpoint dá o conteúdo exato dos **pacotes**.
 - Atenção: atrasos de quadro de 10 ms ou menos são exibidos como 100 ms pelos navegadores. O card avisa quando isso acontece (FPS nominal × efetivo).
 - **Medidor de FPS**: o botão **FPS** no popout mostra a taxa real de quadros e a fase atual (entrada/loop). Ao equipar um efeito, o app mede 1,5 s e avisa se ficar abaixo de 40 fps.
 - **Gerador IA**: os efeitos gerados também têm entrada (até 6 s: burst, sweep, rise, zoom, curtain ou flash) seguida do loop.

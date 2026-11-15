@@ -182,6 +182,87 @@
     return { entries, bundles };
   }
 
+  /* ---------------- Produto oficial (API pública do Discord) ----------------
+     GET discord.com/api/v9/collectibles-products/<sku> responde sem login e com
+     CORS. Traz a config completa do efeito (camadas de entrada/loop com tempos)
+     e o conteúdo exato dos pacotes. Buscado só sob demanda e guardado 7 dias. */
+  const PRODUCT_API = 'https://discord.com/api/v9/collectibles-products/';
+  const PRODUCT_CACHE = 'cosmetic-studio:discord-products:v1';
+  const PRODUCT_TTL = 7 * 24 * 3600 * 1000;
+  const productInflight = new Map();
+  let productBlockedUntil = 0;
+  const readProducts = () => { try { return JSON.parse(localStorage.getItem(PRODUCT_CACHE) || '{}') || {}; } catch (e) { return {}; } };
+  function saveProduct(sku, compact) {
+    const all = readProducts();
+    all[sku] = { t: Date.now(), ...compact };
+    const keys = Object.keys(all);
+    if (keys.length > 400) keys.sort((a, b) => all[a].t - all[b].t).slice(0, keys.length - 400).forEach((k) => delete all[k]);
+    try { localStorage.setItem(PRODUCT_CACHE, JSON.stringify(all)); } catch (e) { /* cheio */ }
+  }
+  /** Só o que usamos: camadas do efeito e conteúdo do pacote. */
+  function compactProduct(p) {
+    const out = { name: p.name || '' };
+    const fx = (p.items || []).find((it) => it.type === 1 && Array.isArray(it.effects));
+    if (fx) {
+      out.effect = {
+        layers: fx.effects.map((e) => ({ src: e.src, loop: !!e.loop, duration: e.duration, start: e.start, loopDelay: e.loopDelay, zIndex: e.zIndex })),
+        thumb: fx.thumbnailPreviewSrc || '',
+        reduced: fx.reducedMotionSrc || '',
+      };
+    }
+    if ((p.items || []).length > 1 || p.type === 1000) out.contents = (p.items || []).map((it) => ({ type: it.type, sku: String(it.sku_id || '') }));
+    return out;
+  }
+  async function fetchProduct(sku) {
+    if (!/^\d{15,21}$/.test(sku)) throw new Error('SKU inválido');
+    const cached = readProducts()[sku];
+    if (cached && Date.now() - cached.t < PRODUCT_TTL) return cached;
+    if (Date.now() < productBlockedUntil) throw new Error('limite de requisições do Discord; tente em instantes');
+    if (productInflight.has(sku)) return productInflight.get(sku);
+    const job = (async () => {
+      const res = await fetch(PRODUCT_API + sku, { credentials: 'omit' });
+      if (res.status === 429) {
+        let secs = 30;
+        try { secs = Math.ceil((await res.json()).retry_after || 30); } catch (e) { /* padrão */ }
+        productBlockedUntil = Date.now() + secs * 1000;
+        throw new Error(`limite de requisições do Discord; tente em ${secs} s`);
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const compact = compactProduct(await res.json());
+      saveProduct(sku, compact);
+      return compact;
+    })().finally(() => productInflight.delete(sku));
+    productInflight.set(sku, job);
+    return job;
+  }
+  const effectAsset = (fx) => ({ type: 'image', layers: fx.layers, staticSrc: fx.thumb || undefined, reduced: fx.reduced || undefined });
+
+  /** Dá a um efeito da loja a animação oficial (camadas do Discord). */
+  async function animateShopEffect(id, { play = false } = {}) {
+    const it = CS.findItem('effects', id);
+    if (!it || it.asset.layers) return;
+    const sku = id.replace(/^dc-fx-/, '');
+    try {
+      const prod = await fetchProduct(sku);
+      if (!prod.effect) return;
+      const clean = CS.sanitizeCustomItem('effects', { id: it.id, name: it.name, collection: it.collection, asset: effectAsset(prod.effect) });
+      if (clean) CS.updateAsset('effects', id, clean.asset, { play });
+    } catch (e) {
+      console.warn('[Discord] efeito', sku, e.message);
+    }
+  }
+  /** Ao carregar a loja: aplica as configs já guardadas (sem rede). */
+  function applyCachedEffects(entries) {
+    const all = readProducts();
+    for (const e of entries) {
+      if (e.cat !== 'effects') continue;
+      const c = all[e.raw.id.replace(/^dc-fx-/, '')];
+      if (c && c.effect && Date.now() - c.t < PRODUCT_TTL) e.raw.asset = effectAsset(c.effect);
+    }
+  }
+  document.addEventListener('cs:need-effect', (ev) => animateShopEffect(ev.detail.id, { play: !!ev.detail.hover }));
+  document.addEventListener('cs:equip', (ev) => { if (ev.detail.cat === 'effects') animateShopEffect(ev.detail.id); });
+
   /* ---------------- Pacotes (bundles) da loja ---------------- */
   let shopBundles = [];
   /** Itens da loja que formam o pacote: mesma coleção e mesmo nome-base ("X Bundle" → "X"). */
@@ -201,6 +282,7 @@
     try {
       const res = await window.ItemShop.shop('discord', shopToEntries);
       const value = Array.isArray(res.value) ? { entries: res.value, bundles: [] } : res.value; // cache antigo
+      applyCachedEffects(value.entries);
       CS.addCatalogItems(value.entries);
       shopBundles = value.bundles || [];
       CS.setShopAttribution(res.meta && res.meta.attribution && res.meta.attribution.url, res.meta && res.meta.terms, res.shopDate, res.stale);
@@ -360,8 +442,22 @@
         box.appendChild(d);
       });
     }
-    function showBundle(box, b) {
-      const parts = bundleContents(b);
+    async function showBundle(box, b) {
+      let parts = bundleContents(b);
+      box.textContent = 'Consultando o pacote no Discord…';
+      try {
+        const prod = await fetchProduct(b.id);
+        if (prod.contents && prod.contents.length) {
+          const byType = { 0: ['decorations', 'dc-deco-'], 2: ['nameplates', 'dc-np-'], 1: ['effects', 'dc-fx-'] };
+          const exact = {};
+          for (const c of prod.contents) {
+            const m = byType[c.type];
+            if (m) exact[m[0]] = CS.findItem(m[0], m[1] + c.sku) || null;
+          }
+          exact.frames = parts.frames; // frames: pelo nome (o tipo não aparece nos pacotes analisados)
+          parts = exact;
+        }
+      } catch (e) { /* segue com a associação pelo nome */ }
       const names = { decorations: 'Moldura', nameplates: 'Nameplate', effects: 'Efeito', frames: 'Frame' };
       box.innerHTML = '';
       const title = document.createElement('div');
@@ -455,5 +551,5 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-  window.CosmeticImport = { parseRef, catalogEntryToItem, openForEffect, findBundle: (id) => findBundle(id) };
+  window.CosmeticImport = { parseRef, catalogEntryToItem, openForEffect, findBundle: (id) => findBundle(id), fetchProduct, animateShopEffect };
 })();

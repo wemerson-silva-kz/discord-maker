@@ -307,6 +307,7 @@
       layer.appendChild(img);
       return;
     }
+    if (cat === 'effects' && a.layers) return runLayers(layer, a);
     if (cat === 'decorations') layer.classList.add('is-img');
     const phased = !!(a.intro || a.loop);
     if (a.staticSrc) {
@@ -335,6 +336,55 @@
     } else img.src = a.src;
   }
   const NO_HOVER = window.matchMedia && window.matchMedia('(hover: none)').matches;
+
+  /**
+   * Efeito oficial do Discord: cada camada aparece em `start` ms e fica `duration` ms;
+   * camadas `loop` voltam após `loopDelay` ms. Mesma lógica do app do Discord.
+   */
+  const REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function runLayers(layer, a) {
+    const gen = layer._gen;
+    const paused = layer.classList.contains('is-paused') && !layer._userTriggered;
+    if (paused || REDUCED_MOTION) {
+      // Card parado (ou movimento reduzido): miniatura/versão estática oficial
+      const img = el('img', 'fx-img');
+      img.alt = '';
+      img.loading = 'lazy';
+      img.src = (REDUCED_MOTION && a.reduced) || a.staticSrc || a.reduced || a.layers[a.layers.length - 1].src;
+      layer.appendChild(img);
+      layer.dataset.phase = 'loop';
+      return;
+    }
+    const replay = layer._userTriggered ? ++replaySeq : 0;
+    const visible = new Set();
+    const setPhase = () => {
+      const intro = [...visible].some((L) => !L.loop);
+      layer.dataset.phase = intro ? 'intro' : 'loop';
+    };
+    [...a.layers].sort((x, y) => x.zIndex - y.zIndex).forEach((L) => {
+      const img = el('img', 'fx-img fx-layer');
+      img.alt = '';
+      img.style.zIndex = String(L.zIndex);
+      img.style.opacity = '0';
+      layer.appendChild(img);
+      const later = (fn, ms) => layer._timers.push(setTimeout(() => { if (layer._gen === gen) fn(); }, ms));
+      const show = () => {
+        // Camada única: carrega na 1ª vez (num replay, URL nova para recomeçar do 1º quadro)
+        if (!img.getAttribute('src')) img.src = replay ? L.src + (L.src.includes('?') ? '&' : '?') + 'r=' + replay : L.src;
+        img.style.opacity = '1';
+        visible.add(L);
+        setPhase();
+        later(() => {
+          visible.delete(L);
+          setPhase();
+          if (!L.loop) { img.style.opacity = '0'; return; }
+          if (L.loopDelay > 0) { img.style.opacity = '0'; later(show, L.loopDelay); } else show();
+        }, L.duration);
+      };
+      later(show, L.start);
+    });
+    layer.dataset.phase = 'intro';
+  }
 
   /** Efeito de perfil: toca a ENTRADA uma vez e depois troca para o LOOP. */
   async function runPhases(layer, img, a) {
@@ -681,11 +731,20 @@
   function sanitizeImageItem(cat, raw) {
     const a = raw.asset || {};
     const asset = { type: 'image' };
-    for (const k of ['src', 'staticSrc', 'intro', 'loop']) {
+    for (const k of ['src', 'staticSrc', 'intro', 'loop', 'reduced']) {
       const v = httpsUrl(a[k]);
       if (v) asset[k] = v;
     }
-    if (cat === 'effects' ? !(asset.intro || asset.loop || asset.src) : !asset.src) return null;
+    if (cat === 'effects' && Array.isArray(a.layers)) {
+      // Config oficial do Discord: camadas com início, duração, loop e pausa entre loops
+      const ms = (v) => (Number.isFinite(+v) ? Math.round(Math.min(60000, Math.max(0, +v))) : 0);
+      const layers = a.layers.slice(0, 8).map((l) => ({
+        src: httpsUrl(l && l.src), loop: !!(l && l.loop), duration: ms(l && l.duration), start: ms(l && l.start),
+        loopDelay: ms(l && l.loopDelay), zIndex: Number.isFinite(+(l && l.zIndex)) ? Math.round(+l.zIndex) : 100,
+      })).filter((l) => l.src && l.duration > 0);
+      if (layers.length) asset.layers = layers;
+    }
+    if (cat === 'effects' ? !(asset.intro || asset.loop || asset.src || asset.layers) : !asset.src) return null;
     if (a.meta && typeof a.meta === 'object') {
       const meta = {};
       for (const k of ['src', 'intro', 'loop']) {
@@ -1139,9 +1198,13 @@
       return wrap;
     }
     const wrap = el('div', 'card-preview relative h-40 flex items-center justify-center overflow-hidden');
-    const hasPhases = cat === 'effects' && (a.intro || a.loop || (a.type === 'gen' && a.intro && a.intro.style !== 'none'));
+    const hasPhases = cat === 'effects' && (a.intro || a.loop || a.layers || (a.type === 'gen' && a.intro && a.intro.style !== 'none'));
     if (hasPhases) {
       wrap.addEventListener('mouseenter', () => wrap.querySelector('.cosmetic-layer')?._replay?.());
+    }
+    if (cat === 'effects' && item.source === 'shop' && !a.layers) {
+      // Efeito da loja ainda só com miniatura: pede a configuração oficial (camadas animadas)
+      wrap.addEventListener('mouseenter', () => document.dispatchEvent(new CustomEvent('cs:need-effect', { detail: { id: item.id, hover: true } })), { once: true });
     }
     if (cat !== 'frames') wrap.insertAdjacentHTML('beforeend', `<span class="hover-hint"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Passe o mouse</span>`);
     if (cat === 'nameplates') {
@@ -1233,14 +1296,27 @@
       return;
     }
     preview.appendChild(badge);
+    if (cat === 'effects' && a.layers) { badge.textContent = layersLabel(a.layers); badge.title = layersTitle(a.layers); return; }
     if (item.source === 'shop' && !a.meta) {
-      if (cat === 'effects' && !a.intro) { badge.textContent = 'prévia estática · 🎬 animar'; badge.classList.add('is-action'); badge.dataset.animate = item.id; return; }
+      if (cat === 'effects' && a.layers) { badge.textContent = layersLabel(a.layers); badge.title = layersTitle(a.layers); return; }
+      if (cat === 'effects' && !a.intro) { badge.textContent = '▶ passe o mouse: animação oficial'; return; }
       // Itens da loja: só baixa o APNG para medir quando o mouse passa no card
       badge.textContent = '📏 passe o mouse para medir';
       preview.addEventListener('mouseenter', () => measureInto(badge, cat, a), { once: true });
       return;
     }
     measureInto(badge, cat, a);
+  }
+
+  /** Resumo das camadas oficiais: "Entrada 5.8s → loop 4.1s (+4.5s)". */
+  function layersLabel(layers) {
+    const intro = layers.filter((l) => !l.loop);
+    const loop = layers.filter((l) => l.loop);
+    const s = (v) => (v / 1000).toFixed(1) + 's';
+    return [intro.length ? `Entrada ${s(Math.max(...intro.map((l) => l.start + l.duration)))}` : '', loop.length ? `loop ${s(loop[0].duration)}${loop[0].loopDelay ? ' (+' + s(loop[0].loopDelay) + ' pausa)' : ''}` : ''].filter(Boolean).join(' → ');
+  }
+  function layersTitle(layers) {
+    return 'Configuração oficial do Discord:\n' + layers.map((l, i) => `Camada ${i + 1}: ${l.loop ? 'loop' : 'toca 1×'}, início ${l.start} ms, duração ${l.duration} ms${l.loop ? ', pausa ' + l.loopDelay + ' ms' : ''}, z ${l.zIndex}`).join('\n');
   }
 
   function measureInto(badge, cat, a) {
@@ -1629,6 +1705,7 @@
     const removing = state[key] === id;
     state[key] = removing ? null : id;
     commit();
+    if (!removing) document.dispatchEvent(new CustomEvent('cs:equip', { detail: { cat, id } }));
     if (removing) toast(`${CATS[cat].singular} “${item.name}” removid${CATS[cat].g} do perfil.`, 'info');
     else {
       toast(`${CATS[cat].singular} “${item.name}” aplicad${CATS[cat].g} ao perfil!`, 'success');
@@ -1937,6 +2014,24 @@
     }, setTab: (t) => setTab(t),
     addCollection(name, color) { if (!DATA.collections[name]) DATA.collections[name] = { color }; },
     equip: (cat, id) => toggleEquip(cat, id),
+    /** Troca o asset de um item já listado (ex.: efeito da loja recebendo a config oficial) e redesenha. */
+    updateAsset(cat, id, asset, { play = false } = {}) {
+      const it = findItem(cat, id);
+      if (!it) return;
+      it.asset = asset;
+      const card = document.querySelector(`#grid .cosmetic-card[data-cat="${cat}"][data-id="${CSS.escape(id)}"]`);
+      if (card) {
+        const fresh = buildCard(cat, it);
+        card.replaceWith(fresh);
+        syncUserBits(fresh);
+        updateCardStates();
+        if (play) fresh.querySelector('.cosmetic-layer')?._replay?.();
+      }
+      if (state[CATS[cat].key] === id) {
+        mounted[CATS[cat].key] = undefined;
+        renderPreview();
+      }
+    },
     /** Remonta a prévia ao vivo (ex.: depois de substituir um item equipado). */
     refresh() {
       mounted.nameplate = mounted.decoration = mounted.effect = mounted.frame = undefined;
