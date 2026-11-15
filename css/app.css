@@ -598,3 +598,58 @@ input[type='color'].swatch::-moz-color-swatch { border: none; border-radius: 6px
 .fps-hud.is-mid { color: #FEE75C; }
 .fps-hud.is-low { color: #F23F43; }
 .fps-hud small { display: block; font-weight: 600; color: #B5BAC1; font-size: 10px; }
+
+/* Gerador: entrada e loop lado a lado */
+.mini-profile--half { width: 112px; height: 160px; }
+.phase-label {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  z-index: 40;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, .7);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* Referências do gerador */
+.ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 6px 0 4px;
+  border-radius: 10px;
+  background: var(--dc-dark);
+  border: 1px solid rgba(88, 101, 242, .45);
+  font-size: 13px;
+}
+.ref-x { width: 20px; height: 20px; border-radius: 50%; color: var(--dc-muted); font-size: 11px; }
+.ref-x:hover { background: rgba(255, 255, 255, .1); color: #fff; }
+.ref-thumb {
+  position: relative;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #111214;
+  display: grid;
+  place-items: center;
+}
+.ref-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.ref-thumb-inner { position: absolute; inset: 14%; border-radius: 50%; }
+.ref-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--dc-dark);
+  border: 1px solid transparent;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.ref-row:hover { border-color: rgba(255, 255, 255, .15); }
+.ref-row.is-on { border-color: var(--dc-blurple); background: rgba(88, 101, 242, .15); }
+/* Nos cards com entrada/loop lado a lado, a etiqueta do motor vai para o topo */
+.card-preview:has(.mini-profile--half) .engine-badge { top: 6px; bottom: auto; left: 6px; z-index: 45; }

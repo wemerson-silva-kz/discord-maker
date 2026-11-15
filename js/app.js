@@ -253,10 +253,16 @@
    * Constrói a camada visual de um item.
    * Suporta asset.type = 'css' | 'image' | 'video'.
    */
-  function buildAsset(item, cat, { paused = false } = {}) {
+  /**
+   * @param {object} opts
+   * @param {boolean} [opts.paused]  anima só no hover (cards/lista)
+   * @param {'both'|'intro'|'loop'} [opts.phase]  efeitos: só a entrada, só o loop ou entrada → loop
+   */
+  function buildAsset(item, cat, { paused = false, phase = 'both' } = {}) {
     const a = item.asset || {};
     const layer = el('div', cat === 'decorations' ? 'deco-layer' : 'cosmetic-layer');
     if (paused) layer.classList.add('is-paused');
+    layer._phase = phase;
     layer._timers = [];
     const build = () => {
       layer._timers.forEach(clearTimeout);
@@ -264,6 +270,7 @@
       layer._gen = (layer._gen || 0) + 1;
       layer.innerHTML = '';
       if (a.type === 'image') buildImage(layer, a, cat);
+      else if (a.type === 'svg') buildSvg(layer, a, cat);
       else if (a.type === 'gen') buildGen(layer, a, cat);
       else if (a.type === 'video') {
         const v = el('video', 'asset-anim');
@@ -339,6 +346,83 @@
     }
     layer.dataset.phase = 'loop';
     img.src = a.loop || a.intro;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Arte SVG animada (gerada pela IA)                                 */
+  /* ---------------------------------------------------------------- */
+  /** Tamanho oficial de cada formato do Discord (viewBox do SVG). */
+  const SVG_SIZE = { nameplates: [448, 84], decorations: [288, 288], effects: [450, 880] };
+  const SVG_TAGS = new Set(['svg', 'g', 'defs', 'style', 'title', 'desc', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon',
+    'lineargradient', 'radialgradient', 'stop', 'clippath', 'mask', 'pattern', 'symbol', 'use', 'text', 'tspan', 'filter',
+    'fegaussianblur', 'feoffset', 'feblend', 'fecolormatrix', 'fecomposite', 'feflood', 'femerge', 'femergenode', 'femorphology',
+    'feturbulence', 'fedisplacementmap', 'fedropshadow', 'fecomponenttransfer', 'fefunca', 'fefuncr', 'fefuncg', 'fefuncb']);
+  const SVG_MAX = 60000;
+
+  /**
+   * Limpa um SVG vindo da IA/link: só tags de desenho, sem scripts, eventos,
+   * foreignObject, imagens ou recursos externos. Anima só com CSS (@keyframes).
+   */
+  function sanitizeSvg(text, cat) {
+    if (typeof text !== 'string' || !text.includes('<svg') || text.length > SVG_MAX) return '';
+    let doc;
+    try { doc = new DOMParser().parseFromString(text, 'image/svg+xml'); } catch (e) { return ''; }
+    const root = doc.documentElement;
+    if (!root || root.nodeName.toLowerCase() !== 'svg' || doc.getElementsByTagName('parsererror').length) return '';
+    const walk = (node) => {
+      for (const child of Array.from(node.children)) {
+        if (!SVG_TAGS.has(child.nodeName.toLowerCase())) { child.remove(); continue; }
+        for (const attr of Array.from(child.attributes)) {
+          const n = attr.name.toLowerCase(), v = attr.value;
+          if (n.startsWith('on') || n === 'src') child.removeAttribute(attr.name);
+          else if ((n === 'href' || n === 'xlink:href') && !v.trim().startsWith('#')) child.removeAttribute(attr.name);
+          else if (/url\(\s*['"]?(?!#)/i.test(v) || /javascript:|data:/i.test(v)) child.removeAttribute(attr.name);
+        }
+        if (child.nodeName.toLowerCase() === 'style') {
+          child.textContent = child.textContent
+            .replace(/@import[^;]*;?/gi, '')
+            .replace(/url\(\s*['"]?(?!#)[^)]*\)/gi, 'none')
+            .replace(/javascript:|expression\s*\(/gi, '');
+        }
+        walk(child);
+      }
+    };
+    for (const attr of Array.from(root.attributes)) if (attr.name.toLowerCase().startsWith('on')) root.removeAttribute(attr.name);
+    walk(root);
+    const [w, h] = SVG_SIZE[cat] || [300, 300];
+    if (!root.getAttribute('viewBox')) root.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    root.setAttribute('width', w);
+    root.setAttribute('height', h);
+    root.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    return new XMLSerializer().serializeToString(root);
+  }
+  let svgSeq = 0;
+  /** URL única a cada uso: cada <img> começa a animação do zero. */
+  const svgUrl = (svg) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.replace(/<\/svg>\s*$/, `<!--${++svgSeq}--></svg>`));
+
+  function buildSvg(layer, a, cat) {
+    if (cat === 'decorations') layer.classList.add('is-img');
+    const img = el('img', 'asset-anim' + (cat === 'effects' ? ' fx-img' : ''));
+    img.alt = '';
+    layer.appendChild(img);
+    const want = layer._phase || 'both';
+    const hasIntro = cat === 'effects' && a.introSvg;
+    if (hasIntro && want === 'intro') {
+      layer.dataset.phase = 'intro';
+      img.src = svgUrl(a.introSvg);
+      return;
+    }
+    if (hasIntro && want === 'both' && !(layer.classList.contains('is-paused') && !layer._userTriggered)) {
+      layer.dataset.phase = 'intro';
+      img.src = svgUrl(a.introSvg);
+      layer._timers.push(setTimeout(() => {
+        layer.dataset.phase = 'loop';
+        img.src = svgUrl(a.svg);
+      }, a.introSeconds * 1000));
+      return;
+    }
+    layer.dataset.phase = 'loop';
+    img.src = svgUrl(a.svg);
   }
 
   /* ---------- Leitor de APNG: quadros, duração e FPS ---------- */
@@ -568,9 +652,28 @@
       _custom: true,
     };
   }
+  /** Itens de arte SVG (IA). */
+  function sanitizeSvgItem(cat, raw) {
+    const a = raw.asset || {};
+    const svg = sanitizeSvg(a.svg, cat);
+    if (!svg) return null;
+    const introSvg = cat === 'effects' ? sanitizeSvg(a.introSvg, cat) : '';
+    const num = (v, min, max, def) => (Number.isFinite(+v) ? Math.min(max, Math.max(min, +v)) : def);
+    const base = sanitizeGenItem(cat, { ...raw, asset: {} });
+    return {
+      ...base,
+      asset: {
+        type: 'svg',
+        svg,
+        loopSeconds: num(a.loopSeconds, 1, 8, 4),
+        ...(introSvg ? { introSvg, introSeconds: num(a.introSeconds, 0.5, GEN.maxIntro, 3) } : {}),
+      },
+    };
+  }
   function sanitizeCustomItem(cat, raw) {
     if (!CATS[cat] || !raw || typeof raw !== 'object') return null;
-    return raw.asset && raw.asset.type === 'image' ? sanitizeImageItem(cat, raw) : sanitizeGenItem(cat, raw);
+    const t = raw.asset && raw.asset.type;
+    return t === 'image' ? sanitizeImageItem(cat, raw) : t === 'svg' ? sanitizeSvgItem(cat, raw) : sanitizeGenItem(cat, raw);
   }
 
   /** Converte uma camada da spec para o formato do sistema de partículas. */
@@ -618,8 +721,17 @@
     });
     if (hasIntro) {
       // Fase 1: ENTRADA (toca uma vez, até 6 s). Fase 2: LOOP.
-      const skip = layer.classList.contains('is-paused') && !layer._userTriggered;
+      const want = layer._phase || 'both';
+      const skip = want === 'loop' || (want === 'both' && layer.classList.contains('is-paused') && !layer._userTriggered);
       target = el('div', 'gen-loop');
+      if (want === 'intro') {
+        // Só a entrada (painel "Entrada" e exportação APNG)
+        const intro = el('div', 'gen-intro gen-intro-' + a.intro.style, { '--intro-d': a.intro.duration + 's' });
+        a.intro.layers.forEach((l, i) => spawnParticles(intro, genLayerToSpec(l, cat, i)));
+        layer.appendChild(intro);
+        layer.dataset.phase = 'intro';
+        return;
+      }
       if (!skip) {
         const d = a.intro.duration;
         const intro = el('div', 'gen-intro gen-intro-' + a.intro.style, { '--intro-d': d + 's' });
@@ -780,6 +892,7 @@
   }
 
   /* Link de compartilhamento (hash) */
+  let linkSkipped = []; // artes SVG são grandes demais para caber num link
   function toHash() {
     const p = new URLSearchParams();
     p.set('n', state.name);
@@ -790,10 +903,12 @@
     if (state.decoration) p.set('deco', state.decoration);
     if (state.effect) p.set('fx', state.effect);
     const custom = [];
+    linkSkipped = [];
     for (const key of ['nameplate', 'decoration', 'effect']) {
       const cat = CAT_BY_KEY[key];
       const it = findItem(cat, state[key]);
-      if (it && it._custom) custom.push({ c: cat, i: publicItem(it) });
+      if (it && it._custom && it.asset.type !== 'svg') custom.push({ c: cat, i: publicItem(it) });
+      else if (it && it._custom) linkSkipped.push(it.name);
     }
     if (custom.length) p.set('g', b64urlEncode(JSON.stringify(custom)));
     return p.toString();
@@ -912,9 +1027,48 @@
     }
   }
 
-  function cardPreview(cat, item) {
-    const wrap = el('div', 'card-preview relative h-40 flex items-center justify-center overflow-hidden');
+  /** O item tem fase de entrada (efeito gerado por partículas ou SVG)? */
+  function introOf(cat, a) {
+    if (cat !== 'effects' || !a) return 0;
+    if (a.type === 'svg' && a.introSvg) return a.introSeconds;
+    if (a.type === 'gen' && a.intro && a.intro.style !== 'none') return a.intro.duration;
+    return 0;
+  }
+  function miniProfile(label) {
+    const mini = el('div', 'mini-profile');
+    mini.innerHTML = `
+        <div class="h-11 js-user-banner"></div>
+        <div class="absolute left-2.5 top-6 w-10 h-10 rounded-full bg-dc-side p-[3px]"><img class="js-user-avatar w-full h-full rounded-full object-cover" alt="" /></div>
+        <div class="px-2.5 pt-7 space-y-1.5">
+          <div class="js-user-name text-[12px] font-bold truncate"></div>
+          <div class="h-1.5 w-16 rounded bg-white/10"></div>
+          <div class="h-10 rounded-md bg-dc-dark/70 mt-2"></div>
+        </div>`;
+    if (label) mini.insertAdjacentHTML('beforeend', `<span class="phase-label">${label}</span>`);
+    return mini;
+  }
+
+  function cardPreview(cat, item, variant = 'gallery') {
     const a = item.asset || {};
+    const introSecs = introOf(cat, a);
+    if (variant === 'gen' && introSecs) {
+      // Gerador: ENTRADA e LOOP lado a lado; a entrada repete para dar para ver
+      const wrap = el('div', 'card-preview relative h-44 flex items-center justify-center gap-3 overflow-hidden');
+      const intro = miniProfile(`▶ Entrada ${introSecs.toFixed(1)}s`);
+      const loop = miniProfile('⟳ Loop');
+      intro.classList.add('mini-profile--half');
+      loop.classList.add('mini-profile--half');
+      const introLayer = buildAsset(item, cat, { phase: 'intro' });
+      intro.appendChild(introLayer);
+      loop.appendChild(buildAsset(item, cat, { phase: 'loop' }));
+      wrap.append(intro, loop);
+      const timer = setInterval(() => {
+        if (!wrap.isConnected) return clearInterval(timer);
+        introLayer._replay();
+      }, (introSecs + 1) * 1000);
+      return wrap;
+    }
+    const wrap = el('div', 'card-preview relative h-40 flex items-center justify-center overflow-hidden');
     const hasPhases = cat === 'effects' && (a.intro || a.loop || (a.type === 'gen' && a.intro && a.intro.style !== 'none'));
     if (hasPhases) {
       wrap.addEventListener('mouseenter', () => wrap.querySelector('.cosmetic-layer')?._replay?.());
@@ -936,15 +1090,7 @@
       av.appendChild(buildAsset(item, cat, { paused: true }));
       wrap.appendChild(av);
     } else {
-      const mini = el('div', 'mini-profile');
-      mini.innerHTML = `
-        <div class="h-11 js-user-banner"></div>
-        <div class="absolute left-2.5 top-6 w-10 h-10 rounded-full bg-dc-side p-[3px]"><img class="js-user-avatar w-full h-full rounded-full object-cover" alt="" /></div>
-        <div class="px-2.5 pt-7 space-y-1.5">
-          <div class="js-user-name text-[12px] font-bold truncate"></div>
-          <div class="h-1.5 w-16 rounded bg-white/10"></div>
-          <div class="h-10 rounded-md bg-dc-dark/70 mt-2"></div>
-        </div>`;
+      const mini = miniProfile();
       mini.appendChild(buildAsset(item, cat, { paused: true }));
       wrap.appendChild(mini);
     }
@@ -957,7 +1103,7 @@
     const card = el('article', 'cosmetic-card hover-host fade-in rounded-xl bg-dc-side border border-white/5 overflow-hidden flex flex-col');
     card.dataset.id = item.id;
     card.dataset.cat = cat;
-    const preview = cardPreview(cat, item);
+    const preview = cardPreview(cat, item, variant);
     card.appendChild(preview);
     addMetricsBadge(preview, cat, item);
     card.insertAdjacentHTML('beforeend', `
@@ -976,8 +1122,11 @@
         <div class="flex flex-wrap gap-1.5 pt-1 border-t border-white/5 mt-1">
           <button type="button" class="btn btn-sm btn-ghost !px-2 gen-save" data-id="${escapeHtml(item.id)}">${item._saved ? '★ Salvo' : '☆ Salvar'}</button>
           <button type="button" class="btn btn-sm btn-ghost !px-2 gen-vary" data-id="${escapeHtml(item.id)}">🎲 Variar</button>
+          <button type="button" class="btn btn-sm btn-ghost !px-2 gen-ref" data-id="${escapeHtml(item.id)}" title="Usar como referência para a IA criar variações">🧬 Referência</button>
           <button type="button" class="btn btn-sm btn-ghost !px-2 gen-json" data-id="${escapeHtml(item.id)}">{ } JSON</button>
+          <button type="button" class="btn btn-sm btn-ghost !px-2 btn-apng" data-id="${escapeHtml(item.id)}" data-cat="${cat}">⬇ APNG</button>
         </div>` : ''}
+        ${variant === 'gallery' && (item.asset || {}).type !== 'image' ? `<button type="button" class="self-start text-[11px] text-dc-muted hover:text-white btn-apng" data-id="${escapeHtml(item.id)}" data-cat="${cat}">⬇ Baixar APNG animado</button>` : ''}
         ${variant === 'gallery' && item._custom ? `<button type="button" class="self-start text-[11px] text-dc-faint hover:text-dc-red gen-delete" data-id="${escapeHtml(item.id)}">Excluir criação</button>` : ''}
       </div>`);
     return card;
@@ -990,6 +1139,14 @@
     if (a.type === 'gen') {
       if (cat === 'effects' && a.intro && a.intro.style !== 'none') {
         badge.textContent = `Entrada ${a.intro.duration.toFixed(1)}s → loop · CSS 60 fps`;
+        if (preview.querySelector('.mini-profile--half')) return;
+        preview.appendChild(badge);
+      }
+      return;
+    }
+    if (a.type === 'svg') {
+      if (!(cat === 'effects' && a.introSvg)) {
+        badge.textContent = `Arte SVG · loop ${a.loopSeconds}s · 60 fps`;
         preview.appendChild(badge);
       }
       return;
@@ -1436,6 +1593,7 @@
     try { history.replaceState(null, '', '#' + hash); } catch (e) { /* ignora */ }
     toast(ok ? 'Link da combinação copiado para a área de transferência!' : 'Não foi possível copiar — o link está na barra de endereço.', ok ? 'success' : 'danger');
     if (state.customAvatar) setTimeout(() => toast('Fotos enviadas não vão no link — quem abrir verá um avatar padrão.', 'info'), 450);
+    if (linkSkipped.length) setTimeout(() => toast(`Artes de IA não cabem no link (${linkSkipped.join(', ')}): use “⬇ APNG” para compartilhar.`, 'info'), 900);
   }
 
   function savePrint() {
@@ -1536,6 +1694,8 @@
       if (tryBtn) return toggleEquip(tryBtn.dataset.cat, tryBtn.dataset.id);
       const del = e.target.closest('.gen-delete');
       if (del) return deleteCustom(del.dataset.id);
+      const apng = e.target.closest('.btn-apng');
+      if (apng && window.CosmeticExport) return window.CosmeticExport.open(apng.dataset.cat, apng.dataset.id);
       const tag = e.target.closest('[data-collection]');
       if (tag) {
         ui.collection = tag.dataset.collection;
@@ -1683,6 +1843,7 @@
     CATS, DATA, GEN, buildAsset, buildCard, toast, syncUserBits, updateCardStates, findItem,
     sanitizeGenItem, sanitizeCustomItem, registerCustom, saveCustom, deleteCustom, publicItem,
     loadApng, getMetrics, canFetch, metricsLabel, renderGallery, addCatalogItems, catalogReady,
+    sanitizeSvg, SVG_SIZE, parseApng, introOf,
     setShopAttribution(url, terms, shopDate, stale) {
       const a = $('#shop-attribution');
       if (/^https:\/\/itemshop\.gg(\/|$)/.test(url || '')) a.href = url;

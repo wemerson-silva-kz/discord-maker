@@ -135,6 +135,15 @@
                   <div class="flex flex-wrap gap-1.5 mt-2" id="gen-examples"></div>
                 </div>
 
+                <div>
+                  <div class="flex items-center justify-between gap-2 mb-2">
+                    <span class="field-label !mb-0">Referências da biblioteca (opcional)</span>
+                    <button type="button" id="gen-refs-add" class="btn btn-sm btn-secondary">🧬 Escolher da biblioteca</button>
+                  </div>
+                  <div id="gen-refs" class="flex flex-wrap gap-2"></div>
+                  <p id="gen-refs-empty" class="text-[11px] text-dc-faint">Escolha até 3 itens (da galeria, da loja do Discord ou criações suas) para a IA criar variações deles.</p>
+                </div>
+
                 <div class="grid gap-4 md:grid-cols-2">
                   <div>
                     <span class="field-label">O que gerar</span>
@@ -151,6 +160,11 @@
                       <button type="button" data-engine="local">⚡ Local (offline)</button>
                     </div>
                     <p class="text-[11px] text-dc-faint mt-1.5" id="gen-engine-hint"></p>
+                    <span class="field-label mt-3">Estilo da IA</span>
+                    <div class="seg" id="gen-mode">
+                      <button type="button" data-mode="svg">🎨 Arte desenhada (SVG)</button>
+                      <button type="button" data-mode="particles">✨ Partículas</button>
+                    </div>
                   </div>
                 </div>
 
@@ -162,7 +176,8 @@
                     </div>
                     <div>
                       <label class="field-label !mb-1" for="gen-model">Modelo</label>
-                      <input id="gen-model" type="text" class="dc-input font-mono text-sm" spellcheck="false" />
+                      <input id="gen-model" type="text" list="gen-models" class="dc-input font-mono text-sm" spellcheck="false" autocomplete="off" />
+                      <datalist id="gen-models"></datalist>
                     </div>
                   </div>
                   <div id="gen-baseurl-box">
@@ -393,5 +408,6 @@
   <script src="js/ai-generator.js"></script>
   <script src="js/itemshop.js"></script>
   <script src="js/discord-import.js"></script>
+  <script src="js/apng-export.js"></script>
 </body>
 </html>

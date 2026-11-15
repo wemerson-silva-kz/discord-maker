@@ -31,7 +31,7 @@
   const PROVIDERS = {
     anthropic: { label: 'Anthropic (Claude)', model: 'claude-opus-5-5', keyPh: 'sk-ant-...', hint: 'Usa o SDK oficial da Anthropic com saída estruturada (JSON Schema).' },
     openai: { label: 'OpenAI', base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', format: 'json_schema', keyPh: 'sk-...', hint: 'Usa saída estruturada estrita (json_schema).' },
-    gemini: { label: 'Google Gemini', base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', format: 'json_schema', keyPh: 'AIza...', hint: 'Endpoint compatível com OpenAI do Gemini. Chave em aistudio.google.com.' },
+    gemini: { label: 'Google Gemini', native: 'gemini', base: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash', keyPh: 'AIza...', hint: 'API nativa do Gemini com saída JSON estruturada (responseSchema). Crie a chave grátis em aistudio.google.com; ao colar a chave, os modelos disponíveis aparecem na lista.' },
     openrouter: { label: 'OpenRouter (centenas de modelos)', base: 'https://openrouter.ai/api/v1', model: 'openrouter/auto', format: 'json_object', keyPh: 'sk-or-...', hint: 'Troque o modelo por qualquer um do catálogo do OpenRouter (ex.: um modelo gratuito).' },
     groq: { label: 'Groq', base: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', format: 'json_object', keyPh: 'gsk_...', hint: 'Muito rápido; tem plano gratuito.' },
     deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com/v1', model: 'deepseek-chat', format: 'json_object', keyPh: 'sk-...' },
@@ -165,6 +165,109 @@ Vocabulário da especificação:
 
 Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um kit coerente com o tema. Cada item deve combinar pelo menos duas camadas (uma sutil de fundo e uma de destaque) para ter profundidade e movimento. Escreva em português do Brasil: nome curto e criativo (até 28 caracteres), descrição de uma frase (até 120 caracteres), 3 a 5 tags em minúsculas. Escolha rarity (Raro, Épico ou Lendário) conforme a complexidade visual.`;
 
+  /* ------------------------------------------------------------------ */
+  /* Modo ARTE: a IA desenha SVG animado (CSS @keyframes)                 */
+  /* ------------------------------------------------------------------ */
+  const SVG_OUTPUT_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['items'],
+    properties: {
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['category', 'name', 'description', 'rarity', 'tags', 'loopSeconds', 'svg', 'introSeconds', 'introSvg'],
+          properties: {
+            category: { type: 'string', enum: ['nameplate', 'decoration', 'effect'] },
+            name: { type: 'string' },
+            description: { type: 'string' },
+            rarity: { type: 'string', enum: GEN.rarities },
+            tags: { type: 'array', items: { type: 'string' } },
+            loopSeconds: { type: 'number', description: 'Duração do loop em segundos (2 a 6).' },
+            svg: { type: 'string', description: 'SVG completo do LOOP, animado só com CSS @keyframes.' },
+            introSeconds: { type: 'number', description: 'Só effect: duração da entrada (1 a 6). Nos outros, 0.' },
+            introSvg: { type: 'string', description: 'Só effect: SVG da ENTRADA (toca uma vez). Nos outros, string vazia.' },
+          },
+        },
+      },
+    },
+  };
+
+  const SVG_SYSTEM_PROMPT = `Você é um ilustrador e animador de cosméticos de perfil do Discord. Para cada pedido você desenha ARTE VETORIAL ANIMADA em SVG, no tamanho exato do formato, e devolve JSON.
+
+O que importa acima de tudo: a arte precisa representar de forma reconhecível o tema pedido. Se o tema fala de um dragão, desenhe um dragão (silhueta com cabeça, chifres, corpo serpenteante, escamas sugeridas por gradientes); templo = telhados curvos em camadas, colunas; nuvens escuras e sombrias = massas de nuvem em cinza-azulado escuro com gradientes, céu carregado; fogo verde = chamas com gradiente verde-jade e brilho. Componha em camadas (fundo, plano médio, destaque), use gradientes e filtros de brilho (feGaussianBlur) para dar acabamento de item premium. Nunca use letras, ideogramas ou emojis para representar objetos.
+
+Formatos (use exatamente estes viewBox):
+- nameplate: viewBox="0 0 448 84". Faixa atrás do nome na lista de membros, preenchendo todo o retângulo. O avatar e o nome (texto branco) ficam à esquerda (x < 200): mantenha essa área mais escura e calma para leitura; concentre a ilustração e o movimento à direita.
+- decoration: viewBox="0 0 288 288", fundo transparente. O avatar circular fica no centro (cx 144, cy 144, raio 120) e NÃO pode ser coberto: desenhe em volta, na faixa entre o raio 112 e as bordas (pode invadir levemente a borda do avatar, como uma moldura). Ex.: um dragão enrolado em volta do círculo, chamas saindo das bordas.
+- effect: viewBox="0 0 450 880", fundo transparente, sobreposto ao card de perfil. O conteúdo do perfil fica no meio (x 40–410, y 260–720): deixe essa área livre ou só com elementos translúcidos e de passagem. Use as bordas, o topo (área do banner, y < 230) e a base.
+  O efeito tem DUAS FASES, como no Discord: introSvg é a ENTRADA, que toca uma única vez ao abrir o perfil (introSeconds entre 1 e 6, ideal 2 a 4): o momento mais impactante (ex.: o dragão surge e cospe uma rajada de fogo que atravessa o card), terminando suave. svg é o LOOP contínuo e mais calmo que vem depois (ex.: o dragão respirando, brasas subindo, nuvens passando).
+
+Regras técnicas do SVG (obrigatórias):
+- Comece com <svg xmlns="http://www.w3.org/2000/svg" viewBox="...">. Nada de <script>, <foreignObject>, <image>, links externos, fontes externas ou atributos de evento.
+- Animação SOMENTE com CSS dentro de <style> (@keyframes + animation). Não use SMIL (<animate>, <animateTransform>).
+- Para girar ou escalar formas, use transform-box: fill-box; transform-origin: center (ou um ponto em px).
+- LOOP perfeito: todas as animações do svg do loop são infinite e com duração que divide loopSeconds exatamente (ex.: loop 4 s → 1 s, 2 s ou 4 s; delays também em frações desse ciclo).
+- ENTRADA: animações com animation-iteration-count 1 e animation-fill-mode both, terminando até introSeconds.
+- Cores em hex; prefira gradientes. Qualidade alta, mas cada SVG com no máximo cerca de 14 mil caracteres e 150 elementos.
+- Em nameplate e decoration: introSeconds 0 e introSvg "".
+
+Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit coerente. Escreva em português do Brasil: nome curto e criativo (até 28 caracteres), descrição de uma frase, 3 a 5 tags em minúsculas, rarity conforme a complexidade.`;
+
+  const SVG_JSON_EXAMPLE = JSON.stringify({ items: [{
+    category: 'nameplate', name: 'Rajada de Jade', description: 'Chamas verdes correndo à direita da faixa.', rarity: 'Épico', tags: ['fogo', 'jade'],
+    loopSeconds: 4,
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 84"><defs><linearGradient id="bg" x1="0" x2="1"><stop offset="0" stop-color="#05140e"/><stop offset="1" stop-color="#0c3a26"/></linearGradient></defs><style>.f{transform-box:fill-box;transform-origin:50% 100%;animation:fl 1s ease-in-out infinite}@keyframes fl{50%{transform:scaleY(1.2)}}</style><rect width="448" height="84" fill="url(#bg)"/><path class="f" d="M380 84c-20-30 10-40 0-70 30 25 40 50 20 70z" fill="#2be38b"/></svg>',
+    introSeconds: 0, introSvg: '',
+  }] });
+
+  /** Monta o texto do pedido com tema, categorias e referências da biblioteca. */
+  function userTextFor(req) {
+    let t = `Tema: ${req.prompt || '(sem tema: crie variações das referências)'}\nCategorias, nesta ordem: ${req.cats.map((c) => CAT_TO_API[c]).join(', ')}`;
+    if (req.refs.length) {
+      t += '\n\nREFERÊNCIAS da biblioteca. Crie VARIAÇÕES inspiradas nelas: mantenha a essência (paleta, estilo, tipo de movimento, clima), mas traga algo novo e aplique o tema, se houver.';
+      req.refs.forEach((r, i) => {
+        const a = r.item.asset || {};
+        t += `\n\nReferência ${i + 1} (${CAT_TO_API[r.cat]}): "${r.item.name}"${r.item.collection ? ' — coleção ' + r.item.collection : ''}. ${r.item.description || ''}${(r.item.tags || []).length ? ' Tags: ' + r.item.tags.join(', ') + '.' : ''}`;
+        if (a.type === 'svg') t += `\nSVG do loop da referência:\n${a.svg}`;
+        else if (a.type === 'gen') t += `\nSpec da referência (partículas): ${JSON.stringify({ palette: a.palette, base: a.base, ring: a.ring, layers: a.layers, intro: a.intro })}`;
+        else if (a.type === 'image') t += r.hasImage ? '\n(imagem da referência anexada)' : '\n(item oficial do Discord; imagem indisponível)';
+        else if (a.className) t += `\n(efeito CSS da coleção ${r.item.collection})`;
+      });
+    }
+    return t;
+  }
+  const schemaFor = (req) => (req.mode === 'svg' ? SVG_OUTPUT_SCHEMA : OUTPUT_SCHEMA);
+  const systemFor = (req, withExample) => {
+    const base = req.mode === 'svg' ? SVG_SYSTEM_PROMPT : SYSTEM_PROMPT;
+    if (!withExample) return base;
+    return base + '\n\nResponda SOMENTE com um objeto JSON válido, sem markdown, neste formato (o exemplo mostra um item; gere um por categoria pedida, com todos os campos):\n' + (req.mode === 'svg' ? SVG_JSON_EXAMPLE : JSON_EXAMPLE);
+  };
+
+  /* ---------- Imagens das referências (para modelos com visão) ---------- */
+  /** URL estática que o navegador consegue ler (CORS) — o proxy de mídia do Discord libera. */
+  function corsFriendly(url) {
+    return url.replace(/^https:\/\/cdn\.discordapp\.com\/media\/v1\/collectibles-shop\//, 'https://media.discordapp.net/media/v1/collectibles-shop/');
+  }
+  function refImageUrl(item) {
+    const a = item.asset || {};
+    if (a.type !== 'image') return '';
+    return a.staticSrc || a.loop || a.src || a.intro || '';
+  }
+  async function toBase64(url) {
+    const res = await fetch(corsFriendly(url));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve({ mime: blob.type || 'image/png', data: String(fr.result).split(',')[1] });
+      fr.onerror = reject;
+      fr.readAsDataURL(blob);
+    });
+  }
+
   let sdkPromise = null;
   function loadSdk() {
     if (!sdkPromise) {
@@ -191,13 +294,17 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     intro: { style: 'burst', duration: 3, layers: [{ kind: 'warp', color: '#E8FFF4', count: 'many', size: 'large', speed: 'fast', shape: 'none', motion: 'fall', glyphs: '' }] },
   }] });
 
-  async function generateWithOpenAICompat(prompt, cats, cfg) {
+  async function generateWithOpenAICompat(req, cfg) {
     const preset = PROVIDERS[cfg.provider];
     const base = (cfg.baseUrl || preset.base || '').replace(/\/+$/, '');
     if (!/^https?:\/\//.test(base)) throw new Error('Informe a URL base da API (ex.: https://api.exemplo.com/v1).');
     if (!cfg.model) throw new Error('Informe o nome do modelo.');
-    const system = SYSTEM_PROMPT + '\n\nResponda SOMENTE com um objeto JSON válido, sem markdown, neste formato (o exemplo mostra um item; gere um por categoria pedida, com todos os campos):\n' + JSON_EXAMPLE;
-    const user = `Tema: ${prompt}\nCategorias, nesta ordem: ${cats.map((c) => CAT_TO_API[c]).join(', ')}`;
+    const system = systemFor(req, true);
+    const user = userTextFor(req);
+    const images = req.images.filter((i) => i.url);
+    const userContent = images.length && cfg.provider === 'openai'
+      ? [{ type: 'text', text: user }, ...images.map((i) => ({ type: 'image_url', image_url: { url: i.url } }))]
+      : user;
     const headers = { 'Content-Type': 'application/json' };
     if (cfg.key) headers.Authorization = 'Bearer ' + cfg.key;
     if (cfg.provider === 'openrouter') {
@@ -208,8 +315,8 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
 
     let lastErr;
     for (const fmt of formats) {
-      const body = { model: cfg.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
-      if (fmt === 'json_schema') body.response_format = { type: 'json_schema', json_schema: { name: 'cosmeticos', strict: true, schema: OUTPUT_SCHEMA } };
+      const body = { model: cfg.model, messages: [{ role: 'system', content: system }, { role: 'user', content: userContent }] };
+      if (fmt === 'json_schema') body.response_format = { type: 'json_schema', json_schema: { name: 'cosmeticos', strict: true, schema: schemaFor(req) } };
       if (fmt === 'json_object') body.response_format = { type: 'json_object' };
       let res;
       try {
@@ -235,7 +342,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
       if (choice.finish_reason === 'length') throw new Error('A resposta da IA veio incompleta. Tente gerar menos categorias de uma vez.');
       let content = choice.message && choice.message.content;
       if (Array.isArray(content)) content = content.map((part) => part.text || '').join('');
-      return itemsFromText(content, prompt, cats, { id: cfg.provider, label: preset.label.replace(/\s*\(.*\)$/, '') + (cfg.model ? ' · ' + cfg.model : '') });
+      return itemsFromText(content, req, { id: cfg.provider, label: preset.label.replace(/\s*\(.*\)$/, '') + (cfg.model ? ' · ' + cfg.model : '') });
     }
     throw lastErr || new Error('O provedor não aceitou o pedido.');
   }
@@ -248,24 +355,131 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     return new Error(`${label} recusou o pedido: ${msg || 'erro ' + status}`);
   }
 
-  async function generateWithClaude(prompt, cats, apiKey, model) {
+  /* ------------------------------------------------------------------ */
+  /* Motor: Google Gemini (API nativa generateContent)                    */
+  /* ------------------------------------------------------------------ */
+  const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+
+  /** Converte o JSON Schema do app para o subconjunto OpenAPI aceito pelo Gemini. */
+  function toGeminiSchema(node) {
+    if (!node || typeof node !== 'object') return node;
+    const out = { type: String(node.type || 'string').toUpperCase() };
+    if (node.description) out.description = node.description;
+    if (node.enum) out.enum = node.enum;
+    if (node.properties) {
+      out.properties = {};
+      for (const k in node.properties) out.properties[k] = toGeminiSchema(node.properties[k]);
+      out.propertyOrdering = Object.keys(node.properties);
+    }
+    if (node.required) out.required = node.required;
+    if (node.items) out.items = toGeminiSchema(node.items);
+    return out;
+  }
+
+  const geminiModelName = (m) => String(m || '').trim().replace(/^models\//, '');
+
+  function geminiError(status, body, model) {
+    const err = body && body.error;
+    const msg = (err && err.message) || '';
+    const st = (err && err.status) || '';
+    if (/API key not valid|API_KEY_INVALID/i.test(msg) || status === 401) return new Error('Chave do Gemini inválida. Gere uma em aistudio.google.com.');
+    if (status === 403 || st === 'PERMISSION_DENIED') return new Error('Essa chave não tem acesso à API do Gemini (ative a "Generative Language API" no projeto da chave).');
+    if (status === 404 || st === 'NOT_FOUND') return new Error(`Modelo "${model}" não encontrado no Gemini. Escolha outro na lista de modelos.`);
+    if (status === 429 || st === 'RESOURCE_EXHAUSTED') return new Error('Limite de uso do Gemini atingido. Aguarde um pouco ou troque de modelo.');
+    if (status >= 500) return new Error('O Gemini está instável agora. Tente novamente em instantes.');
+    return new Error('O Gemini recusou o pedido: ' + (msg || 'erro ' + status));
+  }
+
+  async function generateWithGemini(req, cfg) {
+    const model = geminiModelName(cfg.model);
+    if (!model) throw new Error('Informe o modelo do Gemini.');
+    const url = `${GEMINI_BASE}/models/${encodeURIComponent(model)}:generateContent`;
+    const user = userTextFor(req);
+    const system = systemFor(req, true);
+    const parts = [{ text: user }, ...req.images.filter((i) => i.data).map((i) => ({ inlineData: { mimeType: i.mime, data: i.data } }))];
+
+    // 1ª tentativa: JSON com schema; se o modelo recusar o schema, só modo JSON.
+    for (const withSchema of [true, false]) {
+      const generationConfig = { responseMimeType: 'application/json', temperature: 1, maxOutputTokens: req.mode === 'svg' ? 32768 : 8192 };
+      if (withSchema) generationConfig.responseSchema = toGeminiSchema(schemaFor(req));
+      let res;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [{ role: 'user', parts }],
+            generationConfig,
+          }),
+        });
+      } catch (e) {
+        throw new Error('Não foi possível conectar ao Gemini. Verifique sua internet.');
+      }
+      let data = null;
+      try { data = await res.json(); } catch (e) { data = null; }
+      if (!res.ok) {
+        const msg = (data && data.error && data.error.message) || '';
+        if (withSchema && res.status === 400 && /schema|response_schema|responseSchema|generation_config|max_output_tokens|maxOutputTokens|Invalid JSON payload/i.test(msg)) continue;
+        throw geminiError(res.status, data, model);
+      }
+      if (data && data.promptFeedback && data.promptFeedback.blockReason) {
+        throw new Error('O Gemini bloqueou esse tema. Tente descrevê-lo de outro jeito.');
+      }
+      const cand = data && data.candidates && data.candidates[0];
+      if (!cand) throw new Error('O Gemini não retornou resposta. Tente novamente.');
+      if (cand.finishReason === 'MAX_TOKENS') throw new Error('A resposta do Gemini veio incompleta. Tente gerar menos categorias de uma vez.');
+      if (/SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION/.test(cand.finishReason || '')) {
+        throw new Error('O Gemini recusou esse tema. Tente descrevê-lo de outro jeito.');
+      }
+      const text = ((cand.content && cand.content.parts) || []).filter((pt) => !pt.thought).map((pt) => pt.text || '').join('');
+      return itemsFromText(text, req, { id: 'gemini', label: 'Gemini · ' + model });
+    }
+    throw new Error('O Gemini não aceitou o pedido.');
+  }
+
+  /** Lista os modelos Gemini da chave que suportam generateContent (mais novos primeiro). */
+  const geminiModelsCache = new Map();
+  async function listGeminiModels(key) {
+    if (geminiModelsCache.has(key)) return geminiModelsCache.get(key);
+    const res = await fetch(`${GEMINI_BASE}/models?pageSize=1000`, { headers: { 'x-goog-api-key': key } });
+    let data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok) throw geminiError(res.status, data, '');
+    const ver = (n) => (n.match(/(\d+(?:\.\d+)?)/) || [0, '0'])[1] * 1;
+    const models = ((data && data.models) || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent') && /gemini/i.test(m.name) && !/embedding|aqa|tts|image|vision-only|live|audio/i.test(m.name))
+      .map((m) => ({ id: geminiModelName(m.name), label: m.displayName || geminiModelName(m.name) }))
+      .sort((a, b) => ver(b.id) - ver(a.id) || a.id.localeCompare(b.id));
+    geminiModelsCache.set(key, models);
+    return models;
+  }
+  /** Sugere um modelo: o "flash" estável mais novo; senão o primeiro da lista. */
+  function pickGeminiModel(models) {
+    const stable = models.filter((m) => !/preview|exp|lite|thinking/i.test(m.id));
+    return (stable.find((m) => /flash/i.test(m.id)) || stable[0] || models[0] || {}).id;
+  }
+
+  async function generateWithClaude(req, apiKey, model) {
     const mod = await loadSdk();
     const Anthropic = mod.default;
     const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+    const content = [
+      ...req.images.filter((i) => i.url).map((i) => ({ type: 'image', source: { type: 'url', url: i.url } })),
+      { type: 'text', text: userTextFor(req) },
+    ];
     let response;
     try {
-      response = await client.beta.messages.create({
+      // Streaming: a arte SVG gera respostas longas
+      response = await client.beta.messages.stream({
         model: model || PROVIDERS.anthropic.model,
-        max_tokens: 16000,
+        max_tokens: req.mode === 'svg' ? 64000 : 16000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
-        output_config: { effort: 'medium', format: { type: 'json_schema', schema: OUTPUT_SCHEMA } },
-        system: SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: `Tema: ${prompt}\nCategorias, nesta ordem: ${cats.map((c) => CAT_TO_API[c]).join(', ')}`,
-        }],
-      });
+        output_config: { effort: req.mode === 'svg' ? 'high' : 'medium', format: { type: 'json_schema', schema: schemaFor(req) } },
+        system: systemFor(req, false),
+        messages: [{ role: 'user', content }],
+      }).finalMessage();
     } catch (err) {
       throw friendlyApiError(err, Anthropic);
     }
@@ -277,7 +491,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
       throw new Error('A resposta da IA veio incompleta. Tente gerar menos categorias de uma vez.');
     }
     const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-    return itemsFromText(text, prompt, cats, { id: 'anthropic', label: 'Claude' });
+    return itemsFromText(text, req, { id: 'anthropic', label: 'Claude' });
   }
 
   /** Extrai o JSON da resposta (aceita blocos ```json e texto em volta). */
@@ -291,7 +505,8 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     throw new Error('A IA respondeu em um formato inesperado. Tente novamente ou use outro modelo.');
   }
 
-  function itemsFromText(text, prompt, cats, provider) {
+  function itemsFromText(text, req, provider) {
+    const { prompt, cats } = req;
     const data = parseJsonLoose(text);
     const items = Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
     const out = [];
@@ -309,7 +524,9 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
           prompt,
           engine: provider.id,
           engineLabel: provider.label,
-          asset: { palette: raw.palette, base: raw.base, ring: raw.ring, layers: raw.layers, intro: raw.intro },
+          asset: raw.svg
+            ? { type: 'svg', svg: raw.svg, loopSeconds: raw.loopSeconds, introSvg: cat === 'effects' ? raw.introSvg : '', introSeconds: raw.introSeconds }
+            : { palette: raw.palette, base: raw.base, ring: raw.ring, layers: raw.layers, intro: raw.intro },
         },
       });
     }
@@ -539,7 +756,20 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
   }
 
   /** Variação rápida de um item: gira a paleta e embaralha velocidades/quantidades. */
+  /** Variação local de arte SVG: gira o matiz (a IA pode criar variações reais via Referência). */
+  function hueSvg(svg, deg) {
+    return svg ? svg.replace(/<svg\b([^>]*)>/, (m, attrs) => `<svg${attrs.replace(/\sstyle="[^"]*"/, '')} style="filter:hue-rotate(${Math.round(deg)}deg)">`) : svg;
+  }
   function varyItem(item) {
+    if (item.asset && item.asset.type === 'svg') {
+      const deg = choice([-1, 1]) * rnd(30, 150);
+      const a = item.asset;
+      return {
+        name: item.name.replace(/( · v\d+)?$/, '') + ' · v' + Math.floor(rnd(2, 99)),
+        description: item.description, rarity: item.rarity, tags: item.tags, prompt: item.prompt, engine: item.engine, engineLabel: item.engineLabel,
+        asset: { type: 'svg', svg: hueSvg(a.svg, deg), loopSeconds: a.loopSeconds, introSvg: hueSvg(a.introSvg, deg), introSeconds: a.introSeconds },
+      };
+    }
     const a = JSON.parse(JSON.stringify(item.asset));
     const deg = choice([-1, 1]) * rnd(25, 70);
     for (const k of ['primary', 'secondary', 'accent']) a.palette[k] = shiftHex(a.palette[k], deg);
@@ -564,7 +794,177 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
   /* ------------------------------------------------------------------ */
   /* Interface                                                           */
   /* ------------------------------------------------------------------ */
-  const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', busy: false, results: [] };
+  const MODE_STORAGE = 'cosmetic-studio:gen-mode';
+  const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', mode: store.get(MODE_STORAGE) === 'particles' ? 'particles' : 'svg', busy: false, results: [], refs: [] };
+
+  /* ---------- Referências da biblioteca ---------- */
+  const MAX_REFS = 3;
+  function refsResolved() {
+    return ui.refs.map((r) => ({ cat: r.cat, item: CS.findItem(r.cat, r.id) })).filter((r) => r.item);
+  }
+  function addRef(cat, id) {
+    if (ui.refs.some((r) => r.cat === cat && r.id === id)) return CS.toast('Essa referência já foi escolhida.', 'info');
+    if (ui.refs.length >= MAX_REFS) return CS.toast(`Use no máximo ${MAX_REFS} referências.`, 'danger');
+    ui.refs.push({ cat, id });
+    if (!$$('#gen-cats input:checked').some((i) => i.value === cat)) {
+      const box = $(`#gen-cats input[value="${cat}"]`);
+      if (box) box.checked = true;
+    }
+    renderRefs();
+    const it = CS.findItem(cat, id);
+    CS.toast(`“${it ? it.name : 'Item'}” adicionado como referência.`, 'success');
+  }
+  function renderRefs() {
+    const box = $('#gen-refs');
+    box.innerHTML = '';
+    const list = refsResolved();
+    $('#gen-refs-empty').classList.toggle('hidden', list.length > 0);
+    list.forEach(({ cat, item }) => {
+      const chip = document.createElement('span');
+      chip.className = 'ref-chip';
+      const thumb = refThumb(cat, item, 28);
+      const name = document.createElement('span');
+      name.className = 'truncate max-w-[160px]';
+      name.textContent = item.name;
+      const kind = document.createElement('span');
+      kind.className = 'text-[10px] text-dc-faint';
+      kind.textContent = CATS[cat].singular;
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'ref-x';
+      x.setAttribute('aria-label', 'Remover referência ' + item.name);
+      x.textContent = '✕';
+      x.addEventListener('click', () => {
+        ui.refs = ui.refs.filter((r) => !(r.cat === cat && r.id === item.id));
+        renderRefs();
+      });
+      chip.append(thumb, name, kind, x);
+      box.appendChild(chip);
+    });
+    $('#gen-prompt').placeholder = list.length
+      ? 'Opcional: descreva o que mudar (ex.: versão sombria, com nuvens escuras)'
+      : 'Ex.: dragão de jade cuspindo fogo verde em um templo nas nuvens';
+    $('#gen-prompt').required = !list.length;
+  }
+  /** Miniatura de um item para chips e para o seletor. */
+  function refThumb(cat, item, size) {
+    const wrap = document.createElement('span');
+    wrap.className = 'ref-thumb';
+    wrap.style.width = wrap.style.height = size + 'px';
+    const a = item.asset || {};
+    if (a.type === 'image') {
+      const img = document.createElement('img');
+      img.loading = 'lazy';
+      img.alt = '';
+      img.src = a.staticSrc || a.loop || a.src || a.intro;
+      wrap.appendChild(img);
+    } else {
+      const inner = document.createElement('span');
+      inner.className = 'ref-thumb-inner';
+      inner.appendChild(CS.buildAsset(item, cat, { paused: true, phase: 'loop' }));
+      wrap.appendChild(inner);
+    }
+    return wrap;
+  }
+
+  let picker;
+  function openPicker() {
+    if (!picker) {
+      document.body.insertAdjacentHTML('beforeend', `
+        <dialog id="ref-picker" class="json-modal w-[min(94vw,720px)] rounded-xl bg-dc-side text-dc-text p-0 border border-white/10 shadow-2xl">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-black/30">
+            <h3 class="font-bold">Escolher referências da biblioteca</h3>
+            <button type="button" class="btn btn-ghost btn-sm" data-close aria-label="Fechar">✕</button>
+          </div>
+          <div class="p-4 space-y-3">
+            <div class="flex flex-wrap gap-2 items-center">
+              <input id="ref-search" type="search" class="dc-input text-sm flex-1 min-w-[200px]" placeholder="Buscar por nome, coleção ou tag…" />
+              <div class="seg" id="ref-cat">
+                <button type="button" data-cat="effects" class="is-active">Efeitos</button>
+                <button type="button" data-cat="decorations">Molduras</button>
+                <button type="button" data-cat="nameplates">Nameplates</button>
+              </div>
+            </div>
+            <p class="text-[11px] text-dc-faint">Escolha até ${MAX_REFS}. A IA recebe a arte/spec dos itens gerados e a imagem dos itens oficiais (Claude, Gemini e OpenAI enxergam imagens).</p>
+            <div id="ref-list" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[52vh] overflow-y-auto pr-1"></div>
+          </div>
+          <div class="flex justify-end gap-2 px-4 py-3 border-t border-black/30">
+            <button type="button" class="btn btn-primary btn-sm" data-close>Concluir</button>
+          </div>
+        </dialog>`);
+      picker = $('#ref-picker');
+      picker._cat = 'effects';
+      picker.addEventListener('click', (e) => {
+        if (e.target === picker || e.target.closest('[data-close]')) picker.close();
+        const c = e.target.closest('#ref-cat [data-cat]');
+        if (c) {
+          picker._cat = c.dataset.cat;
+          $$('#ref-cat button').forEach((b) => b.classList.toggle('is-active', b === c));
+          renderPicker();
+        }
+        const row = e.target.closest('[data-ref-id]');
+        if (row) {
+          const exists = ui.refs.some((r) => r.cat === row.dataset.refCat && r.id === row.dataset.refId);
+          if (exists) {
+            ui.refs = ui.refs.filter((r) => !(r.cat === row.dataset.refCat && r.id === row.dataset.refId));
+            renderRefs();
+          } else addRef(row.dataset.refCat, row.dataset.refId);
+          renderPicker();
+        }
+      });
+      let t;
+      $('#ref-search').addEventListener('input', () => { clearTimeout(t); t = setTimeout(renderPicker, 150); });
+    }
+    renderPicker();
+    picker.showModal();
+  }
+  function renderPicker() {
+    const cat = picker._cat;
+    const q = $('#ref-search').value.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const items = CS.DATA[cat].filter((it) => {
+      if (!q) return true;
+      const hay = [it.name, it.collection, it.description, ...(it.tags || [])].join(' ').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      return q.split(/\s+/).every((w) => hay.includes(w));
+    });
+    const list = $('#ref-list');
+    list.innerHTML = '';
+    items.slice(0, 80).forEach((it) => {
+      const on = ui.refs.some((r) => r.cat === cat && r.id === it.id);
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'ref-row hover-host' + (on ? ' is-on' : '');
+      row.dataset.refId = it.id;
+      row.dataset.refCat = cat;
+      const meta = document.createElement('span');
+      meta.className = 'min-w-0 text-left';
+      meta.innerHTML = '<span class="block text-sm font-semibold truncate"></span><span class="block text-[11px] text-dc-faint truncate"></span>';
+      meta.firstChild.textContent = it.name;
+      meta.lastChild.textContent = [it.collection, it.source === 'shop' ? 'loja' : it._custom ? 'criação' : ''].filter(Boolean).join(' · ');
+      const mark = document.createElement('span');
+      mark.className = 'ml-auto text-lg';
+      mark.textContent = on ? '✓' : '+';
+      row.append(refThumb(cat, it, 48), meta, mark);
+      list.appendChild(row);
+    });
+    if (!items.length) list.innerHTML = '<p class="text-sm text-dc-faint p-4">Nada encontrado.</p>';
+    else if (items.length > 80) list.insertAdjacentHTML('beforeend', `<p class="text-[11px] text-dc-faint p-2 col-span-full">Mostrando 80 de ${items.length}. Refine a busca.</p>`);
+    CS.syncUserBits(list);
+  }
+
+  /** Motor local com referências: varia as specs e usa nome/tags das demais como tema. */
+  function generateLocalFromRefs(prompt, cats, refs) {
+    const out = [];
+    for (const cat of cats) {
+      const same = refs.find((r) => r.cat === cat && (r.item.asset.type === 'gen' || r.item.asset.type === 'svg'));
+      if (same) {
+        out.push({ cat, raw: { ...varyItem(same.item), engine: 'local', prompt: prompt || same.item.name } });
+        continue;
+      }
+      const theme = [prompt, ...refs.map((r) => [r.item.name, r.item.collection, ...(r.item.tags || [])].join(' '))].filter(Boolean).join(' ');
+      out.push(...generateLocal(theme, [cat]));
+    }
+    return out;
+  }
 
   /* Configuração por provedor: { provider, models: {}, baseUrls: {}, keys: {} } */
   function loadAiSettings() {
@@ -598,6 +998,40 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     $('#gen-key-label').textContent = `Chave da API — ${p.label}${p.keyOptional ? ' (opcional)' : ''}`;
     $('#gen-key-remember').checked = ai.remember;
     $('#gen-provider-hint').textContent = p.hint || '';
+    refreshModelList();
+  }
+
+  /** Preenche a lista de modelos (hoje: Gemini) a partir da chave informada. */
+  let modelListSeq = 0;
+  async function refreshModelList() {
+    const dl = $('#gen-models');
+    dl.innerHTML = '';
+    const p = PROVIDERS[ai.provider];
+    const key = $('#gen-key').value.trim();
+    if (p.native !== 'gemini' || !key) return;
+    const seq = ++modelListSeq;
+    try {
+      const models = await listGeminiModels(key);
+      if (seq !== modelListSeq) return;
+      models.forEach((m) => {
+        const o = document.createElement('option');
+        o.value = m.id;
+        o.label = m.label;
+        dl.appendChild(o);
+      });
+      const current = geminiModelName($('#gen-model').value);
+      if (models.length && !models.some((m) => m.id === current) && !ai.models[ai.provider]) {
+        const best = pickGeminiModel(models);
+        if (best) {
+          $('#gen-model').value = best;
+          $('#gen-provider-hint').textContent = `${p.hint} Modelo escolhido automaticamente: ${best} (${models.length} disponíveis).`;
+        }
+      } else if (models.length) {
+        $('#gen-provider-hint').textContent = `${p.hint} ${models.length} modelos disponíveis nesta chave.`;
+      }
+    } catch (e) {
+      if (seq === modelListSeq) $('#gen-provider-hint').textContent = `${p.hint} ⚠ ${e.message}`;
+    }
   }
 
   function selectedCats() {
@@ -654,10 +1088,12 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
 
   function addResults(list) {
     const added = list.map(({ cat, raw }) => {
-      const item = CS.sanitizeGenItem(cat, raw);
+      const item = CS.sanitizeCustomItem(cat, raw);
+      if (!item) return null;
       CS.registerCustom(cat, item, { saved: false });
       return { cat, id: item.id };
-    });
+    }).filter(Boolean);
+    if (added.length < list.length) CS.toast(`${list.length - added.length} item(ns) vieram com arte inválida e foram descartados.`, 'info');
     ui.results = [...added, ...ui.results].slice(0, 24);
     renderResults();
     return added;
@@ -668,9 +1104,10 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     if (ui.busy) return;
     const prompt = $('#gen-prompt').value.trim();
     const cats = selectedCats();
-    if (!prompt) {
+    const refs = refsResolved();
+    if (!prompt && !refs.length) {
       $('#gen-prompt').focus();
-      return CS.toast('Descreva um tema para gerar.', 'danger');
+      return CS.toast('Descreva um tema ou escolha referências da biblioteca.', 'danger');
     }
     if (!cats.length) return CS.toast('Escolha pelo menos uma categoria.', 'danger');
 
@@ -688,12 +1125,36 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
       }
       ai.keys[ai.provider] = cfg.key;
       persistAiSettings();
-      setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está desenhando o seu kit… isso leva alguns segundos.`);
+      const mode = ui.mode;
+      setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está ${mode === 'svg' ? 'desenhando a arte' : 'montando'} do seu kit… ${mode === 'svg' ? 'isso pode levar até 1–2 minutos.' : 'isso leva alguns segundos.'}`);
       showSkeletons(cats.length);
+      const req = { prompt, cats, mode, refs: refs.map((r) => ({ ...r })), images: [] };
+      // Imagens das referências oficiais (Claude/OpenAI recebem a URL; Gemini, os bytes)
+      for (const r of req.refs) {
+        const url = refImageUrl(r.item);
+        if (!url) continue;
+        if (ai.provider === 'anthropic' || ai.provider === 'openai') { req.images.push({ url }); r.hasImage = true; }
+        else if (PROVIDERS[ai.provider].native === 'gemini') {
+          try { req.images.push(await toBase64(url)); r.hasImage = true; } catch (e) { /* segue sem a imagem */ }
+        }
+      }
+      const call = (rq) => (ai.provider === 'anthropic'
+        ? generateWithClaude(rq, cfg.key, cfg.model)
+        : PROVIDERS[ai.provider].native === 'gemini'
+          ? generateWithGemini(rq, cfg)
+          : generateWithOpenAICompat(rq, cfg));
       try {
-        const list = ai.provider === 'anthropic'
-          ? await generateWithClaude(prompt, cats, cfg.key, cfg.model)
-          : await generateWithOpenAICompat(prompt, cats, cfg);
+        let list;
+        try {
+          list = await call(req);
+        } catch (err) {
+          if (!req.images.length) throw err;
+          // O modelo pode não aceitar imagens: tenta de novo só com texto
+          console.warn('[Gerador IA] tentando sem imagens:', err.message);
+          req.images = [];
+          req.refs.forEach((r) => { r.hasImage = false; });
+          list = await call(req);
+        }
         $$('#gen-results .gen-skeleton').forEach((n) => n.remove());
         addResults(list);
         CS.toast(`${list.length} ${list.length === 1 ? 'cosmético gerado' : 'cosméticos gerados'} pela IA!`, 'success');
@@ -710,7 +1171,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
       showSkeletons(cats.length);
       setTimeout(() => {
         $$('#gen-results .gen-skeleton').forEach((n) => n.remove());
-        const list = generateLocal(prompt, cats);
+        const list = refs.length ? generateLocalFromRefs(prompt, cats, refs) : generateLocal(prompt, cats);
         addResults(list);
         setBusy(false);
         CS.toast(`${list.length} ${list.length === 1 ? 'cosmético gerado' : 'cosméticos gerados'} localmente!`, 'success');
@@ -774,6 +1235,11 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
       first?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } else if (btn.classList.contains('gen-json')) {
       openJson(item);
+    } else if (btn.classList.contains('gen-ref')) {
+      addRef(cat, item.id);
+      $('#gen-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (btn.classList.contains('btn-apng')) {
+      window.CosmeticExport && window.CosmeticExport.open(cat, item.id);
     }
   }
 
@@ -825,6 +1291,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     $('#gen-key').addEventListener('change', (e) => {
       ai.keys[ai.provider] = e.target.value.trim();
       persistAiSettings();
+      refreshModelList();
     });
     $('#gen-key-remember').addEventListener('change', (e) => {
       ai.remember = e.target.checked;
@@ -846,6 +1313,16 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     });
 
     $('#gen-form').addEventListener('submit', onGenerate);
+    $('#gen-refs-add').addEventListener('click', openPicker);
+    $$('#gen-mode button').forEach((b) => b.classList.toggle('is-active', b.dataset.mode === ui.mode));
+    $('#gen-mode').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-mode]');
+      if (!b) return;
+      ui.mode = b.dataset.mode;
+      store.set(MODE_STORAGE, ui.mode);
+      $$('#gen-mode button').forEach((x) => x.classList.toggle('is-active', x === b));
+    });
+    renderRefs();
     $('#gen-results').addEventListener('click', onResultsClick);
     $('#gen-clear').addEventListener('click', () => {
       ui.results = [];
@@ -865,5 +1342,5 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
   else init();
 
   // Exposto para testes / depuração
-  window.CosmeticGenerator = { generateLocal, varyItem, OUTPUT_SCHEMA, SYSTEM_PROMPT };
+  window.CosmeticGenerator = { generateLocal, varyItem, addRef, OUTPUT_SCHEMA, SYSTEM_PROMPT, SVG_OUTPUT_SCHEMA, SVG_SYSTEM_PROMPT, userTextFor };
 })();
