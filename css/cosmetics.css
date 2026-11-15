@@ -898,3 +898,6 @@
 /* Profile frames: arte estática sobre o card, presa ao topo e na largura dele */
 .frame-layer { position: absolute; left: 0; top: 0; width: 100%; pointer-events: none; z-index: 3; }
 .frame-layer .frame-img { display: block; width: 100%; height: auto; }
+
+/* Camadas oficiais do efeito de perfil (entrada/loop), empilhadas pelo z-index da config */
+.cosmetic-layer > img.fx-layer { transition: opacity .12s linear; }
