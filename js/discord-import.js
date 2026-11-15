@@ -121,23 +121,27 @@
   }
 
   /* ---------------- Loja ao vivo (API pública do itemshop.gg) ----------------
-     Termos: mostrar o link "Data from itemshop.gg", fazer cache (~2 min) e
-     respeitar 30 req/min por IP sem chave. Só a loja do dia é usada (sem chave). */
-  const SHOP_API = 'https://itemshop.gg/api/v1/shop/discord';
-  const SHOP_CACHE = 'cosmetic-studio:shop-cache:v1';
-  const SHOP_TTL = 2 * 60 * 1000;
+     O cliente (js/itemshop.js) cuida de cache, fingerprint, ETag e 429.
+     Termos: mostrar "Data from itemshop.gg" com link para meta.attribution.url. */
 
+  /** @param {import('../types/itemshop').Price | null} p */
   function priceLabel(p) {
-    if (!p || p.amount == null) return '';
+    if (!p) return '';
+    if (p.amount == null) return p.label || '';
     if (p.currency === 'USD') return 'US$ ' + Number(p.amount).toFixed(2).replace('.', ',');
     return `${p.amount} ${p.currency || ''}`.trim();
   }
 
-  /** Converte um item da API no formato da galeria (só tipos que dá para testar no perfil). */
-  function shopItemToEntry(it, section) {
+  /**
+   * Converte um item da API no formato da galeria (só tipos que dá para testar no perfil).
+   * @param {import('../types/itemshop').Item} it
+   * @param {import('../types/itemshop').Section} sec
+   */
+  function shopItemToEntry(it, sec) {
     const card = it.images && it.images.card;
     if (!card || !/^\d{15,21}$/.test(it.id || '')) return null;
-    const desc = [priceLabel(it.price), section].filter(Boolean).join(' · ');
+    const section = sec.title;
+    const desc = [sec.upcoming ? 'Em breve' : '', it.soldOut ? 'Esgotado' : '', priceLabel(it.price), section].filter(Boolean).join(' · ');
     const base = { name: it.name, collection: section || 'Loja do Discord', source: 'shop', tags: ['discord', 'loja', String(it.type || '').toLowerCase()] };
     if (it.type === 'Avatar Decoration' && /avatar-decoration-presets\//.test(card)) {
       return { cat: 'decorations', raw: { ...base, id: 'dc-deco-' + it.id, description: desc,
@@ -155,33 +159,28 @@
     return null;
   }
 
-  async function loadShop() {
-    let payload = null;
-    try {
-      const cached = JSON.parse(localStorage.getItem(SHOP_CACHE) || 'null');
-      if (cached && Date.now() - cached.t < SHOP_TTL) payload = cached;
-    } catch (e) { /* sem cache */ }
-    if (!payload) {
-      try {
-        const res = await fetch(SHOP_API);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const json = await res.json();
-        const entries = [];
-        for (const sec of (json.data && json.data.sections) || []) {
-          for (const it of sec.items || []) {
-            const e = shopItemToEntry(it, sec.title);
-            if (e) entries.push(e);
-          }
-        }
-        payload = { t: Date.now(), entries, attribution: json.meta && json.meta.attribution && json.meta.attribution.url, date: json.data && json.data.shopDate };
-        try { localStorage.setItem(SHOP_CACHE, JSON.stringify(payload)); } catch (e) { /* cheio: segue sem cache */ }
-      } catch (e) {
-        console.warn('[Loja] não foi possível carregar a loja do itemshop.gg:', e.message);
-        return;
+  /** @param {import('../types/itemshop').ShopAnswer} answer */
+  function shopToEntries(answer) {
+    const entries = [];
+    for (const sec of (answer.data && answer.data.sections) || []) {
+      for (const it of sec.items || []) {
+        const e = shopItemToEntry(it, sec);
+        if (e) entries.push(e);
       }
     }
-    CS.addCatalogItems(payload.entries);
-    if (payload.attribution) CS.setShopAttribution(payload.attribution);
+    return entries;
+  }
+
+  async function loadShop() {
+    if (!window.ItemShop) return;
+    try {
+      const res = await window.ItemShop.shop('discord', shopToEntries);
+      CS.addCatalogItems(res.value);
+      CS.setShopAttribution(res.meta && res.meta.attribution && res.meta.attribution.url, res.meta && res.meta.terms, res.shopDate, res.stale);
+    } catch (e) {
+      console.warn('[Loja] não foi possível carregar a loja do itemshop.gg:', e.code || e.status || '', e.message);
+      if (e.status === 429) CS.toast(`A loja do Discord está temporariamente indisponível (limite de requisições). Tente em ${e.retryAfter || 60} s.`, 'info');
+    }
   }
 
   async function loadOfficial() {
