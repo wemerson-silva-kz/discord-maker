@@ -357,4 +357,11 @@ window.COSMETICS_DATA = {
       },
     },
   ],
+
+  /* ------------------------------------------------------------------ */
+  /* PROFILE FRAMES — arte sobre o card de perfil (vêm da loja do Discord) */
+  /* Formato: { type: 'image', src: '<png>' } — imagem presa ao topo do  */
+  /* card, na largura dele (os oficiais têm 1312 px de largura).          */
+  /* ------------------------------------------------------------------ */
+  frames: [],
 };

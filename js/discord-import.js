@@ -71,7 +71,7 @@
     const ref = parseRef(form.main);
     if (!ref) throw new Error('ID ou URL não reconhecido.');
     const sta = parseRef(form.staticUrl);
-    const short = cat === 'decorations' ? 'deco' : 'np';
+    const short = SHORT[cat] || 'np';
     return CS.sanitizeCustomItem(cat, {
       id: `dc-${short}-` + ref.key.toLowerCase().replace(/[^a-z0-9-]/g, ''),
       name: name || `${CATS[cat].singular} do Discord #${ref.key.slice(-6)}`,
@@ -83,8 +83,9 @@
   }
 
   /* ---------------- Catálogo (catalog/discord.json) ---------------- */
-  const TYPE_TO_CAT = { decoration: 'decorations', nameplate: 'nameplates', effect: 'effects' };
-  const CAT_TO_TYPE = { decorations: 'decoration', nameplates: 'nameplate', effects: 'effect' };
+  const TYPE_TO_CAT = { decoration: 'decorations', nameplate: 'nameplates', effect: 'effects', frame: 'frames' };
+  const CAT_TO_TYPE = { decorations: 'decoration', nameplates: 'nameplate', effects: 'effect', frames: 'frame' };
+  const SHORT = { decorations: 'deco', nameplates: 'np', frames: 'frame' };
 
   /** Converte uma entrada do catálogo no item da galeria (mesmas regras do tools/build-catalog.mjs). */
   function catalogEntryToItem(e) {
@@ -101,7 +102,7 @@
     }
     const ref = parseRef(e.sku || e.preset || e.src);
     if (!ref) return null;
-    const short = cat === 'decorations' ? 'deco' : 'np';
+    const short = SHORT[cat] || 'np';
     return { cat, raw: { ...base, id: `dc-${short}-` + ref.key.toLowerCase().replace(/[^a-z0-9-]/g, ''),
       name: e.name || `${CATS[cat].singular} do Discord #${ref.key.slice(-6)}`,
       description: e.description || 'Asset oficial do CDN do Discord: estático até o hover, animado ao passar o mouse.',
@@ -152,6 +153,10 @@
       return { cat: 'nameplates', raw: { ...base, id: 'dc-np-' + it.id, description: desc,
         asset: { type: 'image', src: card.replace(/\/static$/, '/animated'), staticSrc: card } } };
     }
+    if (it.type === 'Profile Frame' && /\/static$/.test(card)) {
+      // Frame: arte estática (o CDN não tem versão animada)
+      return { cat: 'frames', raw: { ...base, id: 'dc-frame-' + it.id, description: desc, asset: { type: 'image', src: card } } };
+    }
     if (it.type === 'Profile Effect') {
       // A API só traz uma miniatura estática; entrada/loop podem ser adicionados pelo importador.
       return { cat: 'effects', raw: { ...base, id: 'dc-fx-' + it.id, description: (desc ? desc + ' · ' : '') + 'prévia estática',
@@ -183,7 +188,7 @@
   function bundleContents(b) {
     const base = b.name.replace(/\s*bundle\s*$/i, '').trim().toLowerCase();
     const out = {};
-    for (const cat of ['decorations', 'nameplates', 'effects']) {
+    for (const cat of ['decorations', 'nameplates', 'effects', 'frames']) {
       const inSection = CS.DATA[cat].filter((it) => it.source === 'shop' && it.collection === b.section);
       out[cat] = inSection.find((it) => it.name.trim().toLowerCase() === base) || null;
     }
@@ -246,6 +251,7 @@
                 <button type="button" data-cat="decorations" class="is-active">Moldura</button>
                 <button type="button" data-cat="nameplates">Nameplate</button>
                 <button type="button" data-cat="effects">Efeito de Perfil</button>
+                <button type="button" data-cat="frames">Frame</button>
               </div>
             </div>
             <div data-for="single">
@@ -356,14 +362,15 @@
     }
     function showBundle(box, b) {
       const parts = bundleContents(b);
-      const names = { decorations: 'Moldura', nameplates: 'Nameplate', effects: 'Efeito' };
+      const names = { decorations: 'Moldura', nameplates: 'Nameplate', effects: 'Efeito', frames: 'Frame' };
       box.innerHTML = '';
       const title = document.createElement('div');
       title.className = 'font-semibold text-dc-text mb-1';
       title.textContent = `📦 Pacote: ${b.name}${b.price ? ' · ' + b.price : ''} (${b.section})`;
       box.appendChild(title);
       let any = false;
-      for (const cat of ['decorations', 'nameplates', 'effects']) {
+      for (const cat of ['decorations', 'nameplates', 'effects', 'frames']) {
+        if (cat === 'frames' && !parts[cat]) continue;
         const d = document.createElement('div');
         d.textContent = `${names[cat]}: ${parts[cat] ? parts[cat].name : '— não está na loja de hoje'}`;
         box.appendChild(d);
@@ -375,7 +382,7 @@
       btn.className = 'btn btn-primary btn-sm mt-2';
       btn.textContent = 'Testar pacote completo';
       btn.addEventListener('click', () => {
-        for (const cat of ['decorations', 'nameplates', 'effects']) {
+        for (const cat of ['decorations', 'nameplates', 'effects', 'frames']) {
           const it = parts[cat];
           if (it && CS.state[CATS[cat].key] !== it.id) CS.equip(cat, it.id);
         }

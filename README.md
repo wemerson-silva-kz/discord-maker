@@ -108,6 +108,7 @@ A galeria carrega a loja do dia pela API pública do [itemshop.gg](https://items
 | Avatar Decoration | Moldura | estático → `passthrough=true` no hover (dá para medir FPS no navegador) |
 | Nameplate | Nameplate | `/static` → `/animated` no hover |
 | Profile Effect | Efeito de perfil | só miniatura estática: a API não fornece entrada e loop |
+| Profile Frame | Profile Frame (4ª aba) | arte estática (o CDN não tem versão animada), presa ao topo do card de perfil na largura dele |
 
 ### Integração com a API (`js/itemshop.js`, `tools/itemshop.mjs`, `types/itemshop.d.ts`)
 

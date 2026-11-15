@@ -54,7 +54,7 @@ let measured = 0, problems = 0;
 for (const [n, item] of catalog.items.entries()) {
   const label = `#${n + 1} ${item.type} "${item.name || '(sem nome)'}"`;
   try {
-    if (!['decoration', 'nameplate', 'effect'].includes(item.type)) throw new Error(`type inválido: ${item.type}`);
+    if (!['decoration', 'nameplate', 'effect', 'frame'].includes(item.type)) throw new Error(`type inválido: ${item.type}`);
     const urls = urlsFor(item);
     const fields = item.type === 'effect' ? ['intro', 'loop'] : ['src'];
     item.meta = item.meta || {};

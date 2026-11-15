@@ -656,3 +656,5 @@ input[type='color'].swatch::-moz-color-swatch { border: none; border-radius: 6px
 
 .metrics-badge.is-action { cursor: pointer; color: #FEE75C; pointer-events: auto; }
 .metrics-badge.is-action:hover { background: rgba(88, 101, 242, .85); color: #fff; }
+
+.mini-profile--frame { overflow: hidden; }
