@@ -1683,7 +1683,11 @@
     CATS, DATA, GEN, buildAsset, buildCard, toast, syncUserBits, updateCardStates, findItem,
     sanitizeGenItem, sanitizeCustomItem, registerCustom, saveCustom, deleteCustom, publicItem,
     loadApng, getMetrics, canFetch, metricsLabel, renderGallery, addCatalogItems, catalogReady,
-    setShopAttribution(url) { const a = $('#shop-attribution'); if (/^https:\/\/itemshop\.gg\//.test(url)) a.href = url; }, setTab: (t) => setTab(t),
+    setShopAttribution(url, terms, shopDate, stale) {
+      const a = $('#shop-attribution');
+      if (/^https:\/\/itemshop\.gg(\/|$)/.test(url || '')) a.href = url;
+      a.title = `Loja de ${shopDate || 'hoje'}${stale ? ' (dados do último cache — itemshop.gg indisponível agora)' : ''}${/^https:\/\/itemshop\.gg\//.test(terms || '') ? ' · Termos: ' + terms : ''}`;
+    }, setTab: (t) => setTab(t),
     addCollection(name, color) { if (!DATA.collections[name]) DATA.collections[name] = { color }; },
     equip: (cat, id) => toggleEquip(cat, id),
     setSaved(cat, id, saved) {

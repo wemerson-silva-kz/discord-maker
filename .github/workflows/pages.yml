@@ -12,14 +12,12 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  # 1) Monta o site e envia o artefato "github-pages".
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,5 +32,15 @@ jobs:
         with:
           path: _site
 
+  # 2) Publica em um job separado: só começa depois que o artefato do job
+  #    anterior foi finalizado (no mesmo job a listagem pode vir vazia:
+  #    "No artifacts named github-pages were found").
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4

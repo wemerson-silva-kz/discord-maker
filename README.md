@@ -99,9 +99,29 @@ A galeria carrega a loja do dia pela API pública do [itemshop.gg](https://items
 | Nameplate | Nameplate | `/static` → `/animated` no hover |
 | Profile Effect | Efeito de perfil | só miniatura estática: a API não fornece entrada e loop |
 
-Seguindo os termos da API: o link **"Data from itemshop.gg"** aparece sempre que esses dados são exibidos, a resposta fica em cache por 2 minutos (`localStorage`) e o site faz uma chamada por visita (o limite sem chave é 30 por minuto por IP). Os APNGs animados só são baixados quando o mouse passa no card, e a grade mostra 48 itens por vez.
+### Integração com a API (`js/itemshop.js`, `tools/itemshop.mjs`, `types/itemshop.d.ts`)
 
-A chave da API (`ITEMSHOP_API_KEY`) **não** é usada: ela só serve para histórico e detalhes de itens e, pelos termos, não pode ir para o navegador. Como o site é estático (GitHub Pages), ele usa só o endpoint público.
+**No navegador** (`js/itemshop.js`), só endpoints sem chave, seguindo as boas práticas da API:
+- consulta `/rotations` e só baixa a loja quando o **fingerprint** do Discord muda;
+- reenvia o **ETag** em `If-None-Match` (304 = sem mudança) e guarda as respostas por 2 minutos;
+- em **429**, espera o `Retry-After` e usa o último cache, como em 503 ou sem rede;
+- trata erros `{ error: { code, message } }`;
+- mostra o link **"Data from itemshop.gg"** (para `meta.attribution.url`), com a data da loja e o link dos termos no título.
+
+**No servidor** (`tools/itemshop.mjs`, Node 18+), com a chave **só** pela variável de ambiente `ITEMSHOP_API_KEY` (nunca no código, no repositório ou no navegador):
+
+```bash
+cp .env.example .env        # e coloque sua chave (crie em https://itemshop.gg/account#api)
+node --env-file=.env tools/itemshop.mjs shop discord
+node --env-file=.env tools/itemshop.mjs rotations
+node --env-file=.env tools/itemshop.mjs history discord              # exige chave
+node --env-file=.env tools/itemshop.mjs history discord 2026-11-01   # exige chave
+node --env-file=.env tools/itemshop.mjs item <jogo> <itemKey>        # exige chave
+```
+
+Sem a chave, `games`, `shop` e `rotations` funcionam; `history` e `item` falham com uma mensagem explicando como criar a chave. O cliente define `User-Agent`, faz cache de 2 min com ETag, tenta de novo após `Retry-After` em 429/503 e explica erros 401 (`key_required`/`invalid_key`) e 404 (`unknown_game`, `not_recorded`, `unknown_item`, `no_items`). Também pode ser importado: `import { ItemShopClient } from './tools/itemshop.mjs'`.
+
+Os tipos de todas as respostas estão em `types/itemshop.d.ts`. No Discord, `/games` informa `itemHistory: false` e os itens vêm com `itemKey: null`, então `/items` não se aplica a ele.
 
 ## Catálogo próprio (`catalog/discord.json`)
 
@@ -128,6 +148,10 @@ js/discord-import.js Importador de IDs/URLs do CDN do Discord
 tools/measure-apng.mjs Mede quadros/duração/FPS de APNGs (gera o `meta`)
 tools/build-catalog.mjs Valida e mede o catalog/discord.json
 catalog/discord.json Catálogo de itens oficiais (IDs/hashes do Discord)
+js/itemshop.js      Cliente da API itemshop.gg no navegador (sem chave)
+tools/itemshop.mjs  Cliente/CLI da API itemshop.gg no servidor (ITEMSHOP_API_KEY)
+types/itemshop.d.ts Tipos das respostas da API
+.env.example        Modelo do .env (ITEMSHOP_API_KEY)
 .github/workflows/  Deploy automático no GitHub Pages
 ```
 
