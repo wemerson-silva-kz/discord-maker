@@ -22,7 +22,20 @@
         // exibido nos cards e na lista até o mouse passar por cima
       }
 
-   3) Vídeo (.webm / .mp4):
+   3) Efeito de perfil do Discord em DUAS FASES (entrada → loop):
+      asset: {
+        type: 'image',
+        intro: 'https://cdn.discordapp.com/media/v1/collectibles-shop/<hash-entrada>', // toca 1×, até 6 s
+        loop:  'https://cdn.discordapp.com/media/v1/collectibles-shop/<hash-loop>',    // repete
+      }
+      Molduras e nameplates do Discord têm dois estados:
+        src: '.../collectibles-shop/<id>/animated', staticSrc: '.../collectibles-shop/<id>/static'
+      Itens oficiais ficam em catalog/discord.json (carregado automaticamente).
+      Use o botão "Importar do Discord" da galeria para montar isso a partir de um ID/URL.
+      Opcional: `meta` com quadros/duração/FPS, gerado por `node tools/measure-apng.mjs`
+      (o CDN /collectibles-shop/ não libera CORS, então o navegador não consegue medir sozinho).
+
+   4) Vídeo (.webm / .mp4):
       asset: { type: 'video', src: 'https://cdn.exemplo.com/efeito.webm' }
 
    Tipos de partícula disponíveis (kind):
@@ -41,12 +54,14 @@ window.COSMETICS_DATA = {
     Fantasia: { color: '#3EE6B0' },
     Pixel: { color: '#FF8A00' },
     Elemental: { color: '#4AA3FF' },
+    Discord: { color: '#5865F2' },
   },
 
   rarities: {
     Raro: { color: '#00A8FC' },
     Épico: { color: '#B66DFF' },
     Lendário: { color: '#F0B232' },
+    Oficial: { color: '#5865F2' },
   },
 
   /* ------------------------------------------------------------------ */

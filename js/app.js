@@ -257,32 +257,173 @@
     const a = item.asset || {};
     const layer = el('div', cat === 'decorations' ? 'deco-layer' : 'cosmetic-layer');
     if (paused) layer.classList.add('is-paused');
-
-    if (a.type === 'image') {
-      if (a.staticSrc) {
-        layer.classList.add('has-static');
-        const st = el('img', 'asset-static');
-        st.src = a.staticSrc;
-        st.alt = '';
-        layer.appendChild(st);
+    layer._timers = [];
+    const build = () => {
+      layer._timers.forEach(clearTimeout);
+      layer._timers = [];
+      layer._gen = (layer._gen || 0) + 1;
+      layer.innerHTML = '';
+      if (a.type === 'image') buildImage(layer, a, cat);
+      else if (a.type === 'gen') buildGen(layer, a, cat);
+      else if (a.type === 'video') {
+        const v = el('video', 'asset-anim');
+        Object.assign(v, { src: a.src, autoplay: true, muted: true, loop: true, playsInline: true });
+        layer.appendChild(v);
+      } else {
+        if (a.className) layer.classList.add(...a.className.split(/\s+/));
+        (a.particles || []).forEach((spec) => spawnParticles(layer, spec));
       }
-      const img = el('img', 'asset-anim');
-      img.src = a.src;
-      img.alt = '';
-      img.decoding = 'async';
-      if (a.staticSrc) img.style.position = 'absolute';
-      layer.appendChild(img);
-    } else if (a.type === 'gen') {
-      buildGen(layer, a, cat);
-    } else if (a.type === 'video') {
-      const v = el('video', 'asset-anim');
-      Object.assign(v, { src: a.src, autoplay: true, muted: true, loop: true, playsInline: true });
-      layer.appendChild(v);
-    } else {
-      if (a.className) layer.classList.add(...a.className.split(/\s+/));
-      (a.particles || []).forEach((spec) => spawnParticles(layer, spec));
-    }
+    };
+    build();
+    /** Reinicia a animação (usada no hover dos cards e no botão "repetir"). */
+    layer._replay = () => {
+      layer._userTriggered = true;
+      build();
+    };
     return layer;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Imagens reais (PNG/APNG/GIF/WebP) e efeitos em duas fases         */
+  /* ---------------------------------------------------------------- */
+  function buildImage(layer, a, cat) {
+    if (cat === 'decorations') layer.classList.add('is-img');
+    const phased = !!(a.intro || a.loop);
+    if (a.staticSrc) {
+      layer.classList.add('has-static');
+      const st = el('img', 'asset-static' + (phased ? ' fx-img' : ''));
+      st.loading = 'lazy';
+      st.src = a.staticSrc;
+      st.alt = '';
+      layer.appendChild(st);
+    }
+    const img = el('img', 'asset-anim' + (phased ? ' fx-img' : ''));
+    img.alt = '';
+    img.decoding = 'async';
+    if (a.staticSrc) img.style.position = 'absolute';
+    layer.appendChild(img);
+    if (phased) return runPhases(layer, img, a);
+    // Pausado com estado estático: só baixa o APNG animado quando alguém passar o mouse
+    if (a.staticSrc && layer.classList.contains('is-paused') && !layer._userTriggered && !NO_HOVER) {
+      layer._activate = () => { if (!img.getAttribute('src')) img.src = a.src; };
+      requestAnimationFrame(() => {
+        const host = layer.closest('.hover-host');
+        if (host) host.addEventListener('mouseenter', layer._activate, { once: true });
+        else layer._activate();
+        if (layer.closest('.force-anim')) layer._activate();
+      });
+    } else img.src = a.src;
+  }
+  const NO_HOVER = window.matchMedia && window.matchMedia('(hover: none)').matches;
+
+  /** Efeito de perfil: toca a ENTRADA uma vez e depois troca para o LOOP. */
+  async function runPhases(layer, img, a) {
+    const gen = layer._gen;
+    const skipIntro = layer.classList.contains('is-paused') && !layer._userTriggered;
+    if (a.intro && !skipIntro) {
+      layer.dataset.phase = 'intro';
+      let info = null;
+      if (canFetch(a.intro)) {
+        try { info = await loadApng(a.intro); } catch (e) { info = null; }
+      }
+      if (layer._gen !== gen) return;
+      if (layer._blobUrl) URL.revokeObjectURL(layer._blobUrl);
+      layer._blobUrl = info ? info.freshUrl() : null;
+      // URL nova = o APNG recomeça do 1º quadro (sem CORS, usamos um parâmetro de replay)
+      img.src = layer._blobUrl || (layer._userTriggered ? a.intro + (a.intro.includes('?') ? '&' : '?') + 'replay=' + (++replaySeq) : a.intro);
+      const m = info || (a.meta && a.meta.intro);
+      const secs = m && m.duration ? m.duration : (a.introDuration || 4);
+      const ms = Math.min(secs, 15) * 1000;
+      await new Promise((r) => layer._timers.push(setTimeout(r, ms)));
+      if (layer._gen !== gen) return;
+    }
+    layer.dataset.phase = 'loop';
+    img.src = a.loop || a.intro;
+  }
+
+  /* ---------- Leitor de APNG: quadros, duração e FPS ---------- */
+  const apngCache = new Map();
+  let replaySeq = 0;
+  /** O CDN /collectibles-shop/ do Discord não envia CORS: não dá para ler os bytes. */
+  const canFetch = (url) => !/^https:\/\/cdn\.discordapp\.com\/media\/v1\/collectibles-shop\//.test(url);
+  /** Métricas de um campo do asset (src/intro/loop): mede se der, senão usa asset.meta. */
+  function getMetrics(a, field) {
+    const url = a[field];
+    const fromMeta = () => {
+      const m = a.meta && a.meta[field];
+      if (!m) throw new Error('sem CORS e sem meta');
+      return { ...m, animated: m.frames > 1, fromMeta: true };
+    };
+    if (!url) return Promise.reject(new Error('sem URL'));
+    if (!canFetch(url)) return Promise.resolve().then(fromMeta);
+    return loadApng(url).catch(fromMeta);
+  }
+  /**
+   * Baixa e analisa um PNG/APNG. Os navegadores tratam atrasos de quadro
+   * ≤ 10 ms como 100 ms; a duração "efetiva" já considera essa regra.
+   */
+  function loadApng(url) {
+    if (!apngCache.has(url)) {
+      const p = fetch(url)
+        .then((r) => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.arrayBuffer();
+        })
+        .then((buf) => {
+          const info = parseApng(new Uint8Array(buf));
+          info.bytes = buf.byteLength;
+          const blob = new Blob([buf], { type: 'image/png' });
+          info.freshUrl = () => URL.createObjectURL(blob);
+          return info;
+        })
+        .catch((e) => {
+          apngCache.delete(url);
+          throw e;
+        });
+      apngCache.set(url, p);
+    }
+    return apngCache.get(url);
+  }
+
+  function parseApng(bytes) {
+    const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+    if (!sig.every((b, i) => bytes[i] === b)) throw new Error('Não é um PNG');
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let i = 8, width = 0, height = 0, plays = 1, rawTotal = 0, total = 0, clamped = 0;
+    const delays = [];
+    while (i + 8 <= bytes.length) {
+      const len = dv.getUint32(i);
+      const type = String.fromCharCode(bytes[i + 4], bytes[i + 5], bytes[i + 6], bytes[i + 7]);
+      const d = i + 8;
+      if (type === 'IHDR') { width = dv.getUint32(d); height = dv.getUint32(d + 4); }
+      else if (type === 'acTL') { plays = dv.getUint32(d + 4); }
+      else if (type === 'fcTL') {
+        const num = dv.getUint16(d + 20), den = dv.getUint16(d + 22) || 100;
+        const raw = num / den;
+        const eff = raw <= 0.010 ? 0.1 : raw;
+        if (raw <= 0.010) clamped++;
+        rawTotal += raw;
+        total += eff;
+        delays.push(eff);
+      } else if (type === 'IEND') break;
+      i = d + len + 4;
+    }
+    const frames = delays.length;
+    return {
+      width, height, frames,
+      animated: frames > 1,
+      plays, // 0 = infinito
+      duration: +total.toFixed(3),
+      fps: frames && total ? +(frames / total).toFixed(1) : 0,
+      nominalFps: frames && rawTotal ? +(frames / rawTotal).toFixed(1) : 0,
+      clampedFrames: clamped,
+    };
+  }
+
+  /** Texto curto de métricas para os cards. */
+  function metricsLabel(info) {
+    if (!info.animated) return `${info.width}×${info.height} · estático`;
+    return `${info.fps} fps · ${info.duration.toFixed(1)}s · ${info.plays === 0 ? '∞' : info.plays + '×'}`;
   }
 
   /* ---------------------------------------------------------------- */
@@ -303,6 +444,8 @@
       effects: { few: 10, some: 22, many: 38 },
     },
     rarities: ['Raro', 'Épico', 'Lendário'],
+    introStyles: ['none', 'burst', 'sweep', 'rise', 'zoom', 'curtain', 'flash'],
+    maxIntro: 6,
   };
   const pick = (v, list, def) => (list.includes(v) ? v : def);
   const cleanText = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -328,7 +471,8 @@
       background: hexOr(pal.background, '#14151A'),
     };
     const base = a.base || {};
-    const layers = (Array.isArray(a.layers) ? a.layers : []).slice(0, 5).map((l) => {
+    const intro = a.intro && typeof a.intro === 'object' ? a.intro : {};
+    const sanitizeLayers = (list, max) => (Array.isArray(list) ? list : []).slice(0, max).map((l) => {
       l = l && typeof l === 'object' ? l : {};
       return {
         kind: pick(l.kind, GEN.kinds, 'sparkle'),
@@ -341,6 +485,10 @@
         glyphs: Array.from(cleanText(l.glyphs, 40).replace(/\s/g, '')).slice(0, 8).join(''),
       };
     });
+    const layers = sanitizeLayers(a.layers, 5);
+    let introDur = Number(intro.duration);
+    introDur = Number.isFinite(introDur) ? Math.round(Math.min(GEN.maxIntro, Math.max(0, introDur)) * 10) / 10 : 0;
+    const introStyle = cat === 'effects' ? pick(intro.style, GEN.introStyles, 'none') : 'none';
     return {
       type: 'gen',
       palette,
@@ -351,6 +499,11 @@
       },
       ring: { style: pick(a.ring && a.ring.style, GEN.rings, cat === 'decorations' ? 'conic' : 'none') },
       layers,
+      intro: {
+        style: introStyle,
+        duration: introStyle === 'none' ? 0 : Math.max(0.5, introDur || 2.5),
+        layers: introStyle === 'none' ? [] : sanitizeLayers(intro.layers, 3),
+      },
     };
   }
 
@@ -370,6 +523,54 @@
       asset: sanitizeGenAsset(raw.asset, cat),
       _custom: true,
     };
+  }
+
+  const httpsUrl = (u) => {
+    try {
+      const url = new URL(String(u || ''));
+      return url.protocol === 'https:' && url.href.length < 600 ? url.href : '';
+    } catch (e) {
+      return '';
+    }
+  };
+  /** Itens com imagens reais (ex.: importados do CDN do Discord). */
+  function sanitizeImageItem(cat, raw) {
+    const a = raw.asset || {};
+    const asset = { type: 'image' };
+    for (const k of ['src', 'staticSrc', 'intro', 'loop']) {
+      const v = httpsUrl(a[k]);
+      if (v) asset[k] = v;
+    }
+    if (cat === 'effects' ? !(asset.intro || asset.loop || asset.src) : !asset.src) return null;
+    if (a.meta && typeof a.meta === 'object') {
+      const meta = {};
+      for (const k of ['src', 'intro', 'loop']) {
+        const m = a.meta[k];
+        if (!m || typeof m !== 'object') continue;
+        const num = (v, max) => (Number.isFinite(+v) ? Math.min(max, Math.max(0, +v)) : 0);
+        meta[k] = { width: num(m.width, 4096), height: num(m.height, 4096), frames: num(m.frames, 5000), duration: num(m.duration, 120), fps: num(m.fps, 240), plays: num(m.plays, 1000) };
+        if (m.clampedFrames) Object.assign(meta[k], { clampedFrames: num(m.clampedFrames, 5000), nominalFps: num(m.nominalFps, 1000) });
+      }
+      if (Object.keys(meta).length) asset.meta = meta;
+    }
+    const idur = Number(a.introDuration);
+    if (Number.isFinite(idur) && idur > 0) asset.introDuration = Math.min(15, idur);
+    if (cat === 'effects' && asset.src && !asset.loop && !asset.intro) { asset.loop = asset.src; delete asset.src; }
+    return {
+      id: /^(dc|ai)-[a-z0-9-]{3,90}$/.test(raw.id) ? raw.id : 'dc-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
+      name: cleanText(raw.name, 60) || 'Item do Discord',
+      collection: cleanText(raw.collection, 40) || 'Discord',
+      rarity: 'Oficial',
+      source: pick(raw.source, ['shop', 'catalog', 'import'], 'import'),
+      description: cleanText(raw.description, 160),
+      tags: (Array.isArray(raw.tags) ? raw.tags : []).slice(0, 6).map((t) => cleanText(t, 24)).filter(Boolean),
+      asset,
+      _custom: true,
+    };
+  }
+  function sanitizeCustomItem(cat, raw) {
+    if (!CATS[cat] || !raw || typeof raw !== 'object') return null;
+    return raw.asset && raw.asset.type === 'image' ? sanitizeImageItem(cat, raw) : sanitizeGenItem(cat, raw);
   }
 
   /** Converte uma camada da spec para o formato do sistema de partículas. */
@@ -406,6 +607,8 @@
 
   function buildGen(layer, a, cat) {
     const p = a.palette;
+    const hasIntro = cat === 'effects' && a.intro && a.intro.style !== 'none' && a.intro.duration > 0;
+    let target = layer;
     const spd = GEN.speeds[a.base.speed];
     layer.classList.add('gen', 'gen-cat-' + cat);
     setVars(layer, {
@@ -413,6 +616,26 @@
       '--gs': (7 / spd).toFixed(2) + 's', '--rs': (4 / spd).toFixed(2) + 's',
       '--hue': Math.round(hexToHue(p.primary) - 22) + 'deg',
     });
+    if (hasIntro) {
+      // Fase 1: ENTRADA (toca uma vez, até 6 s). Fase 2: LOOP.
+      const skip = layer.classList.contains('is-paused') && !layer._userTriggered;
+      target = el('div', 'gen-loop');
+      if (!skip) {
+        const d = a.intro.duration;
+        const intro = el('div', 'gen-intro gen-intro-' + a.intro.style, { '--intro-d': d + 's' });
+        a.intro.layers.forEach((l, i) => spawnParticles(intro, genLayerToSpec(l, cat, i)));
+        layer.appendChild(intro);
+        target.classList.add('is-waiting');
+        layer.dataset.phase = 'intro';
+        layer._timers.push(setTimeout(() => {
+          intro.classList.add('is-done');
+          target.classList.remove('is-waiting');
+          layer.dataset.phase = 'loop';
+        }, d * 1000));
+        layer._timers.push(setTimeout(() => intro.remove(), d * 1000 + 600));
+      }
+      layer.appendChild(target);
+    }
     if (cat === 'decorations') {
       const r = a.ring.style;
       if (r === 'dashed') spawnParticles(layer, { kind: 'svgring', radius: 44, width: 1.4, dash: '6 4', color: p.primary, spin: 10 / spd, glow: true });
@@ -422,15 +645,35 @@
       } else if (r !== 'none') layer.appendChild(el('span', 'gen-ring gen-ring-' + r));
     } else if (a.base.style !== 'none') {
       const b = el('span', 'gen-base gen-' + a.base.style + (a.base.animation === 'shift' || a.base.animation === 'pulse' ? ' gen-anim-' + a.base.animation : ''));
-      layer.appendChild(b);
-      if (a.base.animation === 'sweep') layer.appendChild(el('span', 'gen-base gen-sweep'));
-      if (a.base.animation === 'flash') layer.appendChild(el('span', 'gen-base gen-flash'));
+      target.appendChild(b);
+      if (a.base.animation === 'sweep') target.appendChild(el('span', 'gen-base gen-sweep'));
+      if (a.base.animation === 'flash') target.appendChild(el('span', 'gen-base gen-flash'));
     }
-    a.layers.forEach((l, i) => spawnParticles(layer, genLayerToSpec(l, cat, i)));
+    a.layers.forEach((l, i) => spawnParticles(target, genLayerToSpec(l, cat, i)));
   }
 
   /* Armazenamento das criações (localStorage) */
   let customEntries = []; // { cat, item }
+  let catalogLoaded = false;
+  /** Adiciona itens do catálogo oficial (não vão para o localStorage). */
+  function addCatalogItems(entries) {
+    for (const { cat, raw } of entries) {
+      const item = sanitizeCustomItem(cat, raw);
+      if (!item || findItem(cat, item.id)) continue;
+      delete item._custom;
+      if (item.source !== 'shop' && !DATA.collections[item.collection]) DATA.collections[item.collection] = { color: '#5865F2' };
+      DATA[cat].push(item);
+    }
+  }
+  /** Chamado quando o catálogo termina de carregar (ou falha). */
+  function catalogReady() {
+    catalogLoaded = true;
+    const h = fromHash();
+    state = sanitizeState(h ? { ...state, ...stripUndefined(h) } : state);
+    mounted.nameplate = mounted.decoration = mounted.effect = undefined;
+    commit();
+    renderGallery();
+  }
 
   function registerCustom(cat, item, { saved = false } = {}) {
     item._custom = true;
@@ -459,8 +702,9 @@
     let list = [];
     try { list = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]'); } catch (e) { list = []; }
     (Array.isArray(list) ? list : []).forEach((e) => {
-      const item = sanitizeGenItem(e && e.c, e && e.i);
+      const item = sanitizeCustomItem(e && e.c, e && e.i);
       if (!item || findItem(e.c, item.id)) return;
+      if (!DATA.collections[item.collection]) DATA.collections[item.collection] = { color: '#5865F2' };
       item._saved = !!e.s;
       item._createdAt = e.t || Date.now();
       DATA[e.c].push(item);
@@ -499,7 +743,8 @@
   /* Estado                                                            */
   /* ---------------------------------------------------------------- */
   let state = { ...DEFAULT_STATE };
-  const ui = { tab: 'nameplates', query: '', collection: 'Todas', listMode: 'members' };
+  const PAGE = 48;
+  const ui = { tab: 'nameplates', query: '', collection: 'Todas', listMode: 'members', limit: PAGE, pageKey: '' };
 
   function sanitizeState(s) {
     const out = { ...DEFAULT_STATE };
@@ -511,7 +756,8 @@
     if (STATUS[s.status]) out.status = s.status;
     if (isHex(s.banner)) out.banner = s.banner;
     for (const key of ['nameplate', 'decoration', 'effect']) {
-      if (findItem(CAT_BY_KEY[key], s[key])) out[key] = s[key];
+      // ids "dc-…" do catálogo carregam depois (fetch); mantém até lá
+      if (findItem(CAT_BY_KEY[key], s[key]) || (!catalogLoaded && /^dc-[a-z0-9-]{3,90}$/.test(s[key] || ''))) out[key] = s[key];
     }
     return out;
   }
@@ -561,7 +807,7 @@
         const list = JSON.parse(b64urlDecode(p.get('g')));
         (Array.isArray(list) ? list.slice(0, 3) : []).forEach((e) => {
           if (!CATS[e.c]) return;
-          const item = sanitizeGenItem(e.c, e.i);
+          const item = sanitizeCustomItem(e.c, e.i);
           if (item && !findItem(e.c, item.id)) registerCustom(e.c, item, { saved: false });
         });
       } catch (err) {
@@ -616,7 +862,8 @@
   /* Galeria                                                           */
   /* ---------------------------------------------------------------- */
   function matches(item, q) {
-    if (ui.collection !== 'Todas' && item.collection !== ui.collection) return false;
+    if (ui.collection === SHOP_CHIP) { if (item.source !== 'shop') return false; }
+    else if (ui.collection !== 'Todas' && item.collection !== ui.collection) return false;
     if (!q) return true;
     const hay = normalize([item.name, item.collection, item.rarity, item.description, ...(item.tags || [])].join(' '));
     return q.split(/\s+/).every((w) => hay.includes(w));
@@ -648,10 +895,13 @@
     $$('.rail-btn[data-tab]').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === ui.tab));
   }
 
+  const SHOP_CHIP = '🛒 Loja do Discord';
   function renderChips() {
     const box = $('#collection-chips');
     box.innerHTML = '';
-    const names = ['Todas', ...Object.keys(DATA.collections)];
+    const hasShop = Object.keys(CATS).some((c) => DATA[c].some((i) => i.source === 'shop'));
+    const names = ['Todas', ...(hasShop ? [SHOP_CHIP] : []), ...Object.keys(DATA.collections)];
+    if (ui.collection !== 'Todas' && !names.includes(ui.collection)) names.splice(1, 0, ui.collection);
     for (const name of names) {
       const b = el('button', 'chip shrink-0' + (ui.collection === name ? ' is-active' : ''));
       b.type = 'button';
@@ -664,6 +914,11 @@
 
   function cardPreview(cat, item) {
     const wrap = el('div', 'card-preview relative h-40 flex items-center justify-center overflow-hidden');
+    const a = item.asset || {};
+    const hasPhases = cat === 'effects' && (a.intro || a.loop || (a.type === 'gen' && a.intro && a.intro.style !== 'none'));
+    if (hasPhases) {
+      wrap.addEventListener('mouseenter', () => wrap.querySelector('.cosmetic-layer')?._replay?.());
+    }
     wrap.insertAdjacentHTML('beforeend', `<span class="hover-hint"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Passe o mouse</span>`);
     if (cat === 'nameplates') {
       const row = el('div', 'relative w-[86%] max-w-[300px] h-[44px] rounded-md overflow-hidden flex items-center gap-3 px-2.5 bg-dc-side shadow-lg');
@@ -697,12 +952,14 @@
   }
 
   function buildCard(cat, item, { variant = 'gallery' } = {}) {
-    const coll = DATA.collections[item.collection] || { color: '#B5BAC1' };
+    const coll = DATA.collections[item.collection] || { color: item.source === 'shop' ? '#5865F2' : '#B5BAC1' };
     const rar = DATA.rarities[item.rarity] || { color: '#B5BAC1' };
     const card = el('article', 'cosmetic-card hover-host fade-in rounded-xl bg-dc-side border border-white/5 overflow-hidden flex flex-col');
     card.dataset.id = item.id;
     card.dataset.cat = cat;
-    card.appendChild(cardPreview(cat, item));
+    const preview = cardPreview(cat, item);
+    card.appendChild(preview);
+    addMetricsBadge(preview, cat, item);
     card.insertAdjacentHTML('beforeend', `
       <span class="equipped-badge hidden"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Equipado</span>
       <div class="p-3.5 flex flex-col gap-2 flex-1">
@@ -726,25 +983,76 @@
     return card;
   }
 
+  /** Mede os APNGs do item e mostra fps/duração no card. */
+  function addMetricsBadge(preview, cat, item) {
+    const a = item.asset || {};
+    const badge = el('span', 'metrics-badge');
+    if (a.type === 'gen') {
+      if (cat === 'effects' && a.intro && a.intro.style !== 'none') {
+        badge.textContent = `Entrada ${a.intro.duration.toFixed(1)}s → loop · CSS 60 fps`;
+        preview.appendChild(badge);
+      }
+      return;
+    }
+    if (a.type !== 'image') return;
+    preview.appendChild(badge);
+    if (item.source === 'shop' && !a.meta) {
+      if (cat === 'effects') { badge.textContent = 'prévia estática (sem entrada/loop na API)'; return; }
+      if (!canFetch(a.src)) { badge.textContent = 'APNG oficial'; badge.title = 'O CDN não libera leitura pelo navegador. Para medir: node tools/measure-apng.mjs ' + a.src; return; }
+      // Itens da loja: só baixa o APNG para medir quando o mouse passa no card
+      badge.textContent = '📏 passe o mouse para medir';
+      preview.addEventListener('mouseenter', () => measureInto(badge, cat, a), { once: true });
+      return;
+    }
+    measureInto(badge, cat, a);
+  }
+
+  function measureInto(badge, cat, a) {
+    badge.textContent = 'medindo…';
+    const jobs = cat === 'effects'
+      ? [a.intro && getMetrics(a, 'intro').then((i) => ['Entrada', i]), a.loop && getMetrics(a, 'loop').then((i) => ['Loop', i])].filter(Boolean)
+      : [getMetrics(a, 'src').then((i) => ['', i])];
+    Promise.all(jobs).then((res) => {
+      const warn = [];
+      badge.textContent = res.map(([label, i]) => (label ? label + ' ' : '') + metricsLabel(i)).join(' → ');
+      res.forEach(([label, i]) => {
+        if (label === 'Entrada' && i.duration > GEN.maxIntro) warn.push(`entrada com ${i.duration.toFixed(1)}s (máx. ${GEN.maxIntro}s)`);
+        if (i.clampedFrames) warn.push(`${i.clampedFrames} quadros com atraso ≤10 ms: o navegador usa 100 ms (nominal ${i.nominalFps} fps, efetivo ${i.fps} fps)`);
+        if (i.animated && i.fps < 10) warn.push('abaixo de 10 fps: pode parecer travado');
+      });
+      badge.title = res.map(([label, i]) => `${label || 'Animação'}: ${i.width}×${i.height}, ${i.frames} quadros, ${i.duration}s, ${i.fps} fps, ${i.plays === 0 ? 'loop infinito' : 'toca ' + i.plays + '×'}${i.bytes ? ', ' + (i.bytes / 1024).toFixed(0) + ' KB' : ''}${i.fromMeta ? ' (medido previamente)' : ''}`).join('\n') + (warn.length ? '\n⚠ ' + warn.join('\n⚠ ') : '');
+      if (warn.length) badge.classList.add('is-warn'), (badge.textContent = '⚠ ' + badge.textContent);
+    }).catch(() => {
+      badge.textContent = 'sem métricas (CDN sem CORS)';
+      badge.title = 'Gere as métricas com: node tools/measure-apng.mjs <url>';
+    });
+  }
+
   function renderGrid() {
     const grid = $('#grid');
     const isGen = ui.tab === 'generator';
     $('#generator-panel').classList.toggle('hidden', !isGen);
-    ['#grid', '#collection-chips', '#results-row'].forEach((s) => $(s).classList.toggle('hidden', isGen));
+    ['#grid', '#collection-chips', '#results-row', '#grid-more'].forEach((s) => $(s).classList.toggle('hidden', isGen));
     if (isGen) {
       $('#empty').classList.add('hidden');
       document.dispatchEvent(new CustomEvent('cs:generator-open'));
       return;
     }
     const items = filtered(ui.tab);
+    const key = ui.tab + '|' + ui.collection + '|' + ui.query;
+    if (ui.pageKey !== key) { ui.pageKey = key; ui.limit = PAGE; }
     grid.innerHTML = '';
     const frag = document.createDocumentFragment();
-    items.forEach((it, i) => {
+    items.slice(0, ui.limit).forEach((it, i) => {
       const c = buildCard(ui.tab, it);
-      c.style.animationDelay = i * 30 + 'ms';
+      c.style.animationDelay = Math.min(i, 24) * 30 + 'ms';
       frag.appendChild(c);
     });
     grid.appendChild(frag);
+    const more = $('#grid-more');
+    more.classList.toggle('hidden', items.length <= ui.limit);
+    more.textContent = `Mostrar mais (${Math.max(0, items.length - ui.limit)} restantes)`;
+    $('#shop-attribution').classList.toggle('hidden', !items.some((i) => i.source === 'shop'));
 
     const total = DATA[ui.tab].length;
     $('#results-label').textContent = items.length === total
@@ -869,9 +1177,63 @@
     } else {
       const slot = $('#profile-effect');
       slot.innerHTML = '';
-      if (item) slot.appendChild(buildAsset(item, cat));
+      if (item) {
+        slot.appendChild(buildAsset(item, cat));
+        checkSmoothness(item);
+      }
       $('#btn-replay').classList.toggle('hidden', !item);
     }
+  }
+
+  /* ---------- Medidor de FPS (requestAnimationFrame) ---------- */
+  const fps = { on: false, raf: 0, frames: 0, last: 0, worst: Infinity, samples: [] };
+  function toggleFpsHud() {
+    fps.on = !fps.on;
+    const hud = $('#fps-hud');
+    hud.classList.toggle('hidden', !fps.on);
+    $('#btn-fps').setAttribute('aria-pressed', String(fps.on));
+    $('#btn-fps').classList.toggle('!bg-[#5865F2]', fps.on);
+    cancelAnimationFrame(fps.raf);
+    if (!fps.on) return;
+    fps.frames = 0;
+    fps.last = performance.now();
+    fps.samples = [];
+    const tick = (t) => {
+      fps.frames++;
+      if (t - fps.last >= 500) {
+        const v = Math.round((fps.frames * 1000) / (t - fps.last));
+        fps.samples.push(v);
+        if (fps.samples.length > 10) fps.samples.shift();
+        const min = Math.min(...fps.samples);
+        const phase = $('#profile-effect .cosmetic-layer')?.dataset.phase;
+        hud.className = 'fps-hud' + (v < 30 ? ' is-low' : v < 50 ? ' is-mid' : '');
+        hud.innerHTML = `${v} fps<small>mín ${min}${phase ? ' · ' + (phase === 'intro' ? 'entrada' : 'loop') : ''}</small>`;
+        fps.frames = 0;
+        fps.last = t;
+      }
+      fps.raf = requestAnimationFrame(tick);
+    };
+    fps.raf = requestAnimationFrame(tick);
+  }
+  /** Mede ~1,5 s depois de equipar um efeito e avisa se ficar travado. */
+  function measureFps(ms) {
+    return new Promise((resolve) => {
+      let n = 0;
+      const t0 = performance.now();
+      const step = (t) => {
+        n++;
+        if (t - t0 < ms) requestAnimationFrame(step);
+        else resolve(Math.round((n * 1000) / (t - t0)));
+      };
+      requestAnimationFrame(step);
+    });
+  }
+  function checkSmoothness(item) {
+    if (document.hidden) return;
+    measureFps(1500).then((v) => {
+      if (state.effect !== item.id) return;
+      if (v < 40) toast(`“${item.name}” rodou a ${v} fps neste aparelho. Use 🎲 Variar ou menos partículas para ficar mais fluido.`, 'info');
+    });
   }
 
   function syncUserBits(root = document) {
@@ -909,7 +1271,7 @@
     for (const cat in CATS) {
       const key = CATS[cat].key;
       const item = findItem(cat, state[key]);
-      const coll = item ? DATA.collections[item.collection] : null;
+      const coll = item ? DATA.collections[item.collection] || { color: '#5865F2' } : null;
       const row = el('div', 'flex items-center gap-2.5 rounded-lg px-2.5 h-10 ' + (item ? 'bg-dc-dark/60' : 'bg-dc-dark/30 border border-dashed border-white/10'));
       row.innerHTML = `
         <span class="text-[11px] font-bold uppercase tracking-wide text-dc-faint w-[68px] shrink-0">${CATS[cat].singular}</span>
@@ -1165,6 +1527,10 @@
     });
     if (/Mac|iPhone|iPad/.test(navigator.platform || '')) $('#kbd-hint').textContent = '⌘ K';
 
+    $('#grid-more').addEventListener('click', () => {
+      ui.limit += PAGE;
+      renderGrid();
+    });
     $('#grid').addEventListener('click', (e) => {
       const tryBtn = e.target.closest('.btn-try');
       if (tryBtn) return toggleEquip(tryBtn.dataset.cat, tryBtn.dataset.id);
@@ -1254,9 +1620,11 @@
     });
     $('#force-anim').addEventListener('change', (e) => {
       $('#sim-list').classList.toggle('force-anim', e.target.checked);
+      if (e.target.checked) document.querySelectorAll('#sim-list .deco-layer, #sim-list .cosmetic-layer').forEach((l) => l._activate && l._activate());
     });
 
     $('#btn-replay').addEventListener('click', () => mountCosmetic('effect', { force: true }));
+    $('#btn-fps').addEventListener('click', toggleFpsHud);
     $('#btn-reset').addEventListener('click', resetAll);
     $('#btn-copy').addEventListener('click', copyLink);
     $('#btn-print').addEventListener('click', savePrint);
@@ -1313,7 +1681,10 @@
   // Exposto para depuração / extensões
   window.CosmeticStudio = {
     CATS, DATA, GEN, buildAsset, buildCard, toast, syncUserBits, updateCardStates, findItem,
-    sanitizeGenItem, registerCustom, saveCustom, deleteCustom, publicItem,
+    sanitizeGenItem, sanitizeCustomItem, registerCustom, saveCustom, deleteCustom, publicItem,
+    loadApng, getMetrics, canFetch, metricsLabel, renderGallery, addCatalogItems, catalogReady,
+    setShopAttribution(url) { const a = $('#shop-attribution'); if (/^https:\/\/itemshop\.gg\//.test(url)) a.href = url; }, setTab: (t) => setTab(t),
+    addCollection(name, color) { if (!DATA.collections[name]) DATA.collections[name] = { color }; },
     equip: (cat, id) => toggleEquip(cat, id),
     setSaved(cat, id, saved) {
       const it = findItem(cat, id);

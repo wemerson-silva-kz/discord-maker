@@ -746,13 +746,13 @@
   animation: cs-flash 3.2s linear infinite;
 }
 /* Em efeitos de perfil a base vira um "tingimento" nas bordas do card */
-.gen-cat-effects > .gen-base {
+.gen-cat-effects .gen-base {
   opacity: .4;
   -webkit-mask-image: linear-gradient(180deg, #000, transparent 38%, transparent 62%, #000);
           mask-image: linear-gradient(180deg, #000, transparent 38%, transparent 62%, #000);
 }
-.gen-cat-effects > .gen-anim-pulse { animation-name: cs-pulse-soft; }
-.gen-cat-effects > .gen-sweep, .gen-cat-effects > .gen-flash { opacity: 0; }
+.gen-cat-effects .gen-anim-pulse { animation-name: cs-pulse-soft; }
+.gen-cat-effects .gen-sweep, .gen-cat-effects .gen-flash { opacity: 0; }
 
 /* Anéis das molduras geradas */
 .gen-ring { position: absolute; border-radius: 50%; }
@@ -829,3 +829,68 @@
 /* Partículas de cor fixa seguem a paleta quando o item é gerado */
 .gen .shape-flame { filter: hue-rotate(var(--hue, 0deg)) drop-shadow(0 0 1.5cqw var(--g1)); }
 .gen .p-ember { box-shadow: 0 0 6px 1px var(--c, #FF5A00); }
+
+/* ==========================================================================
+   IMAGENS REAIS (APNG do Discord) e EFEITOS EM DUAS FASES
+   ========================================================================== */
+/* Decorações do Discord são 1,2× o avatar */
+.deco-layer.is-img { inset: -10%; }
+/* Efeitos de perfil (450×880) acompanham a largura do card, alinhados no topo */
+.cosmetic-layer > img.fx-img { inset: 0 auto auto 0; width: 100%; height: auto; object-fit: initial; }
+
+/* Entrada (intro) dos efeitos gerados: toca uma vez em --intro-d e some */
+.gen-loop { position: absolute; inset: 0; transition: opacity .45s ease; }
+.gen-loop.is-waiting { opacity: 0; }
+.gen-intro { position: absolute; inset: 0; overflow: hidden; transition: opacity .5s ease; }
+.gen-intro.is-done { opacity: 0; }
+.gen-intro::before, .gen-intro::after { content: ''; position: absolute; inset: 0; pointer-events: none; }
+
+.gen-intro-burst::before {
+  background: radial-gradient(circle at 50% 40%, var(--g3) 0, var(--g1) 18%, transparent 46%);
+  animation: gi-burst var(--intro-d) ease-out 1 both;
+}
+.gen-intro-burst::after {
+  inset: auto;
+  left: 50%;
+  top: 40%;
+  width: 20px;
+  height: 20px;
+  margin: -10px;
+  border-radius: 50%;
+  border: 3px solid var(--g2);
+  box-shadow: 0 0 20px var(--g2), inset 0 0 12px var(--g3);
+  animation: gi-shock var(--intro-d) cubic-bezier(.2, .7, .2, 1) 1 both;
+}
+@keyframes gi-burst { 0% { opacity: 0; transform: scale(.2); } 15% { opacity: 1; } 100% { opacity: 0; transform: scale(2.4); } }
+@keyframes gi-shock { 0% { transform: scale(0); opacity: 1; } 70% { opacity: .8; } 100% { transform: scale(42); opacity: 0; } }
+
+.gen-intro-sweep::before {
+  background: linear-gradient(115deg, transparent 30%, color-mix(in srgb, var(--g1) 70%, transparent) 45%, var(--g3) 50%, color-mix(in srgb, var(--g2) 70%, transparent) 55%, transparent 70%);
+  background-size: 300% 100%;
+  animation: gi-sweep var(--intro-d) ease-in-out 1 both;
+}
+@keyframes gi-sweep { from { background-position: 120% 0; } to { background-position: -20% 0; } }
+
+.gen-intro-rise::before {
+  background: linear-gradient(0deg, var(--g1), color-mix(in srgb, var(--g2) 60%, transparent) 40%, transparent 75%);
+  animation: gi-rise var(--intro-d) ease-out 1 both;
+}
+@keyframes gi-rise { 0% { transform: translateY(100%); opacity: 1; } 60% { transform: translateY(0); opacity: .9; } 100% { transform: translateY(-25%); opacity: 0; } }
+
+.gen-intro-zoom::before {
+  background: radial-gradient(circle at 50% 45%, transparent 18%, color-mix(in srgb, var(--g1) 60%, transparent) 58%, var(--g2) 100%);
+  animation: gi-zoom var(--intro-d) ease-in 1 both;
+}
+@keyframes gi-zoom { 0% { transform: scale(2.5); opacity: 0; } 30% { opacity: 1; } 100% { transform: scale(1); opacity: 0; } }
+
+.gen-intro-curtain::before, .gen-intro-curtain::after {
+  background: linear-gradient(90deg, var(--g1), var(--g2));
+  opacity: .88;
+}
+.gen-intro-curtain::before { right: 50%; animation: gi-curtain-l var(--intro-d) cubic-bezier(.7, 0, .3, 1) 1 both; }
+.gen-intro-curtain::after { left: 50%; animation: gi-curtain-r var(--intro-d) cubic-bezier(.7, 0, .3, 1) 1 both; }
+@keyframes gi-curtain-l { 0%, 25% { transform: translateX(0); } 100% { transform: translateX(-101%); } }
+@keyframes gi-curtain-r { 0%, 25% { transform: translateX(0); } 100% { transform: translateX(101%); } }
+
+.gen-intro-flash::before { background: var(--g3); animation: gi-flash var(--intro-d) ease-out 1 both; }
+@keyframes gi-flash { 0% { opacity: 0; } 8% { opacity: .9; } 20% { opacity: .2; } 30% { opacity: .7; } 100% { opacity: 0; } }

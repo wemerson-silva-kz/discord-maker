@@ -69,6 +69,52 @@ asset: {
 
 Toda spec (da IA, do gerador local ou de um link) passa por validação: cores só em hex, valores só das listas permitidas e textos limpos, sem HTML.
 
+## Cosméticos oficiais do Discord
+
+A galeria também mostra itens reais carregados direto do CDN do Discord (coleção **Discord**), no mesmo formato do app:
+
+| Tipo | Arquivo | Estados / fases |
+|---|---|---|
+| Moldura (avatar decoration) | APNG 288×288, desenhado em 1,2× o avatar | `…/collectibles-shop/<sku>/static` e `/animated` |
+| Nameplate | APNG 448×84 | `…/static` e `/animated` (anima no hover) |
+| Efeito de perfil | APNG 450×880 | **entrada** (toca 1×, até 6 s) → **loop** (infinito) |
+
+- **Importar do Discord** (botão na galeria): cole o ID/URL de uma moldura ou nameplate, ou os hashes de entrada e loop de um efeito. O item entra na galeria e já é equipado.
+- **Métricas**: cada card mostra quadros, duração, FPS e repetições. O app lê o APNG quando o host libera CORS (ex.: `avatar-decoration-presets`). O caminho `cdn.discordapp.com/media/v1/collectibles-shop/` **não** libera, então nesses itens as métricas vêm do campo `meta`, gerado com:
+
+  ```bash
+  node tools/measure-apng.mjs intro=<url-da-entrada> loop=<url-do-loop>
+  ```
+- Atenção: atrasos de quadro de 10 ms ou menos são exibidos como 100 ms pelos navegadores. O card avisa quando isso acontece (FPS nominal × efetivo).
+- **Medidor de FPS**: o botão **FPS** no popout mostra a taxa real de quadros e a fase atual (entrada/loop). Ao equipar um efeito, o app mede 1,5 s e avisa se ficar abaixo de 40 fps.
+- **Gerador IA**: os efeitos gerados também têm entrada (até 6 s: burst, sweep, rise, zoom, curtain ou flash) seguida do loop.
+
+## Loja do Discord ao vivo (itemshop.gg)
+
+A galeria carrega a loja do dia pela API pública do [itemshop.gg](https://itemshop.gg/discord/api) (`GET /api/v1/shop/discord`, sem chave). Os itens aparecem no filtro **🛒 Loja do Discord** e na busca (nome ou coleção):
+
+| Tipo na API | Na galeria | Animação |
+|---|---|---|
+| Avatar Decoration | Moldura | estático → `passthrough=true` no hover (dá para medir FPS no navegador) |
+| Nameplate | Nameplate | `/static` → `/animated` no hover |
+| Profile Effect | Efeito de perfil | só miniatura estática: a API não fornece entrada e loop |
+
+Seguindo os termos da API: o link **"Data from itemshop.gg"** aparece sempre que esses dados são exibidos, a resposta fica em cache por 2 minutos (`localStorage`) e o site faz uma chamada por visita (o limite sem chave é 30 por minuto por IP). Os APNGs animados só são baixados quando o mouse passa no card, e a grade mostra 48 itens por vez.
+
+A chave da API (`ITEMSHOP_API_KEY`) **não** é usada: ela só serve para histórico e detalhes de itens e, pelos termos, não pode ir para o navegador. Como o site é estático (GitHub Pages), ele usa só o endpoint público.
+
+## Catálogo próprio (`catalog/discord.json`)
+
+Para fixar itens (por exemplo, efeitos com entrada e loop), adicione-os em `catalog/discord.json`:
+
+```json
+{ "type": "decoration", "name": "Minha moldura", "collection": "Discord", "sku": "1476286689528774717" }
+{ "type": "nameplate",  "name": "Minha nameplate", "sku": "1476288619277979648" }
+{ "type": "effect",     "name": "Meu efeito", "intro": "<hash da entrada>", "loop": "<hash do loop>" }
+```
+
+Depois rode `node tools/build-catalog.mjs`: ele valida cada item, mede os APNGs, grava o `meta` (quadros, duração, FPS) e avisa sobre entradas acima de 6 s. No importador da galeria, o botão **{ } Copiar para o catálogo** gera a entrada pronta para colar.
+
 ## Estrutura
 
 ```
@@ -78,6 +124,10 @@ css/cosmetics.css   Todas as animações dos cosméticos + partículas
 js/data.js          CATÁLOGO DE ITENS — edite aqui
 js/app.js           Renderização, estado, partículas e eventos
 js/ai-generator.js  Gerador IA (vários provedores + motor local)
+js/discord-import.js Importador de IDs/URLs do CDN do Discord
+tools/measure-apng.mjs Mede quadros/duração/FPS de APNGs (gera o `meta`)
+tools/build-catalog.mjs Valida e mede o catalog/discord.json
+catalog/discord.json Catálogo de itens oficiais (IDs/hashes do Discord)
 .github/workflows/  Deploy automático no GitHub Pages
 ```
 
