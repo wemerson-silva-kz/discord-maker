@@ -18,8 +18,11 @@
     nameplates: { key: 'nameplate', label: 'Nameplates', singular: 'Nameplate', short: 'np', g: 'a' },
     decorations: { key: 'decoration', label: 'Molduras de Avatar', singular: 'Moldura', short: 'deco', g: 'a' },
     effects: { key: 'effect', label: 'Efeitos de Perfil', singular: 'Efeito', short: 'fx', g: 'o' },
+    frames: { key: 'frame', label: 'Profile Frames', singular: 'Frame', short: 'frame', g: 'o' },
   };
-  const CAT_BY_KEY = { nameplate: 'nameplates', decoration: 'decorations', effect: 'effects' };
+  const CAT_BY_KEY = { nameplate: 'nameplates', decoration: 'decorations', effect: 'effects', frame: 'frames' };
+  const SLOT_KEYS = Object.keys(CAT_BY_KEY);
+  DATA.frames = DATA.frames || [];
 
   const svgUri = (svg) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   const DEFAULT_AVATARS = [
@@ -55,6 +58,7 @@
     nameplate: null,
     decoration: null,
     effect: null,
+    frame: null,
   });
 
   const FAKE_PEOPLE = {
@@ -260,7 +264,7 @@
    */
   function buildAsset(item, cat, { paused = false, phase = 'both' } = {}) {
     const a = item.asset || {};
-    const layer = el('div', cat === 'decorations' ? 'deco-layer' : 'cosmetic-layer');
+    const layer = el('div', cat === 'decorations' ? 'deco-layer' : cat === 'frames' ? 'frame-layer' : 'cosmetic-layer');
     if (paused) layer.classList.add('is-paused');
     layer._phase = phase;
     layer._timers = [];
@@ -294,6 +298,15 @@
   /* Imagens reais (PNG/APNG/GIF/WebP) e efeitos em duas fases         */
   /* ---------------------------------------------------------------- */
   function buildImage(layer, a, cat) {
+    if (cat === 'frames') {
+      // Profile frame: arte estática presa ao topo do card, na largura do card
+      const img = el('img', 'frame-img');
+      img.alt = '';
+      img.loading = 'lazy';
+      img.src = a.src || a.staticSrc;
+      layer.appendChild(img);
+      return;
+    }
     if (cat === 'decorations') layer.classList.add('is-img');
     const phased = !!(a.intro || a.loop);
     if (a.staticSrc) {
@@ -355,7 +368,7 @@
   /* Arte SVG animada (gerada pela IA)                                 */
   /* ---------------------------------------------------------------- */
   /** Tamanho oficial de cada formato do Discord (viewBox do SVG). */
-  const SVG_SIZE = { nameplates: [448, 84], decorations: [288, 288], effects: [450, 880] };
+  const SVG_SIZE = { nameplates: [448, 84], decorations: [288, 288], effects: [450, 880], frames: [1312, 716] };
   const SVG_TAGS = new Set(['svg', 'g', 'defs', 'style', 'title', 'desc', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon',
     'lineargradient', 'radialgradient', 'stop', 'clippath', 'mask', 'pattern', 'symbol', 'use', 'text', 'tspan', 'filter',
     'fegaussianblur', 'feoffset', 'feblend', 'fecolormatrix', 'fecomposite', 'feflood', 'femerge', 'femergenode', 'femorphology',
@@ -405,7 +418,7 @@
 
   function buildSvg(layer, a, cat) {
     if (cat === 'decorations') layer.classList.add('is-img');
-    const img = el('img', 'asset-anim' + (cat === 'effects' ? ' fx-img' : ''));
+    const img = el('img', cat === 'frames' ? 'frame-img' : 'asset-anim' + (cat === 'effects' ? ' fx-img' : ''));
     img.alt = '';
     layer.appendChild(img);
     const want = layer._phase || 'both';
@@ -829,7 +842,7 @@
     catalogLoaded = true;
     const h = fromHash();
     state = sanitizeState(h ? { ...state, ...stripUndefined(h) } : state);
-    mounted.nameplate = mounted.decoration = mounted.effect = undefined;
+    mounted.nameplate = mounted.decoration = mounted.effect = mounted.frame = undefined;
     commit();
     renderGallery();
   }
@@ -844,7 +857,7 @@
       if (!item.source && DATA[cat][idx].source) item.source = DATA[cat][idx].source;
       DATA[cat].splice(idx, 1);
       customEntries = customEntries.filter((e) => e.item.id !== item.id);
-      mounted.effect = mounted.decoration = mounted.nameplate = undefined;
+      mounted.effect = mounted.decoration = mounted.nameplate = mounted.frame = undefined;
     }
     DATA[cat].push(item);
     customEntries.push({ cat, item });
@@ -922,7 +935,7 @@
     if (typeof s.customAvatar === 'string' && s.customAvatar.startsWith('data:image/')) out.customAvatar = s.customAvatar;
     if (STATUS[s.status]) out.status = s.status;
     if (isHex(s.banner)) out.banner = s.banner;
-    for (const key of ['nameplate', 'decoration', 'effect']) {
+    for (const key of SLOT_KEYS) {
       // ids "dc-…" do catálogo carregam depois (fetch); mantém até lá
       if (findItem(CAT_BY_KEY[key], s[key]) || (!catalogLoaded && /^dc-[a-z0-9-]{3,90}$/.test(s[key] || ''))) out[key] = s[key];
     }
@@ -957,9 +970,10 @@
     if (state.nameplate) p.set('np', state.nameplate);
     if (state.decoration) p.set('deco', state.decoration);
     if (state.effect) p.set('fx', state.effect);
+    if (state.frame) p.set('fr', state.frame);
     const custom = [];
     linkSkipped = [];
-    for (const key of ['nameplate', 'decoration', 'effect']) {
+    for (const key of SLOT_KEYS) {
       const cat = CAT_BY_KEY[key];
       const it = findItem(cat, state[key]);
       if (it && it._custom && it.asset.type !== 'svg') custom.push({ c: cat, i: publicItem(it) });
@@ -970,7 +984,7 @@
   }
   function fromHash() {
     const h = location.hash.replace(/^#/, '');
-    if (!h || !/(^|&)(np|deco|fx|n)=/.test(h)) return null;
+    if (!h || !/(^|&)(np|deco|fx|fr|n)=/.test(h)) return null;
     const p = new URLSearchParams(h);
     if (p.get('g')) {
       try {
@@ -992,6 +1006,7 @@
       nameplate: p.get('np'),
       decoration: p.get('deco'),
       effect: p.get('fx'),
+      frame: p.get('fr'),
     };
   }
 
@@ -1001,7 +1016,7 @@
     return slug || 'viajante';
   };
   const avatarSrc = () => state.customAvatar || DEFAULT_AVATARS[state.avatar].src;
-  const equippedCount = () => ['nameplate', 'decoration', 'effect'].filter((k) => state[k]).length;
+  const equippedCount = () => SLOT_KEYS.filter((k) => state[k]).length;
 
   /* ---------------------------------------------------------------- */
   /* Toasts                                                            */
@@ -1128,7 +1143,7 @@
     if (hasPhases) {
       wrap.addEventListener('mouseenter', () => wrap.querySelector('.cosmetic-layer')?._replay?.());
     }
-    wrap.insertAdjacentHTML('beforeend', `<span class="hover-hint"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Passe o mouse</span>`);
+    if (cat !== 'frames') wrap.insertAdjacentHTML('beforeend', `<span class="hover-hint"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Passe o mouse</span>`);
     if (cat === 'nameplates') {
       const row = el('div', 'relative w-[86%] max-w-[300px] h-[44px] rounded-md overflow-hidden flex items-center gap-3 px-2.5 bg-dc-side shadow-lg');
       row.appendChild(buildAsset(item, cat, { paused: true }));
@@ -1144,6 +1159,11 @@
       av.innerHTML = '<img class="js-user-avatar w-full h-full rounded-full object-cover" alt="" />';
       av.appendChild(buildAsset(item, cat, { paused: true }));
       wrap.appendChild(av);
+    } else if (cat === 'frames') {
+      const mini = miniProfile();
+      mini.classList.add('mini-profile--frame');
+      mini.appendChild(buildAsset(item, cat));
+      wrap.appendChild(mini);
     } else {
       const mini = miniProfile();
       mini.appendChild(buildAsset(item, cat, { paused: true }));
@@ -1201,12 +1221,17 @@
     }
     if (a.type === 'svg') {
       if (!(cat === 'effects' && a.introSvg)) {
-        badge.textContent = `Arte SVG · loop ${a.loopSeconds}s · 60 fps`;
+        badge.textContent = cat === 'frames' ? `Frame · arte SVG 1312×716` : `Arte SVG · loop ${a.loopSeconds}s · 60 fps`;
         preview.appendChild(badge);
       }
       return;
     }
     if (a.type !== 'image') return;
+    if (cat === 'frames') {
+      badge.textContent = 'Frame estático · PNG 1312 px';
+      preview.appendChild(badge);
+      return;
+    }
     preview.appendChild(badge);
     if (item.source === 'shop' && !a.meta) {
       if (cat === 'effects' && !a.intro) { badge.textContent = 'prévia estática · 🎬 animar'; badge.classList.add('is-action'); badge.dataset.animate = item.id; return; }
@@ -1365,7 +1390,7 @@
     renderPreview();
   }
 
-  const mounted = { nameplate: undefined, decoration: undefined, effect: undefined };
+  const mounted = { nameplate: undefined, decoration: undefined, effect: undefined, frame: undefined };
 
   function mountCosmetic(key, { force = false } = {}) {
     const cat = CAT_BY_KEY[key];
@@ -1380,6 +1405,10 @@
         slot.closest('.member-row')?.classList.toggle('has-np', !!item);
         if (item) slot.appendChild(buildAsset(item, cat, { paused: true }));
       });
+    } else if (key === 'frame') {
+      const slot = $('#profile-frame');
+      slot.innerHTML = '';
+      if (item) slot.appendChild(buildAsset(item, cat));
     } else if (key === 'decoration') {
       $$('#preview-panel .js-deco-slot').forEach((slot) => {
         slot.innerHTML = '';
@@ -1468,6 +1497,7 @@
     mountCosmetic('nameplate');
     mountCosmetic('decoration');
     mountCosmetic('effect');
+    mountCosmetic('frame');
 
     renderEquipped();
     renderControlsState();
@@ -1909,7 +1939,7 @@
     equip: (cat, id) => toggleEquip(cat, id),
     /** Remonta a prévia ao vivo (ex.: depois de substituir um item equipado). */
     refresh() {
-      mounted.nameplate = mounted.decoration = mounted.effect = undefined;
+      mounted.nameplate = mounted.decoration = mounted.effect = mounted.frame = undefined;
       commit();
     },
     setSaved(cat, id, saved) {

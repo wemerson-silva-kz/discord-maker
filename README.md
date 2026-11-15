@@ -75,6 +75,7 @@ Toda spec (da IA, do gerador local ou de um link) passa por validação: cores s
 - **Arte desenhada (SVG)** (padrão para IA): a IA desenha ilustração vetorial animada no tamanho de cada formato do Discord (nameplate 448×84, moldura 288×288 com o centro livre para o avatar, efeito 450×880), animada só com CSS. O tema vira desenho de verdade: dragão, templo, nuvens etc. O SVG passa por um sanitizador (sem scripts, eventos, `foreignObject`, imagens ou links externos) e é exibido como imagem. O estilo **Partículas** continua disponível.
 - **Entrada e loop separados**: nos resultados, os efeitos mostram os dois painéis lado a lado (a entrada se repete para dar para ver).
 - **Referências da biblioteca**: em **🧬 Escolher da biblioteca**, selecione até 3 itens (temáticos, gerados, catálogo ou loja do Discord) para a IA criar variações. Ela recebe a arte/spec dos itens gerados e a **imagem** dos oficiais (Claude, Gemini e OpenAI). Se o modelo não aceitar imagens, o app tenta de novo só com texto. O botão **🧬 Referência** nos resultados faz o mesmo.
+- **Profile frames**: marque **Profile Frame** no gerador. A IA desenha o frame em SVG (1312×716, preso ao topo do card, com o centro livre para o conteúdo do perfil); frames sempre usam o estilo Arte. O motor local gera um frame procedural com a paleta do tema. O download sai como **PNG estático 1312×716** (o formato do Discord) e também um APNG animado em meia resolução.
 - **⬇ Baixar APNG**: exporta no tamanho oficial, com 12/24/30 fps e 256 cores ou sem perdas. Efeitos saem em dois arquivos: `-entrada.png` (toca 1×) e `-loop.png` (infinito). Cada quadro é renderizado controlando o tempo das animações; no loop, toda animação fecha um número inteiro de ciclos, então não há "pulo" na emenda. A arte SVG é renderizada num iframe isolado (sem scripts). Também vale para os itens temáticos da galeria.
 
 ## Cosméticos oficiais do Discord
@@ -108,6 +109,7 @@ A galeria carrega a loja do dia pela API pública do [itemshop.gg](https://items
 | Avatar Decoration | Moldura | estático → `passthrough=true` no hover (dá para medir FPS no navegador) |
 | Nameplate | Nameplate | `/static` → `/animated` no hover |
 | Profile Effect | Efeito de perfil | só miniatura estática: a API não fornece entrada e loop |
+| Profile Frame | Profile Frame (4ª aba) | arte estática (o CDN não tem versão animada), presa ao topo do card de perfil na largura dele |
 
 ### Integração com a API (`js/itemshop.js`, `tools/itemshop.mjs`, `types/itemshop.d.ts`)
 

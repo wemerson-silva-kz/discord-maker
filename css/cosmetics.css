@@ -894,3 +894,7 @@
 
 .gen-intro-flash::before { background: var(--g3); animation: gi-flash var(--intro-d) ease-out 1 both; }
 @keyframes gi-flash { 0% { opacity: 0; } 8% { opacity: .9; } 20% { opacity: .2; } 30% { opacity: .7; } 100% { opacity: 0; } }
+
+/* Profile frames: arte estática sobre o card, presa ao topo e na largura dele */
+.frame-layer { position: absolute; left: 0; top: 0; width: 100%; pointer-events: none; z-index: 3; }
+.frame-layer .frame-img { display: block; width: 100%; height: auto; }
