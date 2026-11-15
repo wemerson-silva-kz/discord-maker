@@ -166,6 +166,37 @@ Vocabulário da especificação:
 Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um kit coerente com o tema. Cada item deve combinar pelo menos duas camadas (uma sutil de fundo e uma de destaque) para ter profundidade e movimento. Escreva em português do Brasil: nome curto e criativo (até 28 caracteres), descrição de uma frase (até 120 caracteres), 3 a 5 tags em minúsculas. Escolha rarity (Raro, Épico ou Lendário) conforme a complexidade visual.`;
 
   /* ------------------------------------------------------------------ */
+  /* ZONAS PROTEGIDAS — onde ficam avatar, nome e conteúdo do perfil.     */
+  /* Medidas no card de 340 px do popout e convertidas para o canvas de    */
+  /* cada formato. Usadas no prompt E na verificação automática.          */
+  /* avg = cobertura média máxima; peak = pior quadro permitido.          */
+  /* ------------------------------------------------------------------ */
+  const ZONES = {
+    effects: { w: 450, h: 880, zones: [
+      { id: 'avatar', label: 'avatar', shape: 'circle', cx: 82, cy: 138, r: 66, avg: 0.12, peak: 0.55 },
+      { id: 'name', label: 'nome e @usuário', shape: 'rect', x: 21, y: 199, w: 323, h: 72, avg: 0.15, peak: 0.55 },
+      { id: 'content', label: 'texto do perfil (Sobre mim)', shape: 'rect', x: 21, y: 283, w: 408, h: 273, avg: 0.22, peak: 0.6 },
+    ] },
+    frames: { w: 1312, h: 716, zones: [
+      { id: 'avatar', label: 'avatar', shape: 'circle', cx: 239, cy: 401, r: 195, avg: 0.1, peak: 0.2 },
+      { id: 'name', label: 'nome e @usuário', shape: 'rect', x: 62, y: 579, w: 940, h: 137, avg: 0.12, peak: 0.25 },
+      { id: 'center', label: 'centro do card', shape: 'rect', x: 120, y: 420, w: 1072, h: 296, avg: 0.15, peak: 0.3 },
+    ] },
+    decorations: { w: 288, h: 288, zones: [
+      { id: 'avatar', label: 'avatar (círculo central)', shape: 'circle', cx: 144, cy: 144, r: 104, avg: 0.08, peak: 0.2 },
+    ] },
+    nameplates: { w: 448, h: 84, zones: [
+      { id: 'name', label: 'avatar e nome (lado esquerdo)', shape: 'rect', x: 0, y: 0, w: 200, h: 84, avg: 0.35, peak: 0.55 },
+    ] },
+  };
+  const zoneText = (z) => (z.shape === 'circle'
+    ? `círculo com centro (${z.cx}, ${z.cy}) e raio ${z.r}`
+    : `retângulo x ${z.x}–${z.x + z.w}, y ${z.y}–${z.y + z.h}`);
+  const ZONES_PROMPT = Object.entries({ nameplates: 'nameplate', decorations: 'decoration', effects: 'effect', frames: 'frame' })
+    .map(([cat, api]) => `- ${api} (canvas ${ZONES[cat].w}×${ZONES[cat].h}): ` + ZONES[cat].zones.map((z) => `${z.label} = ${zoneText(z)}, no máximo ${Math.round(z.avg * 100)}% coberto em média`).join('; '))
+    .join('\n');
+
+  /* ------------------------------------------------------------------ */
   /* Modo ARTE: a IA desenha SVG animado (CSS @keyframes)                 */
   /* ------------------------------------------------------------------ */
   const SVG_OUTPUT_SCHEMA = {
@@ -207,6 +238,10 @@ Formatos (use exatamente estes viewBox):
 - frame (profile frame): viewBox="0 0 1312 716", fundo transparente. É a moldura do CARD de perfil inteiro, presa ao topo e na largura do card (no Discord são PNGs de 1312 px). A faixa do topo (y < 400) fica sobre o banner: desenhe ali o ornamento principal (ex.: o dragão deitado sobre o topo do card, telhados do templo, nuvens). Desça pelas laterais (x < 70 e x > 1242) até a base do canvas, com cantos arredondados (raio ~60). O centro (x 70–1242, y 400–716) e a área do avatar e do nome (x 60–620, y 220–600) ficam livres: são o conteúdo do perfil. Pode ter animação sutil em loop (brilho, chamas, nuvens), mas precisa ficar bonito parado também, porque no Discord o frame é estático. introSeconds 0 e introSvg "".
   O efeito tem DUAS FASES, como no Discord: introSvg é a ENTRADA, que toca uma única vez ao abrir o perfil (introSeconds entre 1 e 6, ideal 2 a 4): o momento mais impactante (ex.: o dragão surge e cospe uma rajada de fogo que atravessa o card), terminando suave. svg é o LOOP contínuo e mais calmo que vem depois (ex.: o dragão respirando, brasas subindo, nuvens passando).
 
+ZONAS PROTEGIDAS (obrigatório; o app mede isso automaticamente e devolve a arte para correção se invadir). Nelas não pode haver formas opacas — no máximo partículas pequenas e translúcidas de passagem:
+${ZONES_PROMPT}
+Para respeitar as zonas, posicione os elementos grandes (personagens, chifres, totens, prédios, molduras) nas bordas e no topo do banner, nunca atravessando o avatar ou o nome; elementos animados que se movem (ex.: rajadas) devem passar acima (y menor) ou abaixo dessas zonas.
+
 Regras técnicas do SVG (obrigatórias):
 - Comece com <svg xmlns="http://www.w3.org/2000/svg" viewBox="...">. Nada de <script>, <foreignObject>, <image>, links externos, fontes externas ou atributos de evento.
 - Animação SOMENTE com CSS dentro de <style> (@keyframes + animation). Não use SMIL (<animate>, <animateTransform>).
@@ -227,6 +262,7 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
 
   /** Monta o texto do pedido com tema, categorias e referências da biblioteca. */
   function userTextFor(req) {
+    if (req.feedback) return req.feedback;
     let t = `Tema: ${req.prompt || '(sem tema: crie variações das referências)'}\nCategorias, nesta ordem: ${req.cats.map((c) => CAT_TO_API[c]).join(', ')}`;
     if (req.refs.length) {
       t += '\n\nREFERÊNCIAS da biblioteca. Crie VARIAÇÕES inspiradas nelas: mantenha a essência (paleta, estilo, tipo de movimento, clima), mas traga algo novo e aplique o tema, se houver.';
@@ -303,7 +339,7 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
     if (!cfg.model) throw new Error('Informe o nome do modelo.');
     const system = systemFor(req, true);
     const user = userTextFor(req);
-    const images = req.images.filter((i) => i.url);
+    const images = req.images.filter((i) => i.url || i.data).map((i) => (i.url ? i : { url: `data:${i.mime || 'image/png'};base64,${i.data}` }));
     const userContent = images.length && cfg.provider === 'openai'
       ? [{ type: 'text', text: user }, ...images.map((i) => ({ type: 'image_url', image_url: { url: i.url } }))]
       : user;
@@ -467,7 +503,9 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
     const Anthropic = mod.default;
     const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
     const content = [
-      ...req.images.filter((i) => i.url).map((i) => ({ type: 'image', source: { type: 'url', url: i.url } })),
+      ...req.images.filter((i) => i.url || i.data).map((i) => (i.url
+        ? { type: 'image', source: { type: 'url', url: i.url } }
+        : { type: 'image', source: { type: 'base64', media_type: i.mime || 'image/png', data: i.data } })),
       { type: 'text', text: userTextFor(req) },
     ];
     let response;
@@ -865,7 +903,155 @@ ${sparks}
   /* Interface                                                           */
   /* ------------------------------------------------------------------ */
   const MODE_STORAGE = 'cosmetic-studio:gen-mode';
-  const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', mode: store.get(MODE_STORAGE) === 'particles' ? 'particles' : 'svg', busy: false, results: [], refs: [] };
+  const REVIEW_KEY = 'cosmetic-studio:gen-review';
+  const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', mode: store.get(MODE_STORAGE) === 'particles' ? 'particles' : 'svg', busy: false, results: [], refs: [],
+    review: (() => { try { return localStorage.getItem(REVIEW_KEY) !== '0'; } catch (e) { return true; } })(), quality: new Map() };
+
+  /* ---------- Verificação automática + correção pela IA ---------- */
+  const MAX_ROUNDS = 2;
+
+  /** Cobertura (alfa médio 0–1) de cada zona em cada quadro. */
+  function coverage(frame, cat) {
+    const Z = ZONES[cat];
+    const sx = frame.w / Z.w, sy = frame.h / Z.h;
+    return Z.zones.map((z) => {
+      let sum = 0, n = 0;
+      const step = Math.max(1, Math.round(Math.min(frame.w, frame.h) / 120));
+      const x0 = Math.floor((z.shape === 'circle' ? z.cx - z.r : z.x) * sx), x1 = Math.ceil((z.shape === 'circle' ? z.cx + z.r : z.x + z.w) * sx);
+      const y0 = Math.floor((z.shape === 'circle' ? z.cy - z.r : z.y) * sy), y1 = Math.ceil((z.shape === 'circle' ? z.cy + z.r : z.y + z.h) * sy);
+      for (let y = Math.max(0, y0); y < Math.min(frame.h, y1); y += step) {
+        for (let x = Math.max(0, x0); x < Math.min(frame.w, x1); x += step) {
+          if (z.shape === 'circle' && ((x / sx - z.cx) ** 2 + (y / sy - z.cy) ** 2) > z.r * z.r) continue;
+          sum += frame.data[(y * frame.w + x) * 4 + 3] / 255;
+          n++;
+        }
+      }
+      return n ? sum / n : 0;
+    });
+  }
+
+  /** Imagem PNG (base64) do quadro com as zonas proibidas marcadas em vermelho. */
+  function overlayPng(frame, cat, failing) {
+    const Z = ZONES[cat];
+    const c = document.createElement('canvas');
+    c.width = frame.w;
+    c.height = frame.h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#2B2D31';
+    ctx.fillRect(0, 0, c.width, c.height);
+    const tmp = document.createElement('canvas');
+    tmp.width = frame.w;
+    tmp.height = frame.h;
+    tmp.getContext('2d').putImageData(new ImageData(frame.data, frame.w, frame.h), 0, 0);
+    ctx.drawImage(tmp, 0, 0);
+    const sx = frame.w / Z.w, sy = frame.h / Z.h;
+    Z.zones.forEach((z, i) => {
+      const bad = failing.includes(z.id);
+      ctx.strokeStyle = bad ? '#FF3B3B' : '#57F287';
+      ctx.fillStyle = bad ? 'rgba(255,59,59,.22)' : 'rgba(87,242,135,.10)';
+      ctx.lineWidth = Math.max(2, frame.w / 150);
+      ctx.beginPath();
+      if (z.shape === 'circle') ctx.ellipse(z.cx * sx, z.cy * sy, z.r * sx, z.r * sy, 0, 0, Math.PI * 2);
+      else ctx.rect(z.x * sx, z.y * sy, z.w * sx, z.h * sy);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.font = `bold ${Math.max(11, Math.round(frame.w / 28))}px sans-serif`;
+      ctx.fillText((bad ? 'PROIBIDO: ' : 'livre: ') + z.label, (z.shape === 'circle' ? (z.cx - z.r) : z.x) * sx + 4, (z.shape === 'circle' ? z.cy - z.r : z.y) * sy + Math.max(12, frame.w / 26));
+    });
+    return c.toDataURL('image/png').split(',')[1];
+  }
+
+  /** Mede as zonas protegidas de uma arte SVG (loop + entrada). */
+  async function checkArt(cat, raw) {
+    const a = raw.asset || {};
+    const Z = ZONES[cat];
+    if (!Z || !a.svg) return null;
+    const clean = CS.sanitizeSvg(a.svg, cat);
+    if (!clean) return { ok: false, invalid: true, issues: [], summary: 'SVG inválido' };
+    const half = cat === 'frames' || cat === 'effects' ? { w: Math.round(Z.w / 2), h: Math.round(Z.h / 2) } : { w: Z.w, h: Z.h };
+    const jobs = [[clean, Math.min(8, Math.max(1, +a.loopSeconds || 4)), 6]];
+    if (cat === 'effects' && a.introSvg) {
+      const ci = CS.sanitizeSvg(a.introSvg, cat);
+      if (ci) jobs.push([ci, Math.min(6, Math.max(0.5, +a.introSeconds || 3)), 8]);
+    }
+    const stats = Z.zones.map(() => ({ sum: 0, n: 0, peak: 0 }));
+    let worst = null, worstScore = -1;
+    for (const [svg, secs, count] of jobs) {
+      const frames = await window.CosmeticExport.sampleSvg(svg, cat, secs, count, half);
+      frames.forEach((f) => {
+        const cov = coverage(f, cat);
+        let score = 0;
+        cov.forEach((v, i) => {
+          stats[i].sum += v; stats[i].n++; stats[i].peak = Math.max(stats[i].peak, v);
+          score += v / Z.zones[i].avg;
+        });
+        if (score > worstScore) { worstScore = score; worst = f; }
+      });
+    }
+    const issues = Z.zones.map((z, i) => {
+      const avg = stats[i].n ? stats[i].sum / stats[i].n : 0;
+      return { id: z.id, label: z.label, avg, peak: stats[i].peak, zone: z, bad: avg > z.avg || stats[i].peak > z.peak };
+    });
+    const failing = issues.filter((i) => i.bad);
+    return {
+      ok: !failing.length,
+      issues,
+      summary: failing.length
+        ? '⚠ cobre ' + failing.map((i) => `${i.label} ${Math.round(i.avg * 100)}%`).join(', ')
+        : '✓ ' + issues.map((i) => i.label.split(' (')[0]).join(', ') + ' livres',
+      overlay: failing.length && worst ? overlayPng(worst, cat, failing.map((i) => i.id)) : null,
+    };
+  }
+
+  /** Revisa as artes; as que invadem zonas voltam para a IA com números e imagem marcada. */
+  async function reviewLoop(list, req, call) {
+    let current = list;
+    for (let round = 1; round <= MAX_ROUNDS + 1; round++) {
+      setBusy(true, `Verificando se a arte deixa avatar e nome livres${round > 1 ? ` (rodada ${round})` : ''}…`);
+      const checks = [];
+      for (const it of current) checks.push(await checkArt(it.cat, it.raw).catch((e) => (console.warn('[revisão]', e), null)));
+      current.forEach((it, i) => { if (checks[i]) it.quality = checks[i]; });
+      const failing = current.map((it, i) => ({ it, chk: checks[i] })).filter((x) => x.chk && !x.chk.ok);
+      if (!failing.length || round > MAX_ROUNDS) break;
+
+      setBusy(true, `${failing.length === 1 ? 'Uma arte invadiu' : failing.length + ' artes invadiram'} a área do avatar/nome: pedindo correção à IA (${round}/${MAX_ROUNDS})…`);
+      const lines = failing.map(({ it, chk }) => {
+        const bad = chk.issues.filter((i) => i.bad).map((i) => `${i.label} (${zoneText(i.zone)}): ${Math.round(i.avg * 100)}% coberto em média e ${Math.round(i.peak * 100)}% no pior quadro — limite ${Math.round(i.zone.avg * 100)}%`).join('; ');
+        return `• ${CAT_TO_API[it.cat]} "${it.raw.name}": ${bad}.\nSVG atual (loop):\n${it.raw.asset.svg}${it.raw.asset.introSvg ? `\nSVG atual (entrada):\n${it.raw.asset.introSvg}` : ''}`;
+      });
+      const feedback = `CORREÇÃO. Estas artes invadiram as zonas protegidas do perfil. As imagens anexas mostram o pior quadro com as zonas proibidas marcadas em VERMELHO. Refaça cada uma mantendo o tema, o estilo, a paleta e a qualidade, mas tirando todas as formas opacas dessas zonas (mova os elementos grandes para as bordas/topo ou encolha-os). Devolva o mesmo formato JSON, um item por categoria abaixo, na mesma ordem.
+
+Tema original: ${req.prompt || '(variações das referências)'}
+
+${lines.join('\n\n')}`;
+      const fixReq = {
+        ...req,
+        cats: failing.map((x) => x.it.cat),
+        refs: [],
+        feedback,
+        images: failing.filter((x) => x.chk.overlay).map((x) => ({ mime: 'image/png', data: x.chk.overlay })),
+      };
+      let fixed;
+      try {
+        fixed = await call(fixReq);
+      } catch (e) {
+        if (!fixReq.images.length) { console.warn('[revisão] correção falhou:', e.message); break; }
+        try { fixed = await call({ ...fixReq, images: [] }); } catch (e2) { console.warn('[revisão] correção falhou:', e2.message); break; }
+      }
+      // Troca cada arte reprovada pela versão corrigida da mesma categoria
+      const next = current.slice();
+      failing.forEach(({ it }) => {
+        const k = fixed.findIndex((f) => f.cat === it.cat);
+        if (k < 0) return;
+        const repl = fixed.splice(k, 1)[0];
+        repl.raw.name = repl.raw.name || it.raw.name;
+        next[current.indexOf(it)] = repl;
+      });
+      current = next;
+    }
+    return current;
+  }
 
   /* ---------- Referências da biblioteca ---------- */
   const MAX_REFS = 3;
@@ -1136,6 +1322,14 @@ ${sparks}
       const card = CS.buildCard(cat, item, { variant: 'gen' });
       card.style.animationDelay = i * 60 + 'ms';
       const prev = card.querySelector('.card-preview');
+      const q = ui.quality.get(id);
+      if (q) {
+        const qb = document.createElement('span');
+        qb.className = 'quality-badge ' + (q.ok ? 'is-ok' : 'is-bad');
+        qb.textContent = q.summary;
+        qb.title = q.issues.map((i) => `${i.label}: ${Math.round(i.avg * 100)}% em média, ${Math.round(i.peak * 100)}% no pior quadro (limite ${Math.round(i.zone.avg * 100)}%)`).join('\n');
+        prev.appendChild(qb);
+      }
       const badge = document.createElement('span');
       badge.className = 'engine-badge';
       badge.textContent = `${item.engine === 'local' ? '⚡ Local' : '✨ ' + (item.engineLabel || 'IA')} · ${CATS[cat].singular}`;
@@ -1228,8 +1422,13 @@ ${sparks}
           req.refs.forEach((r) => { r.hasImage = false; });
           list = await call(req);
         }
+        if (mode === 'svg' && ui.review && window.CosmeticExport && window.CosmeticExport.sampleSvg) {
+          list = await reviewLoop(list, req, call);
+        }
         $$('#gen-results .gen-skeleton').forEach((n) => n.remove());
-        addResults(list);
+        const added = addResults(list);
+        added.forEach((a, i) => { if (list[i] && list[i].quality) ui.quality.set(a.id, list[i].quality); });
+        renderResults();
         CS.toast(`${list.length} ${list.length === 1 ? 'cosmético gerado' : 'cosméticos gerados'} pela IA!`, 'success');
       } catch (err) {
         console.error('[Gerador IA]', err);
@@ -1390,6 +1589,12 @@ ${sparks}
 
     $('#gen-form').addEventListener('submit', onGenerate);
     $('#gen-refs-add').addEventListener('click', openPicker);
+    const rv = $('#gen-review');
+    rv.checked = ui.review;
+    rv.addEventListener('change', () => {
+      ui.review = rv.checked;
+      try { localStorage.setItem(REVIEW_KEY, ui.review ? '1' : '0'); } catch (e) { /* ok */ }
+    });
     $$('#gen-mode button').forEach((b) => b.classList.toggle('is-active', b.dataset.mode === ui.mode));
     $('#gen-mode').addEventListener('click', (e) => {
       const b = e.target.closest('[data-mode]');
@@ -1418,5 +1623,5 @@ ${sparks}
   else init();
 
   // Exposto para testes / depuração
-  window.CosmeticGenerator = { generateLocal, varyItem, addRef, OUTPUT_SCHEMA, SYSTEM_PROMPT, SVG_OUTPUT_SCHEMA, SVG_SYSTEM_PROMPT, userTextFor };
+  window.CosmeticGenerator = { generateLocal, varyItem, addRef, checkArt, ZONES, OUTPUT_SCHEMA, SYSTEM_PROMPT, SVG_OUTPUT_SCHEMA, SVG_SYSTEM_PROMPT, userTextFor };
 })();

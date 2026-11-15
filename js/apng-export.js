@@ -364,5 +364,15 @@
     }
   }
 
-  window.CosmeticExport = { open, exportItem };
+  /**
+   * Renderiza `count` quadros de um SVG animado (iframe isolado) para análise.
+   * Devolve [{ w, h, data: Uint8ClampedArray RGBA }].
+   */
+  async function sampleSvg(svgText, cat, seconds, count, size) {
+    const secs = Math.max(0.1, seconds);
+    const cap = await svgFrames(svgText, cat, secs, count / secs, true, () => {}, () => false, size);
+    return cap.frames.map((buf) => ({ w: cap.w, h: cap.h, data: new Uint8ClampedArray(buf) }));
+  }
+
+  window.CosmeticExport = { open, exportItem, sampleSvg };
 })();
