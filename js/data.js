@@ -30,6 +30,7 @@
       }
       Molduras e nameplates do Discord têm dois estados:
         src: '.../collectibles-shop/<id>/animated', staticSrc: '.../collectibles-shop/<id>/static'
+      Itens oficiais ficam em catalog/discord.json (carregado automaticamente).
       Use o botão "Importar do Discord" da galeria para montar isso a partir de um ID/URL.
       Opcional: `meta` com quadros/duração/FPS, gerado por `node tools/measure-apng.mjs`
       (o CDN /collectibles-shop/ não libera CORS, então o navegador não consegue medir sozinho).
@@ -67,21 +68,6 @@ window.COSMETICS_DATA = {
   /* NAMEPLATES — fundo animado atrás do nome na lista de membros / DMs */
   /* ------------------------------------------------------------------ */
   nameplates: [
-    {
-      id: 'dc-np-1476288619277979648',
-      name: 'Nameplate da Loja #979648',
-      collection: 'Discord',
-      rarity: 'Oficial',
-      description: 'Asset oficial carregado do CDN do Discord: estático até o hover, animado (APNG) ao passar o mouse.',
-      tags: ['discord', 'oficial', 'apng'],
-      asset: {
-        type: 'image',
-        src: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1476288619277979648/animated',
-        staticSrc: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1476288619277979648/static',
-        // Medido com: node tools/measure-apng.mjs src=<url animada>
-        meta: { src: { width: 448, height: 84, frames: 48, duration: 4, fps: 12, plays: 0 } },
-      },
-    },
     {
       id: 'np-neon-overdrive',
       name: 'Neon Overdrive',
@@ -172,20 +158,6 @@ window.COSMETICS_DATA = {
   /* MOLDURAS DE AVATAR — sobrepostas ao avatar (≈ 124% do tamanho)      */
   /* ------------------------------------------------------------------ */
   decorations: [
-    {
-      id: 'dc-deco-1476286689528774717',
-      name: 'Decoração da Loja #774717',
-      collection: 'Discord',
-      rarity: 'Oficial',
-      description: 'Moldura oficial do CDN do Discord (estado estático + animado).',
-      tags: ['discord', 'oficial', 'apng'],
-      asset: {
-        type: 'image',
-        src: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1476286689528774717/animated',
-        staticSrc: 'https://cdn.discordapp.com/media/v1/collectibles-shop/1476286689528774717/static',
-        meta: { src: { width: 288, height: 288, frames: 67, duration: 6.7, fps: 10, plays: 0, nominalFps: 122, clampedFrames: 67 } },
-      },
-    },
     {
       id: 'deco-neon-halo',
       name: 'Halo Neon',
@@ -291,23 +263,6 @@ window.COSMETICS_DATA = {
   /* EFEITOS DE PERFIL — animação em tela cheia sobre o popout de perfil */
   /* ------------------------------------------------------------------ */
   effects: [
-    {
-      id: 'dc-fx-fbf5b162',
-      name: 'Efeito da Loja #fbf5b1',
-      collection: 'Discord',
-      rarity: 'Oficial',
-      description: 'Efeito oficial em duas fases: a entrada toca uma vez e depois entra o loop infinito.',
-      tags: ['discord', 'oficial', 'apng', 'entrada', 'loop'],
-      asset: {
-        type: 'image',
-        intro: 'https://cdn.discordapp.com/media/v1/collectibles-shop/fbf5b162630e321e0fa292e6e664074428190048cb1570f9df48ab4385652b49',
-        loop: 'https://cdn.discordapp.com/media/v1/collectibles-shop/9d2f228687db2ba6cec94b43899086e0500b0cbd1472f329e6a5e6bfe23c1019',
-        meta: {
-          intro: { width: 450, height: 880, frames: 58, duration: 4.814, fps: 12, plays: 1 },
-          loop: { width: 450, height: 880, frames: 41, duration: 3.403, fps: 12, plays: 0 },
-        },
-      },
-    },
     {
       id: 'fx-sakura-rain',
       name: 'Chuva de Sakura',

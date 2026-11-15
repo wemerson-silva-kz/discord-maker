@@ -292,6 +292,7 @@
     if (a.staticSrc) {
       layer.classList.add('has-static');
       const st = el('img', 'asset-static' + (phased ? ' fx-img' : ''));
+      st.loading = 'lazy';
       st.src = a.staticSrc;
       st.alt = '';
       layer.appendChild(st);
@@ -301,9 +302,19 @@
     img.decoding = 'async';
     if (a.staticSrc) img.style.position = 'absolute';
     layer.appendChild(img);
-    if (phased) runPhases(layer, img, a);
-    else img.src = a.src;
+    if (phased) return runPhases(layer, img, a);
+    // Pausado com estado estático: só baixa o APNG animado quando alguém passar o mouse
+    if (a.staticSrc && layer.classList.contains('is-paused') && !layer._userTriggered && !NO_HOVER) {
+      layer._activate = () => { if (!img.getAttribute('src')) img.src = a.src; };
+      requestAnimationFrame(() => {
+        const host = layer.closest('.hover-host');
+        if (host) host.addEventListener('mouseenter', layer._activate, { once: true });
+        else layer._activate();
+        if (layer.closest('.force-anim')) layer._activate();
+      });
+    } else img.src = a.src;
   }
+  const NO_HOVER = window.matchMedia && window.matchMedia('(hover: none)').matches;
 
   /** Efeito de perfil: toca a ENTRADA uma vez e depois troca para o LOOP. */
   async function runPhases(layer, img, a) {
@@ -550,6 +561,7 @@
       name: cleanText(raw.name, 60) || 'Item do Discord',
       collection: cleanText(raw.collection, 40) || 'Discord',
       rarity: 'Oficial',
+      source: pick(raw.source, ['shop', 'catalog', 'import'], 'import'),
       description: cleanText(raw.description, 160),
       tags: (Array.isArray(raw.tags) ? raw.tags : []).slice(0, 6).map((t) => cleanText(t, 24)).filter(Boolean),
       asset,
@@ -642,6 +654,26 @@
 
   /* Armazenamento das criações (localStorage) */
   let customEntries = []; // { cat, item }
+  let catalogLoaded = false;
+  /** Adiciona itens do catálogo oficial (não vão para o localStorage). */
+  function addCatalogItems(entries) {
+    for (const { cat, raw } of entries) {
+      const item = sanitizeCustomItem(cat, raw);
+      if (!item || findItem(cat, item.id)) continue;
+      delete item._custom;
+      if (item.source !== 'shop' && !DATA.collections[item.collection]) DATA.collections[item.collection] = { color: '#5865F2' };
+      DATA[cat].push(item);
+    }
+  }
+  /** Chamado quando o catálogo termina de carregar (ou falha). */
+  function catalogReady() {
+    catalogLoaded = true;
+    const h = fromHash();
+    state = sanitizeState(h ? { ...state, ...stripUndefined(h) } : state);
+    mounted.nameplate = mounted.decoration = mounted.effect = undefined;
+    commit();
+    renderGallery();
+  }
 
   function registerCustom(cat, item, { saved = false } = {}) {
     item._custom = true;
@@ -711,7 +743,8 @@
   /* Estado                                                            */
   /* ---------------------------------------------------------------- */
   let state = { ...DEFAULT_STATE };
-  const ui = { tab: 'nameplates', query: '', collection: 'Todas', listMode: 'members' };
+  const PAGE = 48;
+  const ui = { tab: 'nameplates', query: '', collection: 'Todas', listMode: 'members', limit: PAGE, pageKey: '' };
 
   function sanitizeState(s) {
     const out = { ...DEFAULT_STATE };
@@ -723,7 +756,8 @@
     if (STATUS[s.status]) out.status = s.status;
     if (isHex(s.banner)) out.banner = s.banner;
     for (const key of ['nameplate', 'decoration', 'effect']) {
-      if (findItem(CAT_BY_KEY[key], s[key])) out[key] = s[key];
+      // ids "dc-…" do catálogo carregam depois (fetch); mantém até lá
+      if (findItem(CAT_BY_KEY[key], s[key]) || (!catalogLoaded && /^dc-[a-z0-9-]{3,90}$/.test(s[key] || ''))) out[key] = s[key];
     }
     return out;
   }
@@ -828,7 +862,8 @@
   /* Galeria                                                           */
   /* ---------------------------------------------------------------- */
   function matches(item, q) {
-    if (ui.collection !== 'Todas' && item.collection !== ui.collection) return false;
+    if (ui.collection === SHOP_CHIP) { if (item.source !== 'shop') return false; }
+    else if (ui.collection !== 'Todas' && item.collection !== ui.collection) return false;
     if (!q) return true;
     const hay = normalize([item.name, item.collection, item.rarity, item.description, ...(item.tags || [])].join(' '));
     return q.split(/\s+/).every((w) => hay.includes(w));
@@ -860,10 +895,13 @@
     $$('.rail-btn[data-tab]').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === ui.tab));
   }
 
+  const SHOP_CHIP = '🛒 Loja do Discord';
   function renderChips() {
     const box = $('#collection-chips');
     box.innerHTML = '';
-    const names = ['Todas', ...Object.keys(DATA.collections)];
+    const hasShop = Object.keys(CATS).some((c) => DATA[c].some((i) => i.source === 'shop'));
+    const names = ['Todas', ...(hasShop ? [SHOP_CHIP] : []), ...Object.keys(DATA.collections)];
+    if (ui.collection !== 'Todas' && !names.includes(ui.collection)) names.splice(1, 0, ui.collection);
     for (const name of names) {
       const b = el('button', 'chip shrink-0' + (ui.collection === name ? ' is-active' : ''));
       b.type = 'button';
@@ -914,7 +952,7 @@
   }
 
   function buildCard(cat, item, { variant = 'gallery' } = {}) {
-    const coll = DATA.collections[item.collection] || { color: '#B5BAC1' };
+    const coll = DATA.collections[item.collection] || { color: item.source === 'shop' ? '#5865F2' : '#B5BAC1' };
     const rar = DATA.rarities[item.rarity] || { color: '#B5BAC1' };
     const card = el('article', 'cosmetic-card hover-host fade-in rounded-xl bg-dc-side border border-white/5 overflow-hidden flex flex-col');
     card.dataset.id = item.id;
@@ -957,8 +995,20 @@
       return;
     }
     if (a.type !== 'image') return;
-    badge.textContent = 'medindo…';
     preview.appendChild(badge);
+    if (item.source === 'shop' && !a.meta) {
+      if (cat === 'effects') { badge.textContent = 'prévia estática (sem entrada/loop na API)'; return; }
+      if (!canFetch(a.src)) { badge.textContent = 'APNG oficial'; badge.title = 'O CDN não libera leitura pelo navegador. Para medir: node tools/measure-apng.mjs ' + a.src; return; }
+      // Itens da loja: só baixa o APNG para medir quando o mouse passa no card
+      badge.textContent = '📏 passe o mouse para medir';
+      preview.addEventListener('mouseenter', () => measureInto(badge, cat, a), { once: true });
+      return;
+    }
+    measureInto(badge, cat, a);
+  }
+
+  function measureInto(badge, cat, a) {
+    badge.textContent = 'medindo…';
     const jobs = cat === 'effects'
       ? [a.intro && getMetrics(a, 'intro').then((i) => ['Entrada', i]), a.loop && getMetrics(a, 'loop').then((i) => ['Loop', i])].filter(Boolean)
       : [getMetrics(a, 'src').then((i) => ['', i])];
@@ -982,21 +1032,27 @@
     const grid = $('#grid');
     const isGen = ui.tab === 'generator';
     $('#generator-panel').classList.toggle('hidden', !isGen);
-    ['#grid', '#collection-chips', '#results-row'].forEach((s) => $(s).classList.toggle('hidden', isGen));
+    ['#grid', '#collection-chips', '#results-row', '#grid-more'].forEach((s) => $(s).classList.toggle('hidden', isGen));
     if (isGen) {
       $('#empty').classList.add('hidden');
       document.dispatchEvent(new CustomEvent('cs:generator-open'));
       return;
     }
     const items = filtered(ui.tab);
+    const key = ui.tab + '|' + ui.collection + '|' + ui.query;
+    if (ui.pageKey !== key) { ui.pageKey = key; ui.limit = PAGE; }
     grid.innerHTML = '';
     const frag = document.createDocumentFragment();
-    items.forEach((it, i) => {
+    items.slice(0, ui.limit).forEach((it, i) => {
       const c = buildCard(ui.tab, it);
-      c.style.animationDelay = i * 30 + 'ms';
+      c.style.animationDelay = Math.min(i, 24) * 30 + 'ms';
       frag.appendChild(c);
     });
     grid.appendChild(frag);
+    const more = $('#grid-more');
+    more.classList.toggle('hidden', items.length <= ui.limit);
+    more.textContent = `Mostrar mais (${Math.max(0, items.length - ui.limit)} restantes)`;
+    $('#shop-attribution').classList.toggle('hidden', !items.some((i) => i.source === 'shop'));
 
     const total = DATA[ui.tab].length;
     $('#results-label').textContent = items.length === total
@@ -1215,7 +1271,7 @@
     for (const cat in CATS) {
       const key = CATS[cat].key;
       const item = findItem(cat, state[key]);
-      const coll = item ? DATA.collections[item.collection] : null;
+      const coll = item ? DATA.collections[item.collection] || { color: '#5865F2' } : null;
       const row = el('div', 'flex items-center gap-2.5 rounded-lg px-2.5 h-10 ' + (item ? 'bg-dc-dark/60' : 'bg-dc-dark/30 border border-dashed border-white/10'));
       row.innerHTML = `
         <span class="text-[11px] font-bold uppercase tracking-wide text-dc-faint w-[68px] shrink-0">${CATS[cat].singular}</span>
@@ -1471,6 +1527,10 @@
     });
     if (/Mac|iPhone|iPad/.test(navigator.platform || '')) $('#kbd-hint').textContent = '⌘ K';
 
+    $('#grid-more').addEventListener('click', () => {
+      ui.limit += PAGE;
+      renderGrid();
+    });
     $('#grid').addEventListener('click', (e) => {
       const tryBtn = e.target.closest('.btn-try');
       if (tryBtn) return toggleEquip(tryBtn.dataset.cat, tryBtn.dataset.id);
@@ -1560,6 +1620,7 @@
     });
     $('#force-anim').addEventListener('change', (e) => {
       $('#sim-list').classList.toggle('force-anim', e.target.checked);
+      if (e.target.checked) document.querySelectorAll('#sim-list .deco-layer, #sim-list .cosmetic-layer').forEach((l) => l._activate && l._activate());
     });
 
     $('#btn-replay').addEventListener('click', () => mountCosmetic('effect', { force: true }));
@@ -1621,7 +1682,8 @@
   window.CosmeticStudio = {
     CATS, DATA, GEN, buildAsset, buildCard, toast, syncUserBits, updateCardStates, findItem,
     sanitizeGenItem, sanitizeCustomItem, registerCustom, saveCustom, deleteCustom, publicItem,
-    loadApng, getMetrics, canFetch, metricsLabel, renderGallery, setTab: (t) => setTab(t),
+    loadApng, getMetrics, canFetch, metricsLabel, renderGallery, addCatalogItems, catalogReady,
+    setShopAttribution(url) { const a = $('#shop-attribution'); if (/^https:\/\/itemshop\.gg\//.test(url)) a.href = url; }, setTab: (t) => setTab(t),
     addCollection(name, color) { if (!DATA.collections[name]) DATA.collections[name] = { color }; },
     equip: (cat, id) => toggleEquip(cat, id),
     setSaved(cat, id, saved) {

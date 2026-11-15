@@ -1,0 +1,65 @@
+{
+  "$comment": "Catálogo de cosméticos oficiais do Discord. Adicione itens copiando IDs/hashes da loja e rode: node tools/build-catalog.mjs (preenche `meta`). Formato no README.",
+  "version": 1,
+  "items": [
+    {
+      "type": "decoration",
+      "name": "Decoração da Loja #774717",
+      "collection": "Discord",
+      "sku": "1476286689528774717",
+      "meta": {
+        "src": {
+          "width": 288,
+          "height": 288,
+          "frames": 67,
+          "duration": 6.7,
+          "fps": 10,
+          "plays": 0,
+          "nominalFps": 122,
+          "clampedFrames": 67
+        }
+      }
+    },
+    {
+      "type": "nameplate",
+      "name": "Nameplate da Loja #979648",
+      "collection": "Discord",
+      "sku": "1476288619277979648",
+      "meta": {
+        "src": {
+          "width": 448,
+          "height": 84,
+          "frames": 48,
+          "duration": 4,
+          "fps": 12,
+          "plays": 0
+        }
+      }
+    },
+    {
+      "type": "effect",
+      "name": "Efeito da Loja #fbf5b1",
+      "collection": "Discord",
+      "intro": "fbf5b162630e321e0fa292e6e664074428190048cb1570f9df48ab4385652b49",
+      "loop": "9d2f228687db2ba6cec94b43899086e0500b0cbd1472f329e6a5e6bfe23c1019",
+      "meta": {
+        "intro": {
+          "width": 450,
+          "height": 880,
+          "frames": 58,
+          "duration": 4.814,
+          "fps": 12,
+          "plays": 1
+        },
+        "loop": {
+          "width": 450,
+          "height": 880,
+          "frames": 41,
+          "duration": 3.403,
+          "fps": 12,
+          "plays": 0
+        }
+      }
+    }
+  ]
+}

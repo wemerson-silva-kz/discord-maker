@@ -81,6 +81,133 @@
     });
   }
 
+  /* ---------------- Catálogo (catalog/discord.json) ---------------- */
+  const TYPE_TO_CAT = { decoration: 'decorations', nameplate: 'nameplates', effect: 'effects' };
+  const CAT_TO_TYPE = { decorations: 'decoration', nameplates: 'nameplate', effects: 'effect' };
+
+  /** Converte uma entrada do catálogo no item da galeria (mesmas regras do tools/build-catalog.mjs). */
+  function catalogEntryToItem(e) {
+    const cat = TYPE_TO_CAT[e && e.type];
+    if (!cat) return null;
+    const base = { name: e.name, collection: e.collection || 'Discord', description: e.description, tags: e.tags || ['discord', 'oficial'] };
+    if (cat === 'effects') {
+      const intro = parseRef(e.intro), loop = parseRef(e.loop);
+      if (!intro && !loop) return null;
+      const key = (intro || loop).key.slice(0, 12).toLowerCase();
+      return { cat, raw: { ...base, id: 'dc-fx-' + key, name: e.name || `Efeito do Discord #${key.slice(0, 6)}`,
+        description: e.description || 'Efeito oficial em duas fases: a entrada toca uma vez e depois entra o loop.',
+        asset: { type: 'image', intro: intro && (intro.url || intro.animated), loop: loop && (loop.url || loop.animated), meta: e.meta } } };
+    }
+    const ref = parseRef(e.sku || e.preset || e.src);
+    if (!ref) return null;
+    const short = cat === 'decorations' ? 'deco' : 'np';
+    return { cat, raw: { ...base, id: `dc-${short}-` + ref.key.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+      name: e.name || `${CATS[cat].singular} do Discord #${ref.key.slice(-6)}`,
+      description: e.description || 'Asset oficial do CDN do Discord: estático até o hover, animado ao passar o mouse.',
+      asset: { type: 'image', src: ref.animated || ref.url, staticSrc: (e.staticSrc && parseRef(e.staticSrc)?.url) || ref.static, meta: e.meta } } };
+  }
+
+  async function loadCatalog() {
+    try {
+      const res = await fetch('catalog/discord.json', { cache: 'no-cache' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const entries = (Array.isArray(data.items) ? data.items : []).map(catalogEntryToItem).filter(Boolean);
+      entries.forEach((e) => { e.raw.source = 'catalog'; });
+      CS.addCatalogItems(entries);
+    } catch (e) {
+      console.warn('[Catálogo] não foi possível carregar catalog/discord.json (abra o site por um servidor HTTP):', e.message);
+    }
+  }
+
+  /* ---------------- Loja ao vivo (API pública do itemshop.gg) ----------------
+     Termos: mostrar o link "Data from itemshop.gg", fazer cache (~2 min) e
+     respeitar 30 req/min por IP sem chave. Só a loja do dia é usada (sem chave). */
+  const SHOP_API = 'https://itemshop.gg/api/v1/shop/discord';
+  const SHOP_CACHE = 'cosmetic-studio:shop-cache:v1';
+  const SHOP_TTL = 2 * 60 * 1000;
+
+  function priceLabel(p) {
+    if (!p || p.amount == null) return '';
+    if (p.currency === 'USD') return 'US$ ' + Number(p.amount).toFixed(2).replace('.', ',');
+    return `${p.amount} ${p.currency || ''}`.trim();
+  }
+
+  /** Converte um item da API no formato da galeria (só tipos que dá para testar no perfil). */
+  function shopItemToEntry(it, section) {
+    const card = it.images && it.images.card;
+    if (!card || !/^\d{15,21}$/.test(it.id || '')) return null;
+    const desc = [priceLabel(it.price), section].filter(Boolean).join(' · ');
+    const base = { name: it.name, collection: section || 'Loja do Discord', source: 'shop', tags: ['discord', 'loja', String(it.type || '').toLowerCase()] };
+    if (it.type === 'Avatar Decoration' && /avatar-decoration-presets\//.test(card)) {
+      return { cat: 'decorations', raw: { ...base, id: 'dc-deco-' + it.id, description: desc,
+        asset: { type: 'image', src: card.replace('passthrough=false', 'passthrough=true'), staticSrc: card } } };
+    }
+    if (it.type === 'Nameplate' && /\/static$/.test(card)) {
+      return { cat: 'nameplates', raw: { ...base, id: 'dc-np-' + it.id, description: desc,
+        asset: { type: 'image', src: card.replace(/\/static$/, '/animated'), staticSrc: card } } };
+    }
+    if (it.type === 'Profile Effect') {
+      // A API só traz uma miniatura estática; entrada/loop podem ser adicionados pelo importador.
+      return { cat: 'effects', raw: { ...base, id: 'dc-fx-' + it.id, description: (desc ? desc + ' · ' : '') + 'prévia estática',
+        asset: { type: 'image', loop: card } } };
+    }
+    return null;
+  }
+
+  async function loadShop() {
+    let payload = null;
+    try {
+      const cached = JSON.parse(localStorage.getItem(SHOP_CACHE) || 'null');
+      if (cached && Date.now() - cached.t < SHOP_TTL) payload = cached;
+    } catch (e) { /* sem cache */ }
+    if (!payload) {
+      try {
+        const res = await fetch(SHOP_API);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        const entries = [];
+        for (const sec of (json.data && json.data.sections) || []) {
+          for (const it of sec.items || []) {
+            const e = shopItemToEntry(it, sec.title);
+            if (e) entries.push(e);
+          }
+        }
+        payload = { t: Date.now(), entries, attribution: json.meta && json.meta.attribution && json.meta.attribution.url, date: json.data && json.data.shopDate };
+        try { localStorage.setItem(SHOP_CACHE, JSON.stringify(payload)); } catch (e) { /* cheio: segue sem cache */ }
+      } catch (e) {
+        console.warn('[Loja] não foi possível carregar a loja do itemshop.gg:', e.message);
+        return;
+      }
+    }
+    CS.addCatalogItems(payload.entries);
+    if (payload.attribution) CS.setShopAttribution(payload.attribution);
+  }
+
+  async function loadOfficial() {
+    await loadCatalog(); // o catálogo vem primeiro: os itens dele já têm métricas (meta)
+    await loadShop();
+    CS.catalogReady();
+  }
+
+  /** Entrada pronta para colar em catalog/discord.json, a partir do formulário. */
+  function formToCatalogEntry(cat, form) {
+    const entry = { type: CAT_TO_TYPE[cat], name: form.name.trim() || undefined, collection: form.collection.trim() || 'Discord' };
+    if (cat === 'effects') {
+      const intro = parseRef(form.intro), loop = parseRef(form.loop);
+      if (!intro && !loop) throw new Error('Informe a entrada e/ou o loop.');
+      if (intro) entry.intro = intro.kind === 'hash' ? intro.key : intro.url || intro.animated;
+      if (loop) entry.loop = loop.kind === 'hash' ? loop.key : loop.url || loop.animated;
+    } else {
+      const ref = parseRef(form.main);
+      if (!ref) throw new Error('ID ou URL não reconhecido.');
+      if (ref.kind === 'sku') entry.sku = ref.key;
+      else if (ref.kind === 'preset') entry.preset = ref.key;
+      else entry.src = ref.url;
+    }
+    return entry;
+  }
+
   let dlg;
   function ensureDialog() {
     if (dlg) return dlg;
@@ -134,6 +261,7 @@
             <div id="imp-preview" class="rounded-lg bg-dc-dark p-3 text-xs text-dc-muted min-h-[44px]">Cole um ID ou URL para medir a animação (quadros, duração e FPS).</div>
           </div>
           <div class="flex justify-end gap-2 px-4 py-3 border-t border-black/30">
+            <button type="button" class="btn btn-ghost btn-sm mr-auto" id="imp-copy" title="Copia a entrada para colar em catalog/discord.json">{ } Copiar para o catálogo</button>
             <button type="button" class="btn btn-ghost btn-sm" data-close>Cancelar</button>
             <button type="button" class="btn btn-primary btn-sm" id="imp-save">Importar e testar</button>
           </div>
@@ -194,6 +322,18 @@
       timer = setTimeout(preview, 400);
     }));
 
+    $('#imp-copy').addEventListener('click', async () => {
+      let entry;
+      try { entry = formToCatalogEntry(cat, form()); } catch (e) { return CS.toast(e.message, 'danger'); }
+      const text = JSON.stringify(entry, null, 2) + ',';
+      try {
+        await navigator.clipboard.writeText(text);
+        CS.toast('Entrada copiada! Cole em catalog/discord.json e rode node tools/build-catalog.mjs.', 'success');
+      } catch (e) {
+        CS.toast('Não foi possível copiar automaticamente.', 'danger');
+      }
+    });
+
     $('#imp-save').addEventListener('click', () => {
       let item;
       try { item = buildItem(cat, form()); } catch (e) { return CS.toast(e.message, 'danger'); }
@@ -210,9 +350,10 @@
 
   function init() {
     $('#btn-import').addEventListener('click', () => ensureDialog().showModal());
+    loadOfficial();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-  window.CosmeticImport = { parseRef };
+  window.CosmeticImport = { parseRef, catalogEntryToItem };
 })();

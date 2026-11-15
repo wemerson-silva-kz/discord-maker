@@ -99,7 +99,10 @@
           <div class="flex items-center gap-2 overflow-x-auto pb-2 mb-4 -mx-1 px-1" id="collection-chips" aria-label="Filtrar por coleção"></div>
 
           <div class="flex items-center justify-between mb-3" id="results-row">
-            <p class="text-xs font-bold uppercase tracking-wide text-dc-muted" id="results-label"></p>
+            <div class="flex items-center gap-3 min-w-0">
+              <p class="text-xs font-bold uppercase tracking-wide text-dc-muted" id="results-label"></p>
+              <a id="shop-attribution" class="hidden text-[11px] text-[#00A8FC] hover:underline whitespace-nowrap" href="https://itemshop.gg/discord" target="_blank" rel="noopener">Data from itemshop.gg</a>
+            </div>
             <button type="button" id="btn-import" class="btn btn-sm btn-secondary">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Importar do Discord
@@ -201,6 +204,8 @@
             </div>
           </section>
 
+          <div class="flex justify-center mt-6"><button type="button" id="grid-more" class="btn btn-secondary hidden">Mostrar mais</button></div>
+
           <!-- Vazio -->
           <div id="empty" class="hidden text-center py-16">
             <div class="mx-auto w-20 h-20 rounded-full bg-dc-side grid place-items-center mb-4">
@@ -212,7 +217,7 @@
           </div>
 
           <footer class="mt-12 pt-6 border-t border-white/5 text-xs text-dc-faint">
-            Projeto de fã, não oficial e sem afiliação com o Discord. Todos os itens são fictícios e animados com CSS/SVG.
+            Projeto de fã, não oficial e sem afiliação com o Discord. Os itens das coleções temáticas são fictícios e animados com CSS/SVG; os itens oficiais são exibidos direto do CDN do Discord e pertencem aos seus donos. Dados da loja: <a class="text-[#00A8FC] hover:underline" href="https://itemshop.gg/discord" target="_blank" rel="noopener">Data from itemshop.gg</a>.
           </footer>
         </section>
       </main>
