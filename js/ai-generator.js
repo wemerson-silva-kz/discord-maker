@@ -31,7 +31,7 @@
   const PROVIDERS = {
     anthropic: { label: 'Anthropic (Claude)', model: 'claude-opus-5-5', keyPh: 'sk-ant-...', hint: 'Usa o SDK oficial da Anthropic com saída estruturada (JSON Schema).' },
     openai: { label: 'OpenAI', base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', format: 'json_schema', keyPh: 'sk-...', hint: 'Usa saída estruturada estrita (json_schema).' },
-    gemini: { label: 'Google Gemini', base: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', format: 'json_schema', keyPh: 'AIza...', hint: 'Endpoint compatível com OpenAI do Gemini. Chave em aistudio.google.com.' },
+    gemini: { label: 'Google Gemini', native: 'gemini', base: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash', keyPh: 'AIza...', hint: 'API nativa do Gemini com saída JSON estruturada (responseSchema). Crie a chave grátis em aistudio.google.com; ao colar a chave, os modelos disponíveis aparecem na lista.' },
     openrouter: { label: 'OpenRouter (centenas de modelos)', base: 'https://openrouter.ai/api/v1', model: 'openrouter/auto', format: 'json_object', keyPh: 'sk-or-...', hint: 'Troque o modelo por qualquer um do catálogo do OpenRouter (ex.: um modelo gratuito).' },
     groq: { label: 'Groq', base: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', format: 'json_object', keyPh: 'gsk_...', hint: 'Muito rápido; tem plano gratuito.' },
     deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com/v1', model: 'deepseek-chat', format: 'json_object', keyPh: 'sk-...' },
@@ -246,6 +246,110 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     if (status === 429) return new Error(`Limite de uso atingido em ${label}. Aguarde um pouco e tente de novo.`);
     if (status >= 500) return new Error(`${label} está instável agora. Tente novamente em instantes.`);
     return new Error(`${label} recusou o pedido: ${msg || 'erro ' + status}`);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Motor: Google Gemini (API nativa generateContent)                    */
+  /* ------------------------------------------------------------------ */
+  const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+
+  /** Converte o JSON Schema do app para o subconjunto OpenAPI aceito pelo Gemini. */
+  function toGeminiSchema(node) {
+    if (!node || typeof node !== 'object') return node;
+    const out = { type: String(node.type || 'string').toUpperCase() };
+    if (node.description) out.description = node.description;
+    if (node.enum) out.enum = node.enum;
+    if (node.properties) {
+      out.properties = {};
+      for (const k in node.properties) out.properties[k] = toGeminiSchema(node.properties[k]);
+      out.propertyOrdering = Object.keys(node.properties);
+    }
+    if (node.required) out.required = node.required;
+    if (node.items) out.items = toGeminiSchema(node.items);
+    return out;
+  }
+
+  const geminiModelName = (m) => String(m || '').trim().replace(/^models\//, '');
+
+  function geminiError(status, body, model) {
+    const err = body && body.error;
+    const msg = (err && err.message) || '';
+    const st = (err && err.status) || '';
+    if (/API key not valid|API_KEY_INVALID/i.test(msg) || status === 401) return new Error('Chave do Gemini inválida. Gere uma em aistudio.google.com.');
+    if (status === 403 || st === 'PERMISSION_DENIED') return new Error('Essa chave não tem acesso à API do Gemini (ative a "Generative Language API" no projeto da chave).');
+    if (status === 404 || st === 'NOT_FOUND') return new Error(`Modelo "${model}" não encontrado no Gemini. Escolha outro na lista de modelos.`);
+    if (status === 429 || st === 'RESOURCE_EXHAUSTED') return new Error('Limite de uso do Gemini atingido. Aguarde um pouco ou troque de modelo.');
+    if (status >= 500) return new Error('O Gemini está instável agora. Tente novamente em instantes.');
+    return new Error('O Gemini recusou o pedido: ' + (msg || 'erro ' + status));
+  }
+
+  async function generateWithGemini(prompt, cats, cfg) {
+    const model = geminiModelName(cfg.model);
+    if (!model) throw new Error('Informe o modelo do Gemini.');
+    const url = `${GEMINI_BASE}/models/${encodeURIComponent(model)}:generateContent`;
+    const user = `Tema: ${prompt}\nCategorias, nesta ordem: ${cats.map((c) => CAT_TO_API[c]).join(', ')}`;
+    const system = SYSTEM_PROMPT + '\n\nResponda SOMENTE com um objeto JSON válido neste formato (o exemplo mostra itens; gere um por categoria pedida, com todos os campos):\n' + JSON_EXAMPLE;
+
+    // 1ª tentativa: JSON com schema; se o modelo recusar o schema, só modo JSON.
+    for (const withSchema of [true, false]) {
+      const generationConfig = { responseMimeType: 'application/json', temperature: 1 };
+      if (withSchema) generationConfig.responseSchema = toGeminiSchema(OUTPUT_SCHEMA);
+      let res;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [{ role: 'user', parts: [{ text: user }] }],
+            generationConfig,
+          }),
+        });
+      } catch (e) {
+        throw new Error('Não foi possível conectar ao Gemini. Verifique sua internet.');
+      }
+      let data = null;
+      try { data = await res.json(); } catch (e) { data = null; }
+      if (!res.ok) {
+        const msg = (data && data.error && data.error.message) || '';
+        if (withSchema && res.status === 400 && /schema|response_schema|responseSchema|generation_config|Invalid JSON payload/i.test(msg)) continue;
+        throw geminiError(res.status, data, model);
+      }
+      if (data && data.promptFeedback && data.promptFeedback.blockReason) {
+        throw new Error('O Gemini bloqueou esse tema. Tente descrevê-lo de outro jeito.');
+      }
+      const cand = data && data.candidates && data.candidates[0];
+      if (!cand) throw new Error('O Gemini não retornou resposta. Tente novamente.');
+      if (cand.finishReason === 'MAX_TOKENS') throw new Error('A resposta do Gemini veio incompleta. Tente gerar menos categorias de uma vez.');
+      if (/SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION/.test(cand.finishReason || '')) {
+        throw new Error('O Gemini recusou esse tema. Tente descrevê-lo de outro jeito.');
+      }
+      const text = ((cand.content && cand.content.parts) || []).filter((pt) => !pt.thought).map((pt) => pt.text || '').join('');
+      return itemsFromText(text, prompt, cats, { id: 'gemini', label: 'Gemini · ' + model });
+    }
+    throw new Error('O Gemini não aceitou o pedido.');
+  }
+
+  /** Lista os modelos Gemini da chave que suportam generateContent (mais novos primeiro). */
+  const geminiModelsCache = new Map();
+  async function listGeminiModels(key) {
+    if (geminiModelsCache.has(key)) return geminiModelsCache.get(key);
+    const res = await fetch(`${GEMINI_BASE}/models?pageSize=1000`, { headers: { 'x-goog-api-key': key } });
+    let data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok) throw geminiError(res.status, data, '');
+    const ver = (n) => (n.match(/(\d+(?:\.\d+)?)/) || [0, '0'])[1] * 1;
+    const models = ((data && data.models) || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent') && /gemini/i.test(m.name) && !/embedding|aqa|tts|image|vision-only|live|audio/i.test(m.name))
+      .map((m) => ({ id: geminiModelName(m.name), label: m.displayName || geminiModelName(m.name) }))
+      .sort((a, b) => ver(b.id) - ver(a.id) || a.id.localeCompare(b.id));
+    geminiModelsCache.set(key, models);
+    return models;
+  }
+  /** Sugere um modelo: o "flash" estável mais novo; senão o primeiro da lista. */
+  function pickGeminiModel(models) {
+    const stable = models.filter((m) => !/preview|exp|lite|thinking/i.test(m.id));
+    return (stable.find((m) => /flash/i.test(m.id)) || stable[0] || models[0] || {}).id;
   }
 
   async function generateWithClaude(prompt, cats, apiKey, model) {
@@ -598,6 +702,40 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     $('#gen-key-label').textContent = `Chave da API — ${p.label}${p.keyOptional ? ' (opcional)' : ''}`;
     $('#gen-key-remember').checked = ai.remember;
     $('#gen-provider-hint').textContent = p.hint || '';
+    refreshModelList();
+  }
+
+  /** Preenche a lista de modelos (hoje: Gemini) a partir da chave informada. */
+  let modelListSeq = 0;
+  async function refreshModelList() {
+    const dl = $('#gen-models');
+    dl.innerHTML = '';
+    const p = PROVIDERS[ai.provider];
+    const key = $('#gen-key').value.trim();
+    if (p.native !== 'gemini' || !key) return;
+    const seq = ++modelListSeq;
+    try {
+      const models = await listGeminiModels(key);
+      if (seq !== modelListSeq) return;
+      models.forEach((m) => {
+        const o = document.createElement('option');
+        o.value = m.id;
+        o.label = m.label;
+        dl.appendChild(o);
+      });
+      const current = geminiModelName($('#gen-model').value);
+      if (models.length && !models.some((m) => m.id === current) && !ai.models[ai.provider]) {
+        const best = pickGeminiModel(models);
+        if (best) {
+          $('#gen-model').value = best;
+          $('#gen-provider-hint').textContent = `${p.hint} Modelo escolhido automaticamente: ${best} (${models.length} disponíveis).`;
+        }
+      } else if (models.length) {
+        $('#gen-provider-hint').textContent = `${p.hint} ${models.length} modelos disponíveis nesta chave.`;
+      }
+    } catch (e) {
+      if (seq === modelListSeq) $('#gen-provider-hint').textContent = `${p.hint} ⚠ ${e.message}`;
+    }
   }
 
   function selectedCats() {
@@ -693,7 +831,9 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
       try {
         const list = ai.provider === 'anthropic'
           ? await generateWithClaude(prompt, cats, cfg.key, cfg.model)
-          : await generateWithOpenAICompat(prompt, cats, cfg);
+          : PROVIDERS[ai.provider].native === 'gemini'
+            ? await generateWithGemini(prompt, cats, cfg)
+            : await generateWithOpenAICompat(prompt, cats, cfg);
         $$('#gen-results .gen-skeleton').forEach((n) => n.remove());
         addResults(list);
         CS.toast(`${list.length} ${list.length === 1 ? 'cosmético gerado' : 'cosméticos gerados'} pela IA!`, 'success');
@@ -825,6 +965,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
     $('#gen-key').addEventListener('change', (e) => {
       ai.keys[ai.provider] = e.target.value.trim();
       persistAiSettings();
+      refreshModelList();
     });
     $('#gen-key-remember').addEventListener('change', (e) => {
       ai.remember = e.target.checked;

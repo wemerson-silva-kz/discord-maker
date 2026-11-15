@@ -40,7 +40,8 @@ A aba **Gerador IA** cria nameplates, molduras e efeitos de perfil **animados** 
 
 - **Motor IA (qualquer provedor):** escolha o provedor, o modelo e cole a sua chave (fica só no seu navegador; o site não tem servidor). Provedores prontos:
   - **Anthropic (Claude)**: SDK oficial `@anthropic-ai/sdk` no navegador, modelo padrão `claude-opus-5-5`, saída estruturada por JSON Schema.
-  - **OpenAI**, **Google Gemini**: saída estruturada (`json_schema`).
+  - **Google Gemini**: API nativa (`generateContent`) com `responseMimeType: application/json` e `responseSchema`. Ao colar a chave (grátis em aistudio.google.com), o app lista os modelos Gemini disponíveis na conta e escolhe sozinho o "flash" estável mais novo; dá para trocar pelo campo **Modelo**. Se um modelo recusar o schema, o app tenta de novo só em modo JSON.
+  - **OpenAI**: saída estruturada (`json_schema`).
   - **OpenRouter** (centenas de modelos, inclusive gratuitos), **Groq**, **DeepSeek**, **Mistral**: modo JSON.
   - **Ollama (no seu PC)**: grátis e local; rode com `OLLAMA_ORIGINS=*` para o navegador conseguir acessar.
   - **Outro (compatível com OpenAI)**: qualquer API com `/chat/completions` (LM Studio, Together, Fireworks, xAI, vLLM…), informando a URL base.
