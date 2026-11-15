@@ -901,3 +901,6 @@
 
 /* Camadas oficiais do efeito de perfil (entrada/loop), empilhadas pelo z-index da config */
 .cosmetic-layer > img.fx-layer { transition: opacity .12s linear; }
+
+/* Paleta do Discord por trás da arte da nameplate (como no app: cor mais forte à direita) */
+.np-palette { background: linear-gradient(90deg, color-mix(in srgb, var(--np-dark) 55%, transparent) 0%, var(--np-dark) 45%, var(--np-light) 100%); }

@@ -25,6 +25,9 @@ jobs:
         run: |
           mkdir -p _site
           cp -r index.html css js catalog .nojekyll _site/
+          # Cache-busting: cada deploy muda a URL dos CSS/JS (o Pages manda guardar por 10 min)
+          sed -i -E "s#(href|src)=\"((css|js)/[^\"?]+)\"#\1=\"\2?v=${GITHUB_SHA::8}\"#g" _site/index.html
+          grep -c "?v=" _site/index.html
 
       - uses: actions/configure-pages@v5
 

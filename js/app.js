@@ -286,12 +286,23 @@
       }
     };
     build();
+    if (cat === 'nameplates' && a.discordPalette) applyNameplatePalette(layer, a.discordPalette);
     /** Reinicia a animação (usada no hover dos cards e no botão "repetir"). */
     layer._replay = () => {
       layer._userTriggered = true;
       build();
     };
     return layer;
+  }
+
+  /** Fundo da paleta do Discord por trás da arte (transparente) da nameplate. */
+  function applyNameplatePalette(layer, name) {
+    const pal = (DATA.discordPalettes || {})[name];
+    if (!pal) return;
+    layer.classList.add('np-palette');
+    layer.style.setProperty('--np-dark', pal.dark);
+    layer.style.setProperty('--np-light', pal.light);
+    layer.dataset.palette = name;
   }
 
   /* ---------------------------------------------------------------- */
@@ -712,10 +723,11 @@
       rarity: pick(raw.rarity, GEN.rarities, 'Épico'),
       description: cleanText(raw.description, 160),
       tags: (Array.isArray(raw.tags) ? raw.tags : []).slice(0, 6).map((t) => cleanText(t, 24)).filter(Boolean),
-      prompt: cleanText(raw.prompt, 300),
+      prompt: cleanText(raw.prompt, 2000),
       engine: /^[a-z0-9-]{2,20}$/.test(raw.engine) ? raw.engine : 'local',
       engineLabel: cleanText(raw.engineLabel, 30),
-      asset: sanitizeGenAsset(raw.asset, cat),
+      asset: Object.assign(sanitizeGenAsset(raw.asset, cat),
+        cat === 'nameplates' && raw.asset && DATA.discordPalettes && DATA.discordPalettes[raw.asset.discordPalette] ? { discordPalette: raw.asset.discordPalette } : {}),
       _custom: true,
     };
   }
@@ -757,6 +769,7 @@
       }
       if (Object.keys(meta).length) asset.meta = meta;
     }
+    if (cat === 'nameplates' && DATA.discordPalettes && DATA.discordPalettes[a.discordPalette]) asset.discordPalette = a.discordPalette;
     const idur = Number(a.introDuration);
     if (Number.isFinite(idur) && idur > 0) asset.introDuration = Math.min(15, idur);
     if (cat === 'effects' && asset.src && !asset.loop && !asset.intro) { asset.loop = asset.src; delete asset.src; }
@@ -787,6 +800,7 @@
         svg,
         loopSeconds: num(a.loopSeconds, 1, 8, 4),
         ...(introSvg ? { introSvg, introSeconds: num(a.introSeconds, 0.5, GEN.maxIntro, 3) } : {}),
+        ...(cat === 'nameplates' && DATA.discordPalettes && DATA.discordPalettes[a.discordPalette] ? { discordPalette: a.discordPalette } : {}),
       },
     };
   }
@@ -996,7 +1010,13 @@
       const card = e.target;
       const on = e.isIntersecting && (autoAnim || NO_HOVER);
       card.classList.toggle('force-anim', on);
-      if (on) card.querySelectorAll('.deco-layer, .cosmetic-layer').forEach((l) => l._activate && l._activate());
+      if (on) {
+        card.querySelectorAll('.deco-layer, .cosmetic-layer').forEach((l) => l._activate && l._activate());
+        // Efeito com camadas oficiais: toca a entrada quando aparece
+        const fx = card.dataset.cat === 'effects' && card.querySelector('.cosmetic-layer');
+        if (fx && fx._replay && !card._played) { card._played = true; fx._replay(); }
+        document.dispatchEvent(new CustomEvent('cs:visible', { detail: { cat: card.dataset.cat, id: card.dataset.id } }));
+      }
     }
   }, { rootMargin: '120px 0px' }) : null;
   function observeCards(root) {

@@ -652,7 +652,8 @@ input[type='color'].swatch::-moz-color-swatch { border: none; border-radius: 6px
 .ref-row:hover { border-color: rgba(255, 255, 255, .15); }
 .ref-row.is-on { border-color: var(--dc-blurple); background: rgba(88, 101, 242, .15); }
 /* Nos cards com entrada/loop lado a lado, a etiqueta do motor vai para o topo */
-.card-preview:has(.mini-profile--half) .engine-badge { top: 6px; bottom: auto; left: 6px; z-index: 45; }
+.card-preview:has(.mini-profile--half) .engine-badge { top: 6px; bottom: auto; left: auto; right: 6px; z-index: 45; }
+.card-preview:has(.mini-profile--half) .quality-badge { top: auto; bottom: 6px; left: 50%; transform: translateX(-50%); }
 
 .metrics-badge.is-action { cursor: pointer; color: #FEE75C; pointer-events: auto; }
 .metrics-badge.is-action:hover { background: rgba(88, 101, 242, .85); color: #fff; }
@@ -660,3 +661,23 @@ input[type='color'].swatch::-moz-color-swatch { border: none; border-radius: 6px
 .mini-profile--frame { overflow: hidden; }
 /* Card animando sozinho (visível na tela): o aviso "Passe o mouse" não se aplica */
 .force-anim .hover-hint { opacity: 0; }
+
+/* Selo da revisão automática (zonas protegidas) */
+.quality-badge {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  z-index: 46;
+  max-width: calc(100% - 12px);
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, .72);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: help;
+}
+.quality-badge.is-ok { color: #57F287; }
+.quality-badge.is-bad { color: #FEE75C; }

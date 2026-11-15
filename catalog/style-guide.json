@@ -1,0 +1,814 @@
+{
+ "fonte": "loja oficial do Discord (itemshop.gg + discord.com/api/v9/collectibles-products + cdn.discordapp.com)",
+ "data": "2026-11-15",
+ "amostra": {
+  "Profile Effect": 40,
+  "Avatar Decoration": 40,
+  "Nameplate": 40,
+  "Profile Frame": 40
+ },
+ "exemplos": {
+  "effects": [
+   {
+    "nome": "Spring Rain",
+    "colecao": "",
+    "img": "https://cdn.discordapp.com/assets/content/9c934e3c11ae780e27c1d6080dadf09d56e4a56d51f82b72503605efa6033d03"
+   },
+   {
+    "nome": "Playground Pals",
+    "colecao": "",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/6f40594aa8c6683c2e5b1f40d840cf35ff809c370758fcd3e24bc27deb9312c1"
+   },
+   {
+    "nome": "League of Villains",
+    "colecao": "",
+    "img": "https://cdn.discordapp.com/assets/content/bcee47eb13cb3bd57f55acffd6a273231c9f461bdc1d9045d1dced628d836089"
+   },
+   {
+    "nome": "Oni's Curse",
+    "colecao": "",
+    "img": "https://cdn.discordapp.com/assets/content/3ff3c192391b3f45f5e66d364065c25a64547b0f8c148d94a58d4d18483419e5"
+   },
+   {
+    "nome": "Shattered Wings",
+    "colecao": "",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/dc424970b232e08726c601206010cca8fb4e37b8124e4e15f24af32bb18742ba"
+   },
+   {
+    "nome": "Shiver",
+    "colecao": "",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/b6f265ce5b8663ac063871c792f2f087a67d4670bc2010214f9ca65114b88f48"
+   },
+   {
+    "nome": "Innovator's Masterwork",
+    "colecao": "",
+    "img": "https://cdn.discordapp.com/assets/content/714d6c2d7937a49bd5ee71963abfe30c42a3475f51122ce85206501b661bb905"
+   },
+   {
+    "nome": "Ambient Ripples (Lavender)",
+    "colecao": "",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/4acb39f0230f95b994405f4875ba45a14a58f46420424a15c3909a75041df48d"
+   },
+   {
+    "nome": "Firefly Meadow",
+    "colecao": "",
+    "img": "https://cdn.discordapp.com/assets/content/3e31649457d657ba4b1c75971ea2b7aae6d1c35048cfaaac6400b92be27f0578"
+   },
+   {
+    "nome": "Lofi Cat Zoomies",
+    "colecao": "",
+    "img": "https://cdn.discordapp.com/assets/content/fd109dd2253306142f280a07f694aa228ecbf701e40c1c057f70f1de3d075e66"
+   },
+   {
+    "nome": "Lord of the Dead (Red)",
+    "colecao": "",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/b555971c87eecc9e46b5b858fe7bb0d489868515d5eadc0cb32289038395218d"
+   },
+   {
+    "nome": "Bearly Afloat",
+    "colecao": "",
+    "img": "https://cdn.discordapp.com/assets/content/f16ee045acdbb4ae2105108652b8bd59991187c3e866f1374a86f0d92b81819a"
+   }
+  ],
+  "decorations": [
+   {
+    "nome": "Pompompurin",
+    "img": "https://cdn.discordapp.com/avatar-decoration-presets/a_a16394f64b8d9fa38fa75078dc408689.png?size=320&passthrough=false"
+   },
+   {
+    "nome": "Flame Chompers",
+    "img": "https://cdn.discordapp.com/avatar-decoration-presets/a_8396e9830e3e288cd3aaa6daf18b605a.png?size=320&passthrough=false"
+   },
+   {
+    "nome": "Neon Cat Hoodie (Pink)",
+    "img": "https://cdn.discordapp.com/avatar-decoration-presets/a_e1e9cd6fc7448acfe0fbf2829681e281.png?size=320&passthrough=false"
+   },
+   {
+    "nome": "Bubble Tea",
+    "img": "https://cdn.discordapp.com/avatar-decoration-presets/a_5b1319abfc9f928479b68a73635f591d.png?size=320&passthrough=false"
+   },
+   {
+    "nome": "Electric Aura (Icy)",
+    "img": "https://cdn.discordapp.com/avatar-decoration-presets/a_8aba2a2cd94462352e6b0030e7fe3b76.png?size=320&passthrough=false"
+   },
+   {
+    "nome": "Berry Cute",
+    "img": "https://cdn.discordapp.com/avatar-decoration-presets/a_7a37ce9e5674681cb80476e6772f78ff.png?size=320&passthrough=false"
+   },
+   {
+    "nome": "Spooky Cat Ears (Midnight)",
+    "img": "https://cdn.discordapp.com/avatar-decoration-presets/a_c4395b178205217ad09cae605ef11b1a.png?size=320&passthrough=false"
+   },
+   {
+    "nome": "Solar Orbit",
+    "img": "https://cdn.discordapp.com/avatar-decoration-presets/a_9a6bf0ab30a6719d6eb09fa4996984ca.png?size=320&passthrough=false"
+   },
+   {
+    "nome": "Cutesy Bow",
+    "img": "https://cdn.discordapp.com/avatar-decoration-presets/a_9c204b3d6ddcb6e022247565414e61ba.png?size=320&passthrough=false"
+   },
+   {
+    "nome": "Gone Fishin'",
+    "img": "https://cdn.discordapp.com/avatar-decoration-presets/a_cec06be6560073121dc9e0bfd9cb536f.png?size=320&passthrough=false"
+   },
+   {
+    "nome": "Heart's Reflection",
+    "img": "https://cdn.discordapp.com/avatar-decoration-presets/a_0e25685f403ba17f91b70ed424ce685e.png?size=320&passthrough=false"
+   },
+   {
+    "nome": "Snowglobe (Blue)",
+    "img": "https://cdn.discordapp.com/avatar-decoration-presets/a_b8fc6acd71909d7bed54090bde4ad2b1.png?size=320&passthrough=false"
+   }
+  ],
+  "nameplates": [
+   {
+    "nome": "Ambient Ripples (Arctic)",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1514654925525618839/static"
+   },
+   {
+    "nome": "Spirit Blossom Springs",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1394404301396377710/static"
+   },
+   {
+    "nome": "Sagittarius",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1447654091311419392/static"
+   },
+   {
+    "nome": "Egypt",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1510049159988777020/static"
+   },
+   {
+    "nome": "Lucky Clover",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1478148579322364150/static"
+   },
+   {
+    "nome": "Colombia",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1511104438629040238/static"
+   },
+   {
+    "nome": "Magic Hearts (Orange)",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1417311919760474112/static"
+   },
+   {
+    "nome": "Capricorn",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1447654091390980227/static"
+   },
+   {
+    "nome": "Sally",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1559632988885618788/static"
+   },
+   {
+    "nome": "Spirit Wolf",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1538991722535714867/static"
+   },
+   {
+    "nome": "Sword of Legend",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1377377712162738196/static"
+   },
+   {
+    "nome": "Twilight",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1349849614198505602/static"
+   }
+  ],
+  "frames": [
+   {
+    "nome": "Prism Edge (Pink)",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1524512601827180624/1524557380090593321/static"
+   },
+   {
+    "nome": "Neon Chaos (Purple)",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1511869969921609874/1514424195486842940/static"
+   },
+   {
+    "nome": "Venom",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1536492991093678183/1536493305460686919/static"
+   },
+   {
+    "nome": "Kawaii Cat",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1489396533643448380/1511832453369827559/static"
+   },
+   {
+    "nome": "Leafy Loaf",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1545538607811534988/1549900374805184522/static"
+   },
+   {
+    "nome": "Berry Bunny",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1526697977513509007/1526698280728133723/static"
+   },
+   {
+    "nome": "Vengeance (Blue)",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1507152062134358176/1514421630108041226/static"
+   },
+   {
+    "nome": "Neon Chaos (Blue)",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1511871218633146408/1514424379709198548/static"
+   },
+   {
+    "nome": "Meow Meow Cat (Black)",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1522378878083924051/1524824357199675523/static"
+   },
+   {
+    "nome": "Lord of the Dead (Blue)",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1533925498961264871/1533925847021518939/static"
+   },
+   {
+    "nome": "Dragon (Jade)",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1506402031986802930/1519088935509295224/static"
+   },
+   {
+    "nome": "Fantasy Galaxy (Blue)",
+    "img": "https://cdn.discordapp.com/media/v1/collectibles-shop/1524193178586972441/1526660272021045418/static"
+   }
+  ]
+ },
+ "effects": {
+  "tempos": {
+   "introMs": {
+    "mediana": 4239,
+    "p25": 3000,
+    "p75": 5000,
+    "p90": 6875
+   },
+   "loopMs": {
+    "mediana": 4084.0,
+    "p25": 3000,
+    "p75": 5000,
+    "p90": 5125
+   },
+   "gapMs": {
+    "mediana": 1,
+    "p25": 0,
+    "p75": 2000,
+    "p90": 2500
+   },
+   "loopDelayMs": {
+    "mediana": 2400.0,
+    "p25": 0,
+    "p75": 3500,
+    "p90": 5976
+   },
+   "camadas": {
+    "mediana": 2.0,
+    "p25": 2,
+    "p75": 2,
+    "p90": 4
+   }
+  },
+  "coberturaZonas": {
+   "avatar": {
+    "mediana": 0.085,
+    "p25": 0.024,
+    "p75": 0.385,
+    "p90": 0.681
+   },
+   "name": {
+    "mediana": 0.344,
+    "p25": 0.025,
+    "p75": 0.687,
+    "p90": 0.865
+   },
+   "content": {
+    "mediana": 0.328,
+    "p25": 0.185,
+    "p75": 0.66,
+    "p90": 0.848
+   }
+  },
+  "estilo": {
+   "coverage": {
+    "mediana": 0.141,
+    "p25": 0.072,
+    "p75": 0.35,
+    "p90": 0.438
+   },
+   "darkOutline": {
+    "mediana": 0.016,
+    "p25": 0.0,
+    "p75": 0.113,
+    "p90": 0.195
+   },
+   "colors90": {
+    "mediana": 22,
+    "p25": 13,
+    "p75": 41,
+    "p90": 55
+   },
+   "saturation": {
+    "mediana": 0.378,
+    "p25": 0.232,
+    "p75": 0.618,
+    "p90": 0.854
+   },
+   "brightness": {
+    "mediana": 0.78,
+    "p25": 0.455,
+    "p75": 0.918,
+    "p90": 0.988
+   }
+  },
+  "mapaOcupacao9x16": [
+   [
+    0.372,
+    0.358,
+    0.355,
+    0.399,
+    0.38,
+    0.404,
+    0.416,
+    0.45,
+    0.469
+   ],
+   [
+    0.327,
+    0.22,
+    0.237,
+    0.31,
+    0.391,
+    0.39,
+    0.401,
+    0.404,
+    0.472
+   ],
+   [
+    0.258,
+    0.197,
+    0.237,
+    0.341,
+    0.396,
+    0.459,
+    0.453,
+    0.4,
+    0.431
+   ],
+   [
+    0.26,
+    0.228,
+    0.264,
+    0.375,
+    0.451,
+    0.48,
+    0.45,
+    0.375,
+    0.373
+   ],
+   [
+    0.298,
+    0.268,
+    0.33,
+    0.423,
+    0.488,
+    0.46,
+    0.386,
+    0.321,
+    0.365
+   ],
+   [
+    0.29,
+    0.31,
+    0.415,
+    0.513,
+    0.539,
+    0.509,
+    0.499,
+    0.34,
+    0.388
+   ],
+   [
+    0.355,
+    0.331,
+    0.411,
+    0.478,
+    0.529,
+    0.536,
+    0.47,
+    0.37,
+    0.391
+   ],
+   [
+    0.355,
+    0.373,
+    0.425,
+    0.527,
+    0.525,
+    0.489,
+    0.426,
+    0.413,
+    0.42
+   ],
+   [
+    0.351,
+    0.315,
+    0.349,
+    0.434,
+    0.421,
+    0.388,
+    0.382,
+    0.383,
+    0.382
+   ],
+   [
+    0.318,
+    0.271,
+    0.283,
+    0.31,
+    0.296,
+    0.289,
+    0.283,
+    0.317,
+    0.338
+   ],
+   [
+    0.232,
+    0.223,
+    0.218,
+    0.219,
+    0.216,
+    0.215,
+    0.208,
+    0.234,
+    0.251
+   ],
+   [
+    0.147,
+    0.141,
+    0.176,
+    0.167,
+    0.116,
+    0.13,
+    0.13,
+    0.119,
+    0.137
+   ],
+   [
+    0.077,
+    0.067,
+    0.101,
+    0.099,
+    0.096,
+    0.083,
+    0.081,
+    0.089,
+    0.062
+   ],
+   [
+    0.039,
+    0.042,
+    0.027,
+    0.042,
+    0.044,
+    0.047,
+    0.042,
+    0.031,
+    0.036
+   ],
+   [
+    0.009,
+    0.01,
+    0.003,
+    0.004,
+    0.004,
+    0.003,
+    0.008,
+    0.009,
+    0.02
+   ],
+   [
+    0.001,
+    0.0,
+    0.001,
+    0.0,
+    0.0,
+    0.001,
+    0.001,
+    0.001,
+    0.004
+   ]
+  ]
+ },
+ "decorations": {
+  "coberturaAvatar": {
+   "mediana": 0.106,
+   "p25": 0.044,
+   "p75": 0.176,
+   "p90": 0.289
+  },
+  "estilo": {
+   "coverage": {
+    "mediana": 0.172,
+    "p25": 0.117,
+    "p75": 0.222,
+    "p90": 0.359
+   },
+   "darkOutline": {
+    "mediana": 0.0,
+    "p25": 0.0,
+    "p75": 0.054,
+    "p90": 0.163
+   },
+   "colors90": {
+    "mediana": 17.5,
+    "p25": 9,
+    "p75": 34,
+    "p90": 44
+   },
+   "saturation": {
+    "mediana": 0.362,
+    "p25": 0.263,
+    "p75": 0.565,
+    "p90": 0.728
+   },
+   "brightness": {
+    "mediana": 0.875,
+    "p25": 0.651,
+    "p75": 0.949,
+    "p90": 0.988
+   }
+  },
+  "perfilRadial10": [
+   0.011,
+   0.011,
+   0.013,
+   0.024,
+   0.058,
+   0.13,
+   0.258,
+   0.419,
+   0.536,
+   0.291
+  ],
+  "quadrantesBorda": {
+   "topo": 0.416,
+   "base": 0.432,
+   "esquerda": 0.444,
+   "direita": 0.35
+  }
+ },
+ "nameplates": {
+  "coberturaLadoDoNome": {
+   "mediana": 0.011,
+   "p25": 0.0,
+   "p75": 0.015,
+   "p90": 0.046
+  },
+  "estilo": {
+   "coverage": {
+    "mediana": 0.152,
+    "p25": 0.054,
+    "p75": 0.223,
+    "p90": 0.361
+   },
+   "darkOutline": {
+    "mediana": 0.0,
+    "p25": 0.0,
+    "p75": 0.005,
+    "p90": 0.145
+   },
+   "colors90": {
+    "mediana": 10,
+    "p25": 6,
+    "p75": 26,
+    "p90": 32
+   },
+   "saturation": {
+    "mediana": 0.488,
+    "p25": 0.209,
+    "p75": 0.64,
+    "p90": 0.916
+   },
+   "brightness": {
+    "mediana": 0.824,
+    "p25": 0.51,
+    "p75": 0.949,
+    "p90": 0.992
+   }
+  },
+  "perfilHorizontal8": [
+   0.001,
+   0.003,
+   0.019,
+   0.081,
+   0.207,
+   0.388,
+   0.587,
+   0.664
+  ]
+ },
+ "frames": {
+  "coberturaZonas": {
+   "avatar": {
+    "mediana": 0.105,
+    "p25": 0.018,
+    "p75": 0.227,
+    "p90": 0.273
+   },
+   "name": {
+    "mediana": 0.0,
+    "p25": 0.0,
+    "p75": 0.002,
+    "p90": 0.011
+   },
+   "center": {
+    "mediana": 0.0,
+    "p25": 0.0,
+    "p75": 0.0,
+    "p90": 0.0
+   }
+  },
+  "estilo": {
+   "coverage": {
+    "mediana": 0.16,
+    "p25": 0.067,
+    "p75": 0.283,
+    "p90": 0.294
+   },
+   "darkOutline": {
+    "mediana": 0.01,
+    "p25": 0.0,
+    "p75": 0.191,
+    "p90": 0.514
+   },
+   "colors90": {
+    "mediana": 16.5,
+    "p25": 7,
+    "p75": 21,
+    "p90": 41
+   },
+   "saturation": {
+    "mediana": 0.443,
+    "p25": 0.294,
+    "p75": 0.621,
+    "p90": 0.922
+   },
+   "brightness": {
+    "mediana": 0.794,
+    "p25": 0.506,
+    "p75": 0.925,
+    "p90": 0.969
+   }
+  },
+  "mapaOcupacao16x9": [
+   [
+    0.059,
+    0.116,
+    0.159,
+    0.185,
+    0.126,
+    0.105,
+    0.076,
+    0.101,
+    0.147,
+    0.162,
+    0.167,
+    0.244,
+    0.221,
+    0.172,
+    0.077,
+    0.037
+   ],
+   [
+    0.203,
+    0.347,
+    0.402,
+    0.416,
+    0.372,
+    0.378,
+    0.367,
+    0.367,
+    0.399,
+    0.382,
+    0.4,
+    0.434,
+    0.451,
+    0.385,
+    0.234,
+    0.09
+   ],
+   [
+    0.242,
+    0.377,
+    0.468,
+    0.484,
+    0.498,
+    0.491,
+    0.481,
+    0.465,
+    0.461,
+    0.478,
+    0.56,
+    0.543,
+    0.509,
+    0.421,
+    0.345,
+    0.18
+   ],
+   [
+    0.351,
+    0.378,
+    0.425,
+    0.439,
+    0.446,
+    0.417,
+    0.446,
+    0.476,
+    0.481,
+    0.479,
+    0.511,
+    0.524,
+    0.518,
+    0.446,
+    0.431,
+    0.313
+   ],
+   [
+    0.368,
+    0.071,
+    0.031,
+    0.035,
+    0.027,
+    0.026,
+    0.033,
+    0.037,
+    0.032,
+    0.044,
+    0.026,
+    0.038,
+    0.039,
+    0.032,
+    0.059,
+    0.302
+   ],
+   [
+    0.264,
+    0.005,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.003,
+    0.245
+   ],
+   [
+    0.255,
+    0.004,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.003,
+    0.261
+   ],
+   [
+    0.161,
+    0.003,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.004,
+    0.212
+   ],
+   [
+    0.12,
+    0.001,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.003,
+    0.142
+   ]
+  ]
+ }
+}

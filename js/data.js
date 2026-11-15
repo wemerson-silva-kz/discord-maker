@@ -364,4 +364,25 @@ window.COSMETICS_DATA = {
   /* card, na largura dele (os oficiais têm 1312 px de largura).          */
   /* ------------------------------------------------------------------ */
   frames: [],
+
+  /* ------------------------------------------------------------------ */
+  /* PALETAS DE NAMEPLATE DO DISCORD                                     */
+  /* As artes de nameplate têm fundo transparente; o Discord pinta uma   */
+  /* paleta por baixo. Os NOMES vêm da API oficial (campo `palette`); as */
+  /* CORES são aproximações (o Discord não as publica) — ajuste à vontade.*/
+  /* ------------------------------------------------------------------ */
+  discordPalettes: {
+    crimson: { label: 'Carmesim', dark: '#7A0A12', light: '#E5303B' },
+    berry: { label: 'Amora', dark: '#6B1F7A', light: '#C13FD9' },
+    sky: { label: 'Céu', dark: '#0B5C8A', light: '#4FC3F7' },
+    teal: { label: 'Turquesa', dark: '#0B5550', light: '#3FD3C0' },
+    forest: { label: 'Floresta', dark: '#244A12', light: '#6AA82E' },
+    bubble_gum: { label: 'Chiclete', dark: '#A12C6E', light: '#F06BB8' },
+    violet: { label: 'Violeta', dark: '#4E1690', light: '#9B5CF0' },
+    cobalt: { label: 'Cobalto', dark: '#13308F', light: '#4C7BFF' },
+    clover: { label: 'Trevo', dark: '#0B6324', light: '#45C062' },
+    lemon: { label: 'Limão', dark: '#8A6A00', light: '#F2CC2C' },
+    white: { label: 'Branco', dark: '#8E95A3', light: '#F2F3F5' },
+    black: { label: 'Preto', dark: '#0B0C0E', light: '#3A3D44' },
+  },
 };

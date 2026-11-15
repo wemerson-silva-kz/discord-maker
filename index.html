@@ -132,8 +132,8 @@
                 <div>
                   <label class="field-label" for="gen-prompt">Descreva o seu tema</label>
                   <div class="relative">
-                    <textarea id="gen-prompt" rows="3" maxlength="300" required class="dc-input !h-auto py-2.5 resize-none leading-relaxed" placeholder="Ex.: dragão de jade cuspindo fogo verde em um templo nas nuvens"></textarea>
-                    <span id="gen-prompt-count" class="absolute right-3 bottom-2 text-[11px] text-dc-faint">0/300</span>
+                    <textarea id="gen-prompt" rows="4" maxlength="2000" required class="dc-input h-auto py-2.5 pb-6 resize-y min-h-[110px] max-h-[60vh] leading-relaxed" placeholder="Ex.: dragão de jade cuspindo fogo verde em um templo nas nuvens"></textarea>
+                    <span id="gen-prompt-count" class="absolute right-3 bottom-2 text-[11px] text-dc-faint">0/2000</span>
                   </div>
                   <div class="flex flex-wrap gap-1.5 mt-2" id="gen-examples"></div>
                 </div>
@@ -169,6 +169,14 @@
                       <button type="button" data-mode="svg">🎨 Arte desenhada (SVG)</button>
                       <button type="button" data-mode="particles">✨ Partículas</button>
                     </div>
+                    <label class="flex items-start gap-2 mt-2 text-xs text-dc-muted cursor-pointer select-none">
+                      <input type="checkbox" id="gen-review" class="accent-[#5865F2] mt-0.5" checked />
+                      <span><b class="text-dc-text">Revisão automática</b>: mede se a arte cobre o avatar, o nome ou o texto do perfil e devolve para a IA corrigir (até 2 rodadas, usa mais tokens).</span>
+                    </label>
+                    <label class="flex items-start gap-2 mt-2 text-xs text-dc-muted cursor-pointer select-none">
+                      <input type="checkbox" id="gen-style" class="accent-[#5865F2] mt-0.5" checked />
+                      <span><b class="text-dc-text">Estilo oficial</b>: segue o guia medido em 160 itens da loja e anexa exemplos oficiais da mesma categoria como referência de acabamento (modelos com visão).</span>
+                    </label>
                   </div>
                 </div>
 

@@ -166,6 +166,113 @@ Vocabulário da especificação:
 Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um kit coerente com o tema. Cada item deve combinar pelo menos duas camadas (uma sutil de fundo e uma de destaque) para ter profundidade e movimento. Escreva em português do Brasil: nome curto e criativo (até 28 caracteres), descrição de uma frase (até 120 caracteres), 3 a 5 tags em minúsculas. Escolha rarity (Raro, Épico ou Lendário) conforme a complexidade visual.`;
 
   /* ------------------------------------------------------------------ */
+  /* ZONAS PROTEGIDAS — onde ficam avatar, nome e conteúdo do perfil.     */
+  /* Medidas no card de 340 px do popout e convertidas para o canvas de    */
+  /* cada formato. Usadas no prompt E na verificação automática.          */
+  /* avg = cobertura média máxima; peak = pior quadro permitido.          */
+  /* ------------------------------------------------------------------ */
+  const ZONES = {
+    effects: { w: 450, h: 880, zones: [
+      // Calibrado com 40 effects oficiais (catalog/style-guide.json): avatar mediana 8%,
+      // nome 34% e texto 33% — o efeito atravessa o perfil, mas não fica parado no avatar.
+      { id: 'avatar', label: 'avatar', shape: 'circle', cx: 82, cy: 138, r: 66, avg: 0.12, peak: 0.5 },
+      { id: 'name', label: 'nome e @usuário', shape: 'rect', x: 21, y: 199, w: 323, h: 72, avg: 0.35, peak: 0.75 },
+      { id: 'content', label: 'texto do perfil (Sobre mim)', shape: 'rect', x: 21, y: 283, w: 408, h: 273, avg: 0.35, peak: 0.7 },
+    ] },
+    frames: { w: 1312, h: 716, zones: [
+      { id: 'avatar', label: 'avatar', shape: 'circle', cx: 239, cy: 401, r: 195, avg: 0.1, peak: 0.2 },
+      { id: 'name', label: 'nome e @usuário', shape: 'rect', x: 62, y: 579, w: 940, h: 137, avg: 0.12, peak: 0.25 },
+      { id: 'center', label: 'centro do card', shape: 'rect', x: 120, y: 420, w: 1072, h: 296, avg: 0.15, peak: 0.3 },
+    ] },
+    decorations: { w: 288, h: 288, zones: [
+      { id: 'avatar', label: 'avatar (círculo central)', shape: 'circle', cx: 144, cy: 144, r: 104, avg: 0.08, peak: 0.2 },
+    ] },
+    nameplates: { w: 448, h: 84, zones: [
+      { id: 'name', label: 'avatar e nome (lado esquerdo)', shape: 'rect', x: 0, y: 0, w: 200, h: 84, avg: 0.35, peak: 0.55 },
+    ] },
+  };
+  const zoneText = (z) => (z.shape === 'circle'
+    ? `círculo com centro (${z.cx}, ${z.cy}) e raio ${z.r}`
+    : `retângulo x ${z.x}–${z.x + z.w}, y ${z.y}–${z.y + z.h}`);
+  const ZONES_PROMPT = Object.entries({ nameplates: 'nameplate', decorations: 'decoration', effects: 'effect', frames: 'frame' })
+    .map(([cat, api]) => `- ${api} (canvas ${ZONES[cat].w}×${ZONES[cat].h}): ` + ZONES[cat].zones.map((z) => `${z.label} = ${zoneText(z)}, no máximo ${Math.round(z.avg * 100)}% coberto em média`).join('; '))
+    .join('\n');
+
+  /* ------------------------------------------------------------------ */
+  /* Guia de estilo do Discord, medido em itens oficiais da loja           */
+  /* (tools/analyze_discord_style.py → catalog/style-guide.json).          */
+  /* Os valores abaixo são o padrão; o JSON, se carregar, os atualiza.     */
+  /* ------------------------------------------------------------------ */
+  const STYLE = {
+    n: 160,
+    effects: { intro: 4.2, introLo: 3, introHi: 5, loop: 4.1, loopDelay: 2.4, coverage: 0.14, colors: 22, sat: 0.38, bright: 0.78, outline: 0.02 },
+    decorations: { coverage: 0.11, colors: 18, bright: 0.88 },
+    nameplates: { right: 0.66, nameSide: 0.01, colors: 10, coverage: 0.15 },
+    frames: { colors: 16, outline: 0.01 },
+    examples: {},
+  };
+  const pct = (v) => Math.round(v * 100) + '%';
+  function loadStyleGuide() {
+    return fetch('catalog/style-guide.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!d) return;
+      const m = (o) => (o && typeof o.mediana === 'number' ? o.mediana : undefined);
+      const set = (obj, k, v) => { if (typeof v === 'number' && isFinite(v)) obj[k] = v; };
+      STYLE.n = Object.values(d.amostra || {}).reduce((a, b) => a + b, 0) || STYLE.n;
+      const e = d.effects || {}, t = e.tempos || {}, es = e.estilo || {};
+      set(STYLE.effects, 'intro', m(t.introMs) / 1000); set(STYLE.effects, 'loop', m(t.loopMs) / 1000);
+      set(STYLE.effects, 'introLo', (t.introMs || {}).p25 / 1000); set(STYLE.effects, 'introHi', (t.introMs || {}).p75 / 1000);
+      set(STYLE.effects, 'loopDelay', m(t.loopDelayMs) / 1000);
+      set(STYLE.effects, 'coverage', m(es.coverage)); set(STYLE.effects, 'colors', m(es.colors90));
+      set(STYLE.effects, 'sat', m(es.saturation)); set(STYLE.effects, 'bright', m(es.brightness)); set(STYLE.effects, 'outline', m(es.darkOutline));
+      const dc = d.decorations || {};
+      set(STYLE.decorations, 'coverage', m(dc.coberturaAvatar)); set(STYLE.decorations, 'colors', m((dc.estilo || {}).colors90)); set(STYLE.decorations, 'bright', m((dc.estilo || {}).brightness));
+      const np = d.nameplates || {};
+      if (Array.isArray(np.perfilHorizontal8)) set(STYLE.nameplates, 'right', np.perfilHorizontal8[7]);
+      set(STYLE.nameplates, 'nameSide', m(np.coberturaLadoDoNome)); set(STYLE.nameplates, 'colors', m((np.estilo || {}).colors90)); set(STYLE.nameplates, 'coverage', m((np.estilo || {}).coverage));
+      const fr = d.frames || {};
+      set(STYLE.frames, 'colors', m((fr.estilo || {}).colors90)); set(STYLE.frames, 'outline', m((fr.estilo || {}).darkOutline));
+      STYLE.examples = d.exemplos || {};
+    }).catch(() => { /* fica com os padrões */ });
+  }
+
+  function styleGuidePrompt() {
+    const e = STYLE.effects, dc = STYLE.decorations, np = STYLE.nameplates, fr = STYLE.frames;
+    const f1 = (v) => (Math.round(v * 10) / 10).toString();
+    return `
+
+GUIA DE ESTILO DO DISCORD (medido em ${STYLE.n} itens oficiais da loja — siga para o resultado parecer um item PROFISSIONAL da loja, não um rascunho):
+Acabamento
+- Ilustração estilo cartoon/cel-shading limpo, como os itens da loja: cada forma com 2–3 tons da mesma cor (base, sombra, luz) em vez de gradientes lamacentos; um brilho/realce forte nas bordas viradas para a luz; leve glow (feGaussianBlur, stdDeviation 2–6) só nos elementos mágicos (fogo, energia, estrelas).
+- Paleta CURTA e harmônica: 1 cor dominante, 1 de apoio e 1 de destaque (as cores principais somam ~${Math.round(np.colors)}–${Math.round(e.colors)} tons contando as variações). Cores vivas, mas não neon: saturação média (~${f1(e.sat)}) e brilho alto (~${f1(e.bright)}). Nada de áreas grandes pretas ou marrom-escuras.
+- Contorno: ou nenhum, ou fino e escuro da própria cor (ex.: verde-escuro em volta do verde). Contorno preto grosso só em ~${pct(e.outline)} dos pixels dos oficiais — evite.
+- Silhuetas legíveis em tamanho pequeno: poucos elementos grandes e bem desenhados valem mais que dezenas de detalhes miúdos. Formas orgânicas com curvas (path com C/Q), nunca só retângulos e círculos soltos.
+- Profundidade: 3 planos (fundo suave e translúcido, plano principal nítido, partículas/brilhos na frente).
+Movimento
+- Movimento com intenção e easing (ease-in-out, cubic-bezier), nunca linear em tudo; partes que balançam a partir de um ponto de apoio (transform-origin no ponto preso). Sobreponha ritmos (ex.: 4 s respiração, 2 s brilho, 1 s cintilar) sempre divisores do loop.
+Composição por formato
+- effect: entrada ≈ ${f1(e.intro)} s (oficiais entre ${f1(e.introLo)} e ${f1(e.introHi)} s) e loop ≈ ${f1(e.loop)} s; no Discord o loop repete com ~${f1(e.loopDelay)} s de pausa, então o loop deve começar e terminar calmo. Use pouca área: os oficiais ocupam só ~${pct(e.coverage)} do canvas, concentrados nos 60% de cima (banner e laterais), base quase vazia. Elementos podem PASSAR sobre o nome e o texto (rajadas, pétalas, faíscas), mas nunca ficar parados sobre o avatar.
+- decoration: o centro é VAZIO; a arte é um anel colado ao avatar, mais denso entre 70% e 90% do raio do canvas, espalhada pelos 4 lados (um ornamento principal em cima ou em um canto e elementos menores equilibrando do outro lado). Cobre o avatar só ~${pct(dc.coverage)} (bordinha). Brilho alto (~${f1(dc.bright)}), sem contorno preto.
+- nameplate: densidade crescente da esquerda para a direita — vazio até x≈150, a ilustração principal nos 40% da direita (até ~${pct(np.right)} preenchido na ponta direita); o lado do nome fica quase limpo (~${pct(np.nameSide)}). Total ~${pct(np.coverage)} do retângulo, ~${Math.round(np.colors)} cores. A paleta do Discord faz o fundo: a arte não precisa de fundo.
+- frame: ornamento concentrado numa faixa no topo (até ~45% da altura) e laterais finas descendo até a base; centro e área do nome 0% cobertos. ~${Math.round(fr.colors)} cores; contorno fino.`;
+  }
+
+  /** Exemplos oficiais da mesma categoria, para anexar como referência de estilo. */
+  const API_TO_STYLE = { nameplates: 'nameplates', decorations: 'decorations', effects: 'effects', frames: 'frames' };
+  function styleExamples(cats, prompt, perCat = 1) {
+    const words = (prompt || '').toLowerCase().split(/[^a-zà-ú0-9]+/).filter((w) => w.length > 3);
+    const out = [];
+    cats.forEach((cat) => {
+      const list = (STYLE.examples[API_TO_STYLE[cat]] || []).filter((x) => x && x.img);
+      if (!list.length) return;
+      const scored = list.map((x, i) => ({ x, i, s: words.filter((w) => (x.nome || '').toLowerCase().includes(w)).length }));
+      const seed = [...(prompt || 'x')].reduce((a, c) => a + c.charCodeAt(0), 0);
+      scored.sort((a, b) => b.s - a.s || ((a.i + seed) % list.length) - ((b.i + seed) % list.length));
+      scored.slice(0, perCat).forEach(({ x }) => out.push({ cat, name: x.nome, url: x.img }));
+    });
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Modo ARTE: a IA desenha SVG animado (CSS @keyframes)                 */
   /* ------------------------------------------------------------------ */
   const SVG_OUTPUT_SCHEMA = {
@@ -178,7 +285,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['category', 'name', 'description', 'rarity', 'tags', 'loopSeconds', 'svg', 'introSeconds', 'introSvg'],
+          required: ['category', 'name', 'description', 'rarity', 'tags', 'loopSeconds', 'svg', 'introSeconds', 'introSvg', 'discordPalette'],
           properties: {
             category: { type: 'string', enum: ['nameplate', 'decoration', 'effect', 'frame'] },
             name: { type: 'string' },
@@ -187,6 +294,7 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
             tags: { type: 'array', items: { type: 'string' } },
             loopSeconds: { type: 'number', description: 'Duração do loop em segundos (2 a 6).' },
             svg: { type: 'string', description: 'SVG completo do LOOP, animado só com CSS @keyframes.' },
+            discordPalette: { type: 'string', enum: [...Object.keys(CS.DATA.discordPalettes || {}), 'none'], description: 'Só nameplate: paleta do Discord pintada por baixo da arte. Nos outros, "none".' },
             introSeconds: { type: 'number', description: 'Só effect: duração da entrada (1 a 6). Nos outros, 0.' },
             introSvg: { type: 'string', description: 'Só effect: SVG da ENTRADA (toca uma vez). Nos outros, string vazia.' },
           },
@@ -200,11 +308,15 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
 O que importa acima de tudo: a arte precisa representar de forma reconhecível o tema pedido. Se o tema fala de um dragão, desenhe um dragão (silhueta com cabeça, chifres, corpo serpenteante, escamas sugeridas por gradientes); templo = telhados curvos em camadas, colunas; nuvens escuras e sombrias = massas de nuvem em cinza-azulado escuro com gradientes, céu carregado; fogo verde = chamas com gradiente verde-jade e brilho. Componha em camadas (fundo, plano médio, destaque), use gradientes e filtros de brilho (feGaussianBlur) para dar acabamento de item premium. Nunca use letras, ideogramas ou emojis para representar objetos.
 
 Formatos (use exatamente estes viewBox):
-- nameplate: viewBox="0 0 448 84". Faixa atrás do nome na lista de membros, preenchendo todo o retângulo. O avatar e o nome (texto branco) ficam à esquerda (x < 200): mantenha essa área mais escura e calma para leitura; concentre a ilustração e o movimento à direita.
+- nameplate: viewBox="0 0 448 84", FUNDO TRANSPARENTE, como as nameplates oficiais: o Discord pinta por baixo uma PALETA (campo discordPalette), um degradê da cor escura (à esquerda) para a clara (à direita). Escolha a paleta que combina com o tema: ${Object.entries(CS.DATA.discordPalettes || {}).map(([k, v]) => `${k} (${v.label})`).join(', ')}. Desenhe só a ilustração, concentrada à direita (x > 200); o avatar e o nome (texto branco) ficam à esquerda, então deixe essa área vazia ou com detalhes leves.
 - decoration: viewBox="0 0 288 288", fundo transparente. O avatar circular fica no centro (cx 144, cy 144, raio 120) e NÃO pode ser coberto: desenhe em volta, na faixa entre o raio 112 e as bordas (pode invadir levemente a borda do avatar, como uma moldura). Ex.: um dragão enrolado em volta do círculo, chamas saindo das bordas.
 - effect: viewBox="0 0 450 880", fundo transparente, sobreposto ao card de perfil. O conteúdo do perfil fica no meio (x 40–410, y 260–720): deixe essa área livre ou só com elementos translúcidos e de passagem. Use as bordas, o topo (área do banner, y < 230) e a base.
 - frame (profile frame): viewBox="0 0 1312 716", fundo transparente. É a moldura do CARD de perfil inteiro, presa ao topo e na largura do card (no Discord são PNGs de 1312 px). A faixa do topo (y < 400) fica sobre o banner: desenhe ali o ornamento principal (ex.: o dragão deitado sobre o topo do card, telhados do templo, nuvens). Desça pelas laterais (x < 70 e x > 1242) até a base do canvas, com cantos arredondados (raio ~60). O centro (x 70–1242, y 400–716) e a área do avatar e do nome (x 60–620, y 220–600) ficam livres: são o conteúdo do perfil. Pode ter animação sutil em loop (brilho, chamas, nuvens), mas precisa ficar bonito parado também, porque no Discord o frame é estático. introSeconds 0 e introSvg "".
   O efeito tem DUAS FASES, como no Discord: introSvg é a ENTRADA, que toca uma única vez ao abrir o perfil (introSeconds entre 1 e 6, ideal 2 a 4): o momento mais impactante (ex.: o dragão surge e cospe uma rajada de fogo que atravessa o card), terminando suave. svg é o LOOP contínuo e mais calmo que vem depois (ex.: o dragão respirando, brasas subindo, nuvens passando).
+
+ZONAS PROTEGIDAS (obrigatório; o app mede isso automaticamente e devolve a arte para correção se invadir). Nelas não pode haver formas opacas — no máximo partículas pequenas e translúcidas de passagem:
+${ZONES_PROMPT}
+Para respeitar as zonas, posicione os elementos grandes (personagens, chifres, totens, prédios, molduras) nas bordas e no topo do banner, nunca atravessando o avatar ou o nome; elementos animados que se movem (ex.: rajadas) devem passar acima (y menor) ou abaixo dessas zonas.
 
 Regras técnicas do SVG (obrigatórias):
 - Comece com <svg xmlns="http://www.w3.org/2000/svg" viewBox="...">. Nada de <script>, <foreignObject>, <image>, links externos, fontes externas ou atributos de evento.
@@ -220,12 +332,13 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
   const SVG_JSON_EXAMPLE = JSON.stringify({ items: [{
     category: 'nameplate', name: 'Rajada de Jade', description: 'Chamas verdes correndo à direita da faixa.', rarity: 'Épico', tags: ['fogo', 'jade'],
     loopSeconds: 4,
-    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 84"><defs><linearGradient id="bg" x1="0" x2="1"><stop offset="0" stop-color="#05140e"/><stop offset="1" stop-color="#0c3a26"/></linearGradient></defs><style>.f{transform-box:fill-box;transform-origin:50% 100%;animation:fl 1s ease-in-out infinite}@keyframes fl{50%{transform:scaleY(1.2)}}</style><rect width="448" height="84" fill="url(#bg)"/><path class="f" d="M380 84c-20-30 10-40 0-70 30 25 40 50 20 70z" fill="#2be38b"/></svg>',
-    introSeconds: 0, introSvg: '',
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 84"><style>.f{transform-box:fill-box;transform-origin:50% 100%;animation:fl 1s ease-in-out infinite}@keyframes fl{50%{transform:scaleY(1.2)}}</style><path class="f" d="M380 84c-20-30 10-40 0-70 30 25 40 50 20 70z" fill="#2be38b"/></svg>',
+    introSeconds: 0, introSvg: '', discordPalette: 'teal',
   }] });
 
   /** Monta o texto do pedido com tema, categorias e referências da biblioteca. */
   function userTextFor(req) {
+    if (req.feedback) return req.feedback;
     let t = `Tema: ${req.prompt || '(sem tema: crie variações das referências)'}\nCategorias, nesta ordem: ${req.cats.map((c) => CAT_TO_API[c]).join(', ')}`;
     if (req.refs.length) {
       t += '\n\nREFERÊNCIAS da biblioteca. Crie VARIAÇÕES inspiradas nelas: mantenha a essência (paleta, estilo, tipo de movimento, clima), mas traga algo novo e aplique o tema, se houver.';
@@ -238,11 +351,15 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
         else if (a.className) t += `\n(efeito CSS da coleção ${r.item.collection})`;
       });
     }
+    const st = (req.styleRefs || []).filter((x) => x.hasImage);
+    if (st.length) {
+      t += `\n\nEXEMPLOS DE ESTILO OFICIAL (imagens anexas${req.refs.some((r) => r.hasImage) ? ', depois das referências' : ''}): ${st.map((x) => `${CAT_TO_API[x.cat]} "${x.name}"`).join(', ')}. Copie o NÍVEL DE ACABAMENTO, a composição e a paleta enxuta desses itens da loja — não o tema nem o desenho.`;
+    }
     return t;
   }
   const schemaFor = (req) => (req.mode === 'svg' ? SVG_OUTPUT_SCHEMA : OUTPUT_SCHEMA);
   const systemFor = (req, withExample) => {
-    const base = req.mode === 'svg' ? SVG_SYSTEM_PROMPT : SYSTEM_PROMPT;
+    const base = req.mode === 'svg' ? SVG_SYSTEM_PROMPT + styleGuidePrompt() : SYSTEM_PROMPT;
     if (!withExample) return base;
     return base + '\n\nResponda SOMENTE com um objeto JSON válido, sem markdown, neste formato (o exemplo mostra um item; gere um por categoria pedida, com todos os campos):\n' + (req.mode === 'svg' ? SVG_JSON_EXAMPLE : JSON_EXAMPLE);
   };
@@ -302,7 +419,7 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
     if (!cfg.model) throw new Error('Informe o nome do modelo.');
     const system = systemFor(req, true);
     const user = userTextFor(req);
-    const images = req.images.filter((i) => i.url);
+    const images = req.images.filter((i) => i.url || i.data).map((i) => (i.url ? i : { url: `data:${i.mime || 'image/png'};base64,${i.data}` }));
     const userContent = images.length && cfg.provider === 'openai'
       ? [{ type: 'text', text: user }, ...images.map((i) => ({ type: 'image_url', image_url: { url: i.url } }))]
       : user;
@@ -466,7 +583,9 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
     const Anthropic = mod.default;
     const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
     const content = [
-      ...req.images.filter((i) => i.url).map((i) => ({ type: 'image', source: { type: 'url', url: i.url } })),
+      ...req.images.filter((i) => i.url || i.data).map((i) => (i.url
+        ? { type: 'image', source: { type: 'url', url: i.url } }
+        : { type: 'image', source: { type: 'base64', media_type: i.mime || 'image/png', data: i.data } })),
       { type: 'text', text: userTextFor(req) },
     ];
     let response;
@@ -526,7 +645,7 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
           engine: provider.id,
           engineLabel: provider.label,
           asset: raw.svg
-            ? { type: 'svg', svg: raw.svg, loopSeconds: raw.loopSeconds, introSvg: cat === 'effects' ? raw.introSvg : '', introSeconds: raw.introSeconds }
+            ? { type: 'svg', svg: raw.svg, loopSeconds: raw.loopSeconds, introSvg: cat === 'effects' ? raw.introSvg : '', introSeconds: raw.introSeconds, discordPalette: cat === 'nameplates' ? raw.discordPalette : undefined }
             : { palette: raw.palette, base: raw.base, ring: raw.ring, layers: raw.layers, intro: raw.intro },
         },
       });
@@ -754,8 +873,11 @@ ${sparks}
       let base = { style: 'none', animation: 'none', speed: choice(['slow', 'normal', 'normal', 'fast']) };
       let ring = { style: 'none' };
       let intro = { style: 'none', duration: 0, layers: [] };
+      let npPalette;
       if (cat === 'nameplates') {
         base = { ...base, style: main.np, animation: main.anim };
+        npPalette = nearestDiscordPalette(palette.primary);
+        base = { ...base, style: 'none' }; // o fundo vem da paleta do Discord
         layers = main.layers.map((d) => makeLayer(d, palette, main));
         if (second) layers.push(makeLayer(second.layers[0], palette, second));
       } else if (cat === 'decorations') {
@@ -802,10 +924,23 @@ ${sparks}
           tags: [...new Set([...themes.map((t) => t.id), 'gerado', 'local'])].slice(0, 5),
           prompt,
           engine: 'local',
-          asset: { palette, base, ring, layers, intro },
+          asset: { palette, base, ring, layers, intro, ...(npPalette ? { discordPalette: npPalette } : {}) },
         },
       };
     });
+  }
+
+  /** Paleta do Discord mais próxima de uma cor (por matiz e luminosidade). */
+  function nearestDiscordPalette(hex) {
+    const toRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    const [r, g, b] = toRgb(hex);
+    let best = null, bestD = Infinity;
+    for (const [name, p] of Object.entries(CS.DATA.discordPalettes || {})) {
+      const [r2, g2, b2] = toRgb(p.light);
+      const d = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2;
+      if (d < bestD) { bestD = d; best = name; }
+    }
+    return best;
   }
 
   /** Variação rápida de um item: gira a paleta e embaralha velocidades/quantidades. */
@@ -848,7 +983,157 @@ ${sparks}
   /* Interface                                                           */
   /* ------------------------------------------------------------------ */
   const MODE_STORAGE = 'cosmetic-studio:gen-mode';
-  const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', mode: store.get(MODE_STORAGE) === 'particles' ? 'particles' : 'svg', busy: false, results: [], refs: [] };
+  const REVIEW_KEY = 'cosmetic-studio:gen-review';
+  const STYLE_KEY = 'cosmetic-studio:gen-style-refs';
+  const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', mode: store.get(MODE_STORAGE) === 'particles' ? 'particles' : 'svg', busy: false, results: [], refs: [],
+    review: (() => { try { return localStorage.getItem(REVIEW_KEY) !== '0'; } catch (e) { return true; } })(), quality: new Map(),
+    styleRefs: (() => { try { return localStorage.getItem(STYLE_KEY) !== '0'; } catch (e) { return true; } })() };
+
+  /* ---------- Verificação automática + correção pela IA ---------- */
+  const MAX_ROUNDS = 2;
+
+  /** Cobertura (alfa médio 0–1) de cada zona em cada quadro. */
+  function coverage(frame, cat) {
+    const Z = ZONES[cat];
+    const sx = frame.w / Z.w, sy = frame.h / Z.h;
+    return Z.zones.map((z) => {
+      let sum = 0, n = 0;
+      const step = Math.max(1, Math.round(Math.min(frame.w, frame.h) / 120));
+      const x0 = Math.floor((z.shape === 'circle' ? z.cx - z.r : z.x) * sx), x1 = Math.ceil((z.shape === 'circle' ? z.cx + z.r : z.x + z.w) * sx);
+      const y0 = Math.floor((z.shape === 'circle' ? z.cy - z.r : z.y) * sy), y1 = Math.ceil((z.shape === 'circle' ? z.cy + z.r : z.y + z.h) * sy);
+      for (let y = Math.max(0, y0); y < Math.min(frame.h, y1); y += step) {
+        for (let x = Math.max(0, x0); x < Math.min(frame.w, x1); x += step) {
+          if (z.shape === 'circle' && ((x / sx - z.cx) ** 2 + (y / sy - z.cy) ** 2) > z.r * z.r) continue;
+          sum += frame.data[(y * frame.w + x) * 4 + 3] / 255;
+          n++;
+        }
+      }
+      return n ? sum / n : 0;
+    });
+  }
+
+  /** Imagem PNG (base64) do quadro com as zonas proibidas marcadas em vermelho. */
+  function overlayPng(frame, cat, failing) {
+    const Z = ZONES[cat];
+    const c = document.createElement('canvas');
+    c.width = frame.w;
+    c.height = frame.h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#2B2D31';
+    ctx.fillRect(0, 0, c.width, c.height);
+    const tmp = document.createElement('canvas');
+    tmp.width = frame.w;
+    tmp.height = frame.h;
+    tmp.getContext('2d').putImageData(new ImageData(frame.data, frame.w, frame.h), 0, 0);
+    ctx.drawImage(tmp, 0, 0);
+    const sx = frame.w / Z.w, sy = frame.h / Z.h;
+    Z.zones.forEach((z, i) => {
+      const bad = failing.includes(z.id);
+      ctx.strokeStyle = bad ? '#FF3B3B' : '#57F287';
+      ctx.fillStyle = bad ? 'rgba(255,59,59,.22)' : 'rgba(87,242,135,.10)';
+      ctx.lineWidth = Math.max(2, frame.w / 150);
+      ctx.beginPath();
+      if (z.shape === 'circle') ctx.ellipse(z.cx * sx, z.cy * sy, z.r * sx, z.r * sy, 0, 0, Math.PI * 2);
+      else ctx.rect(z.x * sx, z.y * sy, z.w * sx, z.h * sy);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.font = `bold ${Math.max(11, Math.round(frame.w / 28))}px sans-serif`;
+      ctx.fillText((bad ? 'PROIBIDO: ' : 'livre: ') + z.label, (z.shape === 'circle' ? (z.cx - z.r) : z.x) * sx + 4, (z.shape === 'circle' ? z.cy - z.r : z.y) * sy + Math.max(12, frame.w / 26));
+    });
+    return c.toDataURL('image/png').split(',')[1];
+  }
+
+  /** Mede as zonas protegidas de uma arte SVG (loop + entrada). */
+  async function checkArt(cat, raw) {
+    const a = raw.asset || {};
+    const Z = ZONES[cat];
+    if (!Z || !a.svg) return null;
+    const clean = CS.sanitizeSvg(a.svg, cat);
+    if (!clean) return { ok: false, invalid: true, issues: [], summary: 'SVG inválido' };
+    const half = cat === 'frames' || cat === 'effects' ? { w: Math.round(Z.w / 2), h: Math.round(Z.h / 2) } : { w: Z.w, h: Z.h };
+    const jobs = [[clean, Math.min(8, Math.max(1, +a.loopSeconds || 4)), 6]];
+    if (cat === 'effects' && a.introSvg) {
+      const ci = CS.sanitizeSvg(a.introSvg, cat);
+      if (ci) jobs.push([ci, Math.min(6, Math.max(0.5, +a.introSeconds || 3)), 8]);
+    }
+    const stats = Z.zones.map(() => ({ sum: 0, n: 0, peak: 0 }));
+    let worst = null, worstScore = -1;
+    for (const [svg, secs, count] of jobs) {
+      const frames = await window.CosmeticExport.sampleSvg(svg, cat, secs, count, half);
+      frames.forEach((f) => {
+        const cov = coverage(f, cat);
+        let score = 0;
+        cov.forEach((v, i) => {
+          stats[i].sum += v; stats[i].n++; stats[i].peak = Math.max(stats[i].peak, v);
+          score += v / Z.zones[i].avg;
+        });
+        if (score > worstScore) { worstScore = score; worst = f; }
+      });
+    }
+    const issues = Z.zones.map((z, i) => {
+      const avg = stats[i].n ? stats[i].sum / stats[i].n : 0;
+      return { id: z.id, label: z.label, avg, peak: stats[i].peak, zone: z, bad: avg > z.avg || stats[i].peak > z.peak };
+    });
+    const failing = issues.filter((i) => i.bad);
+    return {
+      ok: !failing.length,
+      issues,
+      summary: failing.length
+        ? '⚠ cobre ' + failing.map((i) => `${i.label} ${Math.round(i.avg * 100)}%`).join(', ')
+        : '✓ ' + issues.map((i) => i.label.split(' (')[0]).join(', ') + ' livres',
+      overlay: failing.length && worst ? overlayPng(worst, cat, failing.map((i) => i.id)) : null,
+    };
+  }
+
+  /** Revisa as artes; as que invadem zonas voltam para a IA com números e imagem marcada. */
+  async function reviewLoop(list, req, call) {
+    let current = list;
+    for (let round = 1; round <= MAX_ROUNDS + 1; round++) {
+      setBusy(true, `Verificando se a arte deixa avatar e nome livres${round > 1 ? ` (rodada ${round})` : ''}…`);
+      const checks = [];
+      for (const it of current) checks.push(await checkArt(it.cat, it.raw).catch((e) => (console.warn('[revisão]', e), null)));
+      current.forEach((it, i) => { if (checks[i]) it.quality = checks[i]; });
+      const failing = current.map((it, i) => ({ it, chk: checks[i] })).filter((x) => x.chk && !x.chk.ok);
+      if (!failing.length || round > MAX_ROUNDS) break;
+
+      setBusy(true, `${failing.length === 1 ? 'Uma arte invadiu' : failing.length + ' artes invadiram'} a área do avatar/nome: pedindo correção à IA (${round}/${MAX_ROUNDS})…`);
+      const lines = failing.map(({ it, chk }) => {
+        const bad = chk.issues.filter((i) => i.bad).map((i) => `${i.label} (${zoneText(i.zone)}): ${Math.round(i.avg * 100)}% coberto em média e ${Math.round(i.peak * 100)}% no pior quadro — limite ${Math.round(i.zone.avg * 100)}%`).join('; ');
+        return `• ${CAT_TO_API[it.cat]} "${it.raw.name}": ${bad}.\nSVG atual (loop):\n${it.raw.asset.svg}${it.raw.asset.introSvg ? `\nSVG atual (entrada):\n${it.raw.asset.introSvg}` : ''}`;
+      });
+      const feedback = `CORREÇÃO. Estas artes invadiram as zonas protegidas do perfil. As imagens anexas mostram o pior quadro com as zonas proibidas marcadas em VERMELHO. Refaça cada uma mantendo o tema, o estilo, a paleta e a qualidade, mas tirando todas as formas opacas dessas zonas (mova os elementos grandes para as bordas/topo ou encolha-os). Devolva o mesmo formato JSON, um item por categoria abaixo, na mesma ordem.
+
+Tema original: ${req.prompt || '(variações das referências)'}
+
+${lines.join('\n\n')}`;
+      const fixReq = {
+        ...req,
+        cats: failing.map((x) => x.it.cat),
+        refs: [],
+        feedback,
+        images: failing.filter((x) => x.chk.overlay).map((x) => ({ mime: 'image/png', data: x.chk.overlay })),
+      };
+      let fixed;
+      try {
+        fixed = await call(fixReq);
+      } catch (e) {
+        if (!fixReq.images.length) { console.warn('[revisão] correção falhou:', e.message); break; }
+        try { fixed = await call({ ...fixReq, images: [] }); } catch (e2) { console.warn('[revisão] correção falhou:', e2.message); break; }
+      }
+      // Troca cada arte reprovada pela versão corrigida da mesma categoria
+      const next = current.slice();
+      failing.forEach(({ it }) => {
+        const k = fixed.findIndex((f) => f.cat === it.cat);
+        if (k < 0) return;
+        const repl = fixed.splice(k, 1)[0];
+        repl.raw.name = repl.raw.name || it.raw.name;
+        next[current.indexOf(it)] = repl;
+      });
+      current = next;
+    }
+    return current;
+  }
 
   /* ---------- Referências da biblioteca ---------- */
   const MAX_REFS = 3;
@@ -1119,6 +1404,14 @@ ${sparks}
       const card = CS.buildCard(cat, item, { variant: 'gen' });
       card.style.animationDelay = i * 60 + 'ms';
       const prev = card.querySelector('.card-preview');
+      const q = ui.quality.get(id);
+      if (q) {
+        const qb = document.createElement('span');
+        qb.className = 'quality-badge ' + (q.ok ? 'is-ok' : 'is-bad');
+        qb.textContent = q.summary;
+        qb.title = q.issues.map((i) => `${i.label}: ${Math.round(i.avg * 100)}% em média, ${Math.round(i.peak * 100)}% no pior quadro (limite ${Math.round(i.zone.avg * 100)}%)`).join('\n');
+        prev.appendChild(qb);
+      }
       const badge = document.createElement('span');
       badge.className = 'engine-badge';
       badge.textContent = `${item.engine === 'local' ? '⚡ Local' : '✨ ' + (item.engineLabel || 'IA')} · ${CATS[cat].singular}`;
@@ -1194,6 +1487,15 @@ ${sparks}
           try { req.images.push(await toBase64(url)); r.hasImage = true; } catch (e) { /* segue sem a imagem */ }
         }
       }
+      if (mode === 'svg' && ui.styleRefs) {
+        req.styleRefs = styleExamples(cats, prompt, cats.length > 2 ? 1 : 2).slice(0, Math.max(0, 4 - req.images.length));
+        for (const x of req.styleRefs) {
+          if (ai.provider === 'anthropic' || ai.provider === 'openai') { req.images.push({ url: x.url }); x.hasImage = true; }
+          else if (PROVIDERS[ai.provider].native === 'gemini') {
+            try { req.images.push(await toBase64(x.url)); x.hasImage = true; } catch (e) { /* segue sem */ }
+          }
+        }
+      }
       const call = (rq) => (ai.provider === 'anthropic'
         ? generateWithClaude(rq, cfg.key, cfg.model)
         : PROVIDERS[ai.provider].native === 'gemini'
@@ -1209,10 +1511,16 @@ ${sparks}
           console.warn('[Gerador IA] tentando sem imagens:', err.message);
           req.images = [];
           req.refs.forEach((r) => { r.hasImage = false; });
+          (req.styleRefs || []).forEach((x) => { x.hasImage = false; });
           list = await call(req);
         }
+        if (mode === 'svg' && ui.review && window.CosmeticExport && window.CosmeticExport.sampleSvg) {
+          list = await reviewLoop(list, req, call);
+        }
         $$('#gen-results .gen-skeleton').forEach((n) => n.remove());
-        addResults(list);
+        const added = addResults(list);
+        added.forEach((a, i) => { if (list[i] && list[i].quality) ui.quality.set(a.id, list[i].quality); });
+        renderResults();
         CS.toast(`${list.length} ${list.length === 1 ? 'cosmético gerado' : 'cosméticos gerados'} pela IA!`, 'success');
       } catch (err) {
         console.error('[Gerador IA]', err);
@@ -1317,7 +1625,10 @@ ${sparks}
     });
 
     $('#gen-prompt').addEventListener('input', (e) => {
-      $('#gen-prompt-count').textContent = `${e.target.value.length}/300`;
+      $('#gen-prompt-count').textContent = `${e.target.value.length}/2000`;
+      // A caixa cresce com o texto (até 60% da tela; depois rola)
+      e.target.style.height = 'auto';
+      e.target.style.height = Math.min(e.target.scrollHeight + 2, window.innerHeight * 0.6) + 'px';
     });
     $('#gen-prompt').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('#gen-form').requestSubmit();
@@ -1370,6 +1681,21 @@ ${sparks}
 
     $('#gen-form').addEventListener('submit', onGenerate);
     $('#gen-refs-add').addEventListener('click', openPicker);
+    const rv = $('#gen-review');
+    const sr = $('#gen-style');
+    if (sr) {
+      sr.checked = ui.styleRefs;
+      sr.addEventListener('change', () => {
+        ui.styleRefs = sr.checked;
+        try { localStorage.setItem(STYLE_KEY, ui.styleRefs ? '1' : '0'); } catch (e) { /* ok */ }
+      });
+    }
+    loadStyleGuide();
+    rv.checked = ui.review;
+    rv.addEventListener('change', () => {
+      ui.review = rv.checked;
+      try { localStorage.setItem(REVIEW_KEY, ui.review ? '1' : '0'); } catch (e) { /* ok */ }
+    });
     $$('#gen-mode button').forEach((b) => b.classList.toggle('is-active', b.dataset.mode === ui.mode));
     $('#gen-mode').addEventListener('click', (e) => {
       const b = e.target.closest('[data-mode]');
@@ -1398,5 +1724,5 @@ ${sparks}
   else init();
 
   // Exposto para testes / depuração
-  window.CosmeticGenerator = { generateLocal, varyItem, addRef, OUTPUT_SCHEMA, SYSTEM_PROMPT, SVG_OUTPUT_SCHEMA, SVG_SYSTEM_PROMPT, userTextFor };
+  window.CosmeticGenerator = { STYLE, styleGuidePrompt, styleExamples, generateLocal, varyItem, addRef, checkArt, ZONES, OUTPUT_SCHEMA, SYSTEM_PROMPT, SVG_OUTPUT_SCHEMA, SVG_SYSTEM_PROMPT, userTextFor };
 })();
