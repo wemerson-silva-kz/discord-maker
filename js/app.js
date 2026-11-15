@@ -332,10 +332,13 @@
       let info = null;
       if (canFetch(a.intro)) {
         try { info = await loadApng(a.intro); } catch (e) { info = null; }
+      } else if (!(a.meta && a.meta.intro)) {
+        // Só precisamos da duração: mede pelo proxy WebP (a exibição continua com o APNG original)
+        try { const m = await loadApng(mediaProxyUrl(a.intro)); info = { duration: m.duration, animated: m.animated }; } catch (e) { info = null; }
       }
       if (layer._gen !== gen) return;
       if (layer._blobUrl) URL.revokeObjectURL(layer._blobUrl);
-      layer._blobUrl = info ? info.freshUrl() : null;
+      layer._blobUrl = info && info.freshUrl ? info.freshUrl() : null;
       // URL nova = o APNG recomeça do 1º quadro (sem CORS, usamos um parâmetro de replay)
       img.src = layer._blobUrl || (layer._userTriggered ? a.intro + (a.intro.includes('?') ? '&' : '?') + 'replay=' + (++replaySeq) : a.intro);
       const m = info || (a.meta && a.meta.intro);
@@ -439,8 +442,20 @@
       return { ...m, animated: m.frames > 1, fromMeta: true };
     };
     if (!url) return Promise.reject(new Error('sem URL'));
-    if (!canFetch(url)) return Promise.resolve().then(fromMeta);
+    if (!canFetch(url)) {
+      // 1) métricas gravadas no catálogo; 2) proxy de mídia do Discord (WebP animado com CORS)
+      return Promise.resolve().then(fromMeta).catch(() => loadApng(mediaProxyUrl(url)).then((i) => ({ ...i, viaProxy: true })));
+    }
     return loadApng(url).catch(fromMeta);
+  }
+  /**
+   * O cdn.discordapp.com/media/v1/collectibles-shop/ não libera CORS, mas o
+   * proxy de mídia do Discord entrega a mesma animação como WebP animado, com
+   * CORS. Mesma duração e repetições; quadros idênticos seguidos são unidos.
+   */
+  function mediaProxyUrl(url) {
+    const m = String(url).match(/^https:\/\/cdn\.discordapp\.com\/media\/v1\/collectibles-shop\/([^?#]+)/);
+    return m ? `https://media.discordapp.net/media/v1/collectibles-shop/${m[1]}?format=webp&animated=true` : url;
   }
   /**
    * Baixa e analisa um PNG/APNG. Os navegadores tratam atrasos de quadro
@@ -454,9 +469,11 @@
           return r.arrayBuffer();
         })
         .then((buf) => {
-          const info = parseApng(new Uint8Array(buf));
+          const bytes = new Uint8Array(buf);
+          const isWebp = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[8] === 0x57; // RIFF....WEBP
+          const info = isWebp ? parseWebp(bytes) : parseApng(bytes);
           info.bytes = buf.byteLength;
-          const blob = new Blob([buf], { type: 'image/png' });
+          const blob = new Blob([buf], { type: isWebp ? 'image/webp' : 'image/png' });
           info.freshUrl = () => URL.createObjectURL(blob);
           return info;
         })
@@ -467,6 +484,36 @@
       apngCache.set(url, p);
     }
     return apngCache.get(url);
+  }
+
+  /** WebP animado: quadros (ANMF), duração e repetições (ANIM). */
+  function parseWebp(b) {
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    const tag = (o) => String.fromCharCode(b[o], b[o + 1], b[o + 2], b[o + 3]);
+    if (tag(0) !== 'RIFF' || tag(8) !== 'WEBP') throw new Error('Não é WebP');
+    let i = 12, width = 0, height = 0, plays = 1, frames = 0, total = 0, raw = 0, clamped = 0;
+    while (i + 8 <= b.length) {
+      const t = tag(i), len = dv.getUint32(i + 4, true), d = i + 8;
+      if (t === 'VP8X') { width = 1 + (b[d + 4] | b[d + 5] << 8 | b[d + 6] << 16); height = 1 + (b[d + 7] | b[d + 8] << 8 | b[d + 9] << 16); }
+      else if (t === 'ANIM') plays = dv.getUint16(d + 4, true);
+      else if (t === 'ANMF') {
+        const ms = b[d + 12] | b[d + 13] << 8 | b[d + 14] << 16;
+        raw += ms;
+        total += ms <= 10 ? 100 : ms;
+        if (ms <= 10) clamped++;
+        frames++;
+      }
+      i = d + len + (len & 1);
+    }
+    const dur = total / 1000;
+    return {
+      width, height, frames: frames || 1, animated: frames > 1, plays,
+      duration: +dur.toFixed(3),
+      fps: frames && dur ? +(frames / dur).toFixed(1) : 0,
+      nominalFps: frames && raw ? +(frames / (raw / 1000)).toFixed(1) : 0,
+      clampedFrames: clamped,
+      uniqueFrames: true, // o proxy une quadros idênticos: a contagem pode ser menor que a do APNG
+    };
   }
 
   function parseApng(bytes) {
@@ -507,7 +554,7 @@
   /** Texto curto de métricas para os cards. */
   function metricsLabel(info) {
     if (!info.animated) return `${info.width}×${info.height} · estático`;
-    return `${info.fps} fps · ${info.duration.toFixed(1)}s · ${info.plays === 0 ? '∞' : info.plays + '×'}`;
+    return `${info.uniqueFrames ? '≈' : ''}${info.fps} fps · ${info.duration.toFixed(1)}s · ${info.plays === 0 ? '∞' : info.plays + '×'}`;
   }
 
   /* ---------------------------------------------------------------- */
@@ -791,6 +838,14 @@
     item._custom = true;
     item._saved = !!saved;
     item._createdAt = item._createdAt || Date.now();
+    // Mesmo id de um item existente (ex.: efeito da loja recebendo entrada/loop): substitui
+    const idx = DATA[cat].findIndex((it) => it.id === item.id);
+    if (idx >= 0) {
+      if (!item.source && DATA[cat][idx].source) item.source = DATA[cat][idx].source;
+      DATA[cat].splice(idx, 1);
+      customEntries = customEntries.filter((e) => e.item.id !== item.id);
+      mounted.effect = mounted.decoration = mounted.nameplate = undefined;
+    }
     DATA[cat].push(item);
     customEntries.push({ cat, item });
     persistCustom();
@@ -1154,8 +1209,7 @@
     if (a.type !== 'image') return;
     preview.appendChild(badge);
     if (item.source === 'shop' && !a.meta) {
-      if (cat === 'effects') { badge.textContent = 'prévia estática (sem entrada/loop na API)'; return; }
-      if (!canFetch(a.src)) { badge.textContent = 'APNG oficial'; badge.title = 'O CDN não libera leitura pelo navegador. Para medir: node tools/measure-apng.mjs ' + a.src; return; }
+      if (cat === 'effects' && !a.intro) { badge.textContent = 'prévia estática · 🎬 animar'; badge.classList.add('is-action'); badge.dataset.animate = item.id; return; }
       // Itens da loja: só baixa o APNG para medir quando o mouse passa no card
       badge.textContent = '📏 passe o mouse para medir';
       preview.addEventListener('mouseenter', () => measureInto(badge, cat, a), { once: true });
@@ -1175,9 +1229,9 @@
       res.forEach(([label, i]) => {
         if (label === 'Entrada' && i.duration > GEN.maxIntro) warn.push(`entrada com ${i.duration.toFixed(1)}s (máx. ${GEN.maxIntro}s)`);
         if (i.clampedFrames) warn.push(`${i.clampedFrames} quadros com atraso ≤10 ms: o navegador usa 100 ms (nominal ${i.nominalFps} fps, efetivo ${i.fps} fps)`);
-        if (i.animated && i.fps < 10) warn.push('abaixo de 10 fps: pode parecer travado');
+        if (i.animated && i.fps < 10 && !i.uniqueFrames) warn.push('abaixo de 10 fps: pode parecer travado');
       });
-      badge.title = res.map(([label, i]) => `${label || 'Animação'}: ${i.width}×${i.height}, ${i.frames} quadros, ${i.duration}s, ${i.fps} fps, ${i.plays === 0 ? 'loop infinito' : 'toca ' + i.plays + '×'}${i.bytes ? ', ' + (i.bytes / 1024).toFixed(0) + ' KB' : ''}${i.fromMeta ? ' (medido previamente)' : ''}`).join('\n') + (warn.length ? '\n⚠ ' + warn.join('\n⚠ ') : '');
+      badge.title = res.map(([label, i]) => `${label || 'Animação'}: ${i.width}×${i.height}, ${i.frames} quadros${i.uniqueFrames ? ' únicos' : ''}, ${i.duration}s, ${i.uniqueFrames ? '≈' : ''}${i.fps} fps, ${i.plays === 0 ? 'loop infinito' : 'toca ' + i.plays + '×'}${i.fromMeta ? ' (medido previamente)' : i.viaProxy ? ' (medido pelo proxy de mídia do Discord)' : ''}`).join('\n') + (warn.length ? '\n⚠ ' + warn.join('\n⚠ ') : '');
       if (warn.length) badge.classList.add('is-warn'), (badge.textContent = '⚠ ' + badge.textContent);
     }).catch(() => {
       badge.textContent = 'sem métricas (CDN sem CORS)';
@@ -1694,6 +1748,8 @@
       if (tryBtn) return toggleEquip(tryBtn.dataset.cat, tryBtn.dataset.id);
       const del = e.target.closest('.gen-delete');
       if (del) return deleteCustom(del.dataset.id);
+      const anim = e.target.closest('[data-animate]');
+      if (anim && window.CosmeticImport) return window.CosmeticImport.openForEffect(anim.dataset.animate);
       const apng = e.target.closest('.btn-apng');
       if (apng && window.CosmeticExport) return window.CosmeticExport.open(apng.dataset.cat, apng.dataset.id);
       const tag = e.target.closest('[data-collection]');
@@ -1843,7 +1899,7 @@
     CATS, DATA, GEN, buildAsset, buildCard, toast, syncUserBits, updateCardStates, findItem,
     sanitizeGenItem, sanitizeCustomItem, registerCustom, saveCustom, deleteCustom, publicItem,
     loadApng, getMetrics, canFetch, metricsLabel, renderGallery, addCatalogItems, catalogReady,
-    sanitizeSvg, SVG_SIZE, parseApng, introOf,
+    sanitizeSvg, SVG_SIZE, parseApng, parseWebp, introOf, mediaProxyUrl,
     setShopAttribution(url, terms, shopDate, stale) {
       const a = $('#shop-attribution');
       if (/^https:\/\/itemshop\.gg(\/|$)/.test(url || '')) a.href = url;
@@ -1851,6 +1907,11 @@
     }, setTab: (t) => setTab(t),
     addCollection(name, color) { if (!DATA.collections[name]) DATA.collections[name] = { color }; },
     equip: (cat, id) => toggleEquip(cat, id),
+    /** Remonta a prévia ao vivo (ex.: depois de substituir um item equipado). */
+    refresh() {
+      mounted.nameplate = mounted.decoration = mounted.effect = undefined;
+      commit();
+    },
     setSaved(cat, id, saved) {
       const it = findItem(cat, id);
       if (!it) return;

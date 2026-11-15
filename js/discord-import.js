@@ -58,8 +58,9 @@
       const introUrl = intro && (intro.url || intro.animated);
       const loopUrl = loop && (loop.url || loop.animated);
       const key = (intro || loop).key.slice(0, 12);
+      const linked = form.linkId && CS.findItem('effects', form.linkId);
       return CS.sanitizeCustomItem(cat, {
-        id: 'dc-fx-' + key.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+        id: linked ? linked.id : 'dc-fx-' + key.toLowerCase().replace(/[^a-z0-9-]/g, ''),
         name: name || `Efeito do Discord #${key.slice(0, 6)}`,
         collection,
         description: introUrl && loopUrl ? 'Efeito importado: entrada (1×) e depois loop.' : 'Efeito importado do Discord.',
@@ -162,20 +163,41 @@
   /** @param {import('../types/itemshop').ShopAnswer} answer */
   function shopToEntries(answer) {
     const entries = [];
+    const bundles = [];
     for (const sec of (answer.data && answer.data.sections) || []) {
       for (const it of sec.items || []) {
+        if (it.type === 'Bundle' && /^\d{15,21}$/.test(it.id || '')) {
+          bundles.push({ id: it.id, name: it.name, section: sec.title, card: it.images && it.images.card, price: priceLabel(it.price) });
+          continue;
+        }
         const e = shopItemToEntry(it, sec);
         if (e) entries.push(e);
       }
     }
-    return entries;
+    return { entries, bundles };
   }
+
+  /* ---------------- Pacotes (bundles) da loja ---------------- */
+  let shopBundles = [];
+  /** Itens da loja que formam o pacote: mesma coleção e mesmo nome-base ("X Bundle" → "X"). */
+  function bundleContents(b) {
+    const base = b.name.replace(/\s*bundle\s*$/i, '').trim().toLowerCase();
+    const out = {};
+    for (const cat of ['decorations', 'nameplates', 'effects']) {
+      const inSection = CS.DATA[cat].filter((it) => it.source === 'shop' && it.collection === b.section);
+      out[cat] = inSection.find((it) => it.name.trim().toLowerCase() === base) || null;
+    }
+    return out;
+  }
+  const findBundle = (id) => shopBundles.find((b) => b.id === id) || null;
 
   async function loadShop() {
     if (!window.ItemShop) return;
     try {
       const res = await window.ItemShop.shop('discord', shopToEntries);
-      CS.addCatalogItems(res.value);
+      const value = Array.isArray(res.value) ? { entries: res.value, bundles: [] } : res.value; // cache antigo
+      CS.addCatalogItems(value.entries);
+      shopBundles = value.bundles || [];
       CS.setShopAttribution(res.meta && res.meta.attribution && res.meta.attribution.url, res.meta && res.meta.terms, res.shopDate, res.stale);
     } catch (e) {
       console.warn('[Loja] não foi possível carregar a loja do itemshop.gg:', e.code || e.status || '', e.message);
@@ -233,6 +255,17 @@
               <input id="imp-static" class="dc-input font-mono text-sm" placeholder="detectada automaticamente para IDs do Discord" spellcheck="false" />
             </div>
             <div data-for="effects" class="hidden space-y-3">
+              <div id="imp-link" class="hidden rounded-lg bg-[#5865F2]/15 border border-[#5865F2]/40 p-2 text-xs"></div>
+              <details class="rounded-lg bg-dc-dark p-2 text-xs text-dc-muted">
+                <summary class="cursor-pointer font-semibold text-dc-text">Onde acho os hashes da entrada e do loop?</summary>
+                <ol class="list-decimal ml-4 mt-2 space-y-1">
+                  <li>Abra o Discord no navegador (discord.com/app) e vá em <b>Loja</b>.</li>
+                  <li>Aperte <b>F12</b> → aba <b>Rede/Network</b> e filtre por <code>collectibles-shop</code>.</li>
+                  <li>Clique no efeito para ver a prévia: aparecem dois arquivos <code>collectibles-shop/&lt;hash&gt;</code> de 450×880. O primeiro, que toca uma vez, é a <b>entrada</b>; o outro é o <b>loop</b>.</li>
+                  <li>Copie as URLs (ou só os hashes) para os campos abaixo.</li>
+                </ol>
+                <p class="mt-1">A API pública da loja só traz a miniatura estática dos efeitos; a animação vem da sua própria navegação.</p>
+              </details>
               <div>
                 <label class="field-label" for="imp-intro">Entrada (toca 1×, até 6 s)</label>
                 <input id="imp-intro" class="dc-input font-mono text-sm" placeholder=".../collectibles-shop/<hash da entrada>" spellcheck="false" />
@@ -285,11 +318,16 @@
     const form = () => ({
       main: $('#imp-main').value, staticUrl: $('#imp-static').value, intro: $('#imp-intro').value,
       loop: $('#imp-loop').value, name: $('#imp-name').value, collection: $('#imp-coll').value, dur: $('#imp-dur').value,
+      linkId: dlg._linkId || '',
     });
 
     let timer;
     async function preview() {
       const box = $('#imp-preview');
+      // ID de pacote (bundle) da loja?
+      const raw = (cat === 'effects' ? '' : $('#imp-main').value).trim();
+      const bundle = /^\d{15,21}$/.test(raw) ? findBundle(raw) : (raw.match(/bundle-fg-static\/(\d{15,21})/) ? findBundle(raw.match(/bundle-fg-static\/(\d{15,21})/)[1]) : null);
+      if (bundle) return showBundle(box, bundle);
       let item;
       try { item = buildItem(cat, form()); } catch (e) { box.textContent = e.message; return; }
       if (!item) { box.textContent = 'Não reconheci esse ID/URL.'; return; }
@@ -297,11 +335,11 @@
       const parts = cat === 'effects' ? [['Entrada', 'intro'], ['Loop', 'loop']] : [['Animado', 'src'], ['Estático', 'staticSrc']];
       box.textContent = 'Medindo…';
       const lines = await Promise.all(parts.filter(([, f]) => a[f]).map(async ([label, f]) => {
-        if (!CS.canFetch(a[f])) return `${label}: o CDN do Discord não libera leitura pelo navegador — a imagem funciona, mas as métricas precisam do tools/measure-apng.mjs.`;
         try {
           const i = await CS.getMetrics(a, f);
-          let line = `${label}: ${i.width}×${i.height}, ${i.frames} quadro(s)`;
-          if (i.animated) line += `, ${i.duration}s, ${i.fps} fps, ${i.plays === 0 ? 'loop infinito' : 'toca ' + i.plays + '×'}`;
+          let line = `${label}: ${i.width}×${i.height}, ${i.frames} quadro(s)${i.uniqueFrames ? ' únicos' : ''}`;
+          if (i.animated) line += `, ${i.duration}s, ${i.uniqueFrames ? '≈' : ''}${i.fps} fps, ${i.plays === 0 ? 'loop infinito' : 'toca ' + i.plays + '×'}`;
+          if (label === 'Entrada' && i.animated) { $('#imp-dur').value = Math.min(6, i.duration).toFixed(1); }
           if (i.clampedFrames) line += ` ⚠ atrasos ≤10 ms viram 100 ms no navegador (nominal ${i.nominalFps} fps)`;
           if (label === 'Entrada' && i.duration > 6) line += ' ⚠ entrada maior que 6 s';
           return line;
@@ -316,6 +354,37 @@
         box.appendChild(d);
       });
     }
+    function showBundle(box, b) {
+      const parts = bundleContents(b);
+      const names = { decorations: 'Moldura', nameplates: 'Nameplate', effects: 'Efeito' };
+      box.innerHTML = '';
+      const title = document.createElement('div');
+      title.className = 'font-semibold text-dc-text mb-1';
+      title.textContent = `📦 Pacote: ${b.name}${b.price ? ' · ' + b.price : ''} (${b.section})`;
+      box.appendChild(title);
+      let any = false;
+      for (const cat of ['decorations', 'nameplates', 'effects']) {
+        const d = document.createElement('div');
+        d.textContent = `${names[cat]}: ${parts[cat] ? parts[cat].name : '— não está na loja de hoje'}`;
+        box.appendChild(d);
+        if (parts[cat]) any = true;
+      }
+      if (!any) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-primary btn-sm mt-2';
+      btn.textContent = 'Testar pacote completo';
+      btn.addEventListener('click', () => {
+        for (const cat of ['decorations', 'nameplates', 'effects']) {
+          const it = parts[cat];
+          if (it && CS.state[CATS[cat].key] !== it.id) CS.equip(cat, it.id);
+        }
+        dlg.close();
+        CS.toast(`Pacote “${b.name}” equipado!`, 'success');
+      });
+      box.appendChild(btn);
+    }
+
     dlg.querySelectorAll('input').forEach((i) => i.addEventListener('input', () => {
       clearTimeout(timer);
       timer = setTimeout(preview, 400);
@@ -338,13 +407,38 @@
       try { item = buildItem(cat, form()); } catch (e) { return CS.toast(e.message, 'danger'); }
       if (!item) return CS.toast('Não reconheci esse ID/URL.', 'danger');
       CS.addCollection(item.collection, '#5865F2');
-      if (!CS.findItem(cat, item.id)) CS.registerCustom(cat, item, { saved: true });
+      const existing = CS.findItem(cat, item.id);
+      if (!existing || dlg._linkId === item.id) CS.registerCustom(cat, item, { saved: true });
       dlg.close();
       CS.setTab(cat);
       CS.renderGallery();
       if (CS.state[CATS[cat].key] !== item.id) CS.equip(cat, item.id);
+      else CS.refresh(); // já estava equipado (ex.: efeito da loja recém-animado): remonta a prévia
+    });
+    dlg._setCat = setCat;
+    dlg.addEventListener('close', () => {
+      dlg._linkId = '';
+      $('#imp-link').classList.add('hidden');
     });
     return dlg;
+  }
+
+  /** Abre o importador para dar entrada/loop a um efeito da loja (que só tem miniatura estática). */
+  function openForEffect(id) {
+    const fx = CS.findItem('effects', id);
+    if (!fx) return;
+    ensureDialog();
+    dlg._linkId = fx.id;
+    $('#imp-name').value = fx.name;
+    $('#imp-coll').value = fx.collection || 'Discord';
+    $('#imp-intro').value = '';
+    $('#imp-loop').value = '';
+    const link = $('#imp-link');
+    link.textContent = `🎬 Animando o efeito da loja “${fx.name}” (${fx.collection}). Cole a entrada e o loop; o card e o perfil passam a usar a animação.`;
+    link.classList.remove('hidden');
+    dlg._setCat('effects');
+    dlg.showModal();
+    $('#imp-intro').focus();
   }
 
   function init() {
@@ -354,5 +448,5 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-  window.CosmeticImport = { parseRef, catalogEntryToItem };
+  window.CosmeticImport = { parseRef, catalogEntryToItem, openForEffect, findBundle: (id) => findBundle(id) };
 })();
