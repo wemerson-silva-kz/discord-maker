@@ -250,7 +250,7 @@
   /** Dá a um efeito da loja a animação oficial (camadas do Discord). */
   async function animateShopEffect(id, { play = false } = {}) {
     const it = CS.findItem('effects', id);
-    if (!it || it.asset.layers) return;
+    if (!it || it.asset.layers || !/^dc-fx-\d{15,21}$/.test(id)) return;
     const sku = id.replace(/^dc-fx-/, '');
     try {
       const prod = await fetchProduct(sku);
