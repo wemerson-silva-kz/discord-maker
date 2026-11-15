@@ -723,7 +723,7 @@
       rarity: pick(raw.rarity, GEN.rarities, 'Épico'),
       description: cleanText(raw.description, 160),
       tags: (Array.isArray(raw.tags) ? raw.tags : []).slice(0, 6).map((t) => cleanText(t, 24)).filter(Boolean),
-      prompt: cleanText(raw.prompt, 300),
+      prompt: cleanText(raw.prompt, 2000),
       engine: /^[a-z0-9-]{2,20}$/.test(raw.engine) ? raw.engine : 'local',
       engineLabel: cleanText(raw.engineLabel, 30),
       asset: Object.assign(sanitizeGenAsset(raw.asset, cat),

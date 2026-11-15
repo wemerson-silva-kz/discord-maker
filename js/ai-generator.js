@@ -1334,7 +1334,10 @@ ${sparks}
     });
 
     $('#gen-prompt').addEventListener('input', (e) => {
-      $('#gen-prompt-count').textContent = `${e.target.value.length}/300`;
+      $('#gen-prompt-count').textContent = `${e.target.value.length}/2000`;
+      // A caixa cresce com o texto (até 60% da tela; depois rola)
+      e.target.style.height = 'auto';
+      e.target.style.height = Math.min(e.target.scrollHeight + 2, window.innerHeight * 0.6) + 'px';
     });
     $('#gen-prompt').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('#gen-form').requestSubmit();
