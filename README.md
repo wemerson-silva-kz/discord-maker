@@ -70,6 +70,13 @@ asset: {
 
 Toda spec (da IA, do gerador local ou de um link) passa por validação: cores só em hex, valores só das listas permitidas e textos limpos, sem HTML.
 
+## Gerador IA: arte desenhada, referências e APNG
+
+- **Arte desenhada (SVG)** (padrão para IA): a IA desenha ilustração vetorial animada no tamanho de cada formato do Discord (nameplate 448×84, moldura 288×288 com o centro livre para o avatar, efeito 450×880), animada só com CSS. O tema vira desenho de verdade: dragão, templo, nuvens etc. O SVG passa por um sanitizador (sem scripts, eventos, `foreignObject`, imagens ou links externos) e é exibido como imagem. O estilo **Partículas** continua disponível.
+- **Entrada e loop separados**: nos resultados, os efeitos mostram os dois painéis lado a lado (a entrada se repete para dar para ver).
+- **Referências da biblioteca**: em **🧬 Escolher da biblioteca**, selecione até 3 itens (temáticos, gerados, catálogo ou loja do Discord) para a IA criar variações. Ela recebe a arte/spec dos itens gerados e a **imagem** dos oficiais (Claude, Gemini e OpenAI). Se o modelo não aceitar imagens, o app tenta de novo só com texto. O botão **🧬 Referência** nos resultados faz o mesmo.
+- **⬇ Baixar APNG**: exporta no tamanho oficial, com 12/24/30 fps e 256 cores ou sem perdas. Efeitos saem em dois arquivos: `-entrada.png` (toca 1×) e `-loop.png` (infinito). Cada quadro é renderizado controlando o tempo das animações; no loop, toda animação fecha um número inteiro de ciclos, então não há "pulo" na emenda. A arte SVG é renderizada num iframe isolado (sem scripts). Também vale para os itens temáticos da galeria.
+
 ## Cosméticos oficiais do Discord
 
 A galeria também mostra itens reais carregados direto do CDN do Discord (coleção **Discord**), no mesmo formato do app:
@@ -146,6 +153,7 @@ js/data.js          CATÁLOGO DE ITENS — edite aqui
 js/app.js           Renderização, estado, partículas e eventos
 js/ai-generator.js  Gerador IA (vários provedores + motor local)
 js/discord-import.js Importador de IDs/URLs do CDN do Discord
+js/apng-export.js   Exportação de APNG animado (entrada + loop)
 tools/measure-apng.mjs Mede quadros/duração/FPS de APNGs (gera o `meta`)
 tools/build-catalog.mjs Valida e mede o catalog/discord.json
 catalog/discord.json Catálogo de itens oficiais (IDs/hashes do Discord)
