@@ -566,7 +566,7 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
     if (!res.ok) throw geminiError(res.status, data, '');
     const ver = (n) => (n.match(/(\d+(?:\.\d+)?)/) || [0, '0'])[1] * 1;
     const models = ((data && data.models) || [])
-      .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent') && /gemini/i.test(m.name) && !/embedding|aqa|tts|image|vision-only|live|audio/i.test(m.name))
+      .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent') && /gemini/i.test(m.name) && !/embedding|aqa|tts|vision-only|live|audio/i.test(m.name))
       .map((m) => ({ id: geminiModelName(m.name), label: m.displayName || geminiModelName(m.name) }))
       .sort((a, b) => ver(b.id) - ver(a.id) || a.id.localeCompare(b.id));
     geminiModelsCache.set(key, models);
@@ -574,7 +574,7 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
   }
   /** Sugere um modelo: o "flash" estável mais novo; senão o primeiro da lista. */
   function pickGeminiModel(models) {
-    const stable = models.filter((m) => !/preview|exp|lite|thinking/i.test(m.id));
+    const stable = models.filter((m) => !/preview|exp|lite|thinking|image/i.test(m.id));
     return (stable.find((m) => /flash/i.test(m.id)) || stable[0] || models[0] || {}).id;
   }
 
@@ -985,7 +985,7 @@ ${sparks}
   const MODE_STORAGE = 'cosmetic-studio:gen-mode';
   const REVIEW_KEY = 'cosmetic-studio:gen-review';
   const STYLE_KEY = 'cosmetic-studio:gen-style-refs';
-  const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', mode: store.get(MODE_STORAGE) === 'particles' ? 'particles' : 'svg', busy: false, results: [], refs: [],
+  const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', mode: ['particles', 'raster'].includes(store.get(MODE_STORAGE)) ? store.get(MODE_STORAGE) : 'svg', busy: false, results: [], refs: [],
     review: (() => { try { return localStorage.getItem(REVIEW_KEY) !== '0'; } catch (e) { return true; } })(), quality: new Map(),
     styleRefs: (() => { try { return localStorage.getItem(STYLE_KEY) !== '0'; } catch (e) { return true; } })() };
 
@@ -1044,6 +1044,9 @@ ${sparks}
     return c.toDataURL('image/png').split(',')[1];
   }
 
+  /* Ocupação mínima do canvas (média dos quadros); os oficiais ficam em 11–15%. */
+  const MIN_FILL = { effects: 0.03, decorations: 0.06, nameplates: 0.05, frames: 0.05 };
+
   /** Mede as zonas protegidas de uma arte SVG (loop + entrada). */
   async function checkArt(cat, raw) {
     const a = raw.asset || {};
@@ -1058,10 +1061,14 @@ ${sparks}
       if (ci) jobs.push([ci, Math.min(6, Math.max(0.5, +a.introSeconds || 3)), 8]);
     }
     const stats = Z.zones.map(() => ({ sum: 0, n: 0, peak: 0 }));
-    let worst = null, worstScore = -1;
+    let worst = null, worstScore = -1, total = 0, totalN = 0;
     for (const [svg, secs, count] of jobs) {
       const frames = await window.CosmeticExport.sampleSvg(svg, cat, secs, count, half);
       frames.forEach((f) => {
+        const step = Math.max(1, Math.round(Math.min(f.w, f.h) / 90));
+        let a = 0, n = 0;
+        for (let y = 0; y < f.h; y += step) for (let x = 0; x < f.w; x += step) { a += f.data[(y * f.w + x) * 4 + 3] / 255; n++; }
+        total += n ? a / n : 0; totalN++;
         const cov = coverage(f, cat);
         let score = 0;
         cov.forEach((v, i) => {
@@ -1075,14 +1082,18 @@ ${sparks}
       const avg = stats[i].n ? stats[i].sum / stats[i].n : 0;
       return { id: z.id, label: z.label, avg, peak: stats[i].peak, zone: z, bad: avg > z.avg || stats[i].peak > z.peak };
     });
+    // Arte quase vazia também reprova (os oficiais ocupam 11–15% do canvas)
+    const fill = totalN ? total / totalN : 0;
+    const minFill = MIN_FILL[cat] || 0;
+    if (fill < minFill) issues.push({ id: 'empty', label: 'arte quase vazia', avg: fill, peak: fill, empty: true, min: minFill, bad: true });
     const failing = issues.filter((i) => i.bad);
     return {
       ok: !failing.length,
       issues,
       summary: failing.length
-        ? '⚠ cobre ' + failing.map((i) => `${i.label} ${Math.round(i.avg * 100)}%`).join(', ')
+        ? '⚠ ' + failing.map((i) => (i.empty ? `arte quase vazia (${Math.round(i.avg * 100)}% do canvas)` : `cobre ${i.label} ${Math.round(i.avg * 100)}%`)).join(', ')
         : '✓ ' + issues.map((i) => i.label.split(' (')[0]).join(', ') + ' livres',
-      overlay: failing.length && worst ? overlayPng(worst, cat, failing.map((i) => i.id)) : null,
+      overlay: failing.some((i) => !i.empty) && worst ? overlayPng(worst, cat, failing.map((i) => i.id)) : null,
     };
   }
 
@@ -1097,12 +1108,14 @@ ${sparks}
       const failing = current.map((it, i) => ({ it, chk: checks[i] })).filter((x) => x.chk && !x.chk.ok);
       if (!failing.length || round > MAX_ROUNDS) break;
 
-      setBusy(true, `${failing.length === 1 ? 'Uma arte invadiu' : failing.length + ' artes invadiram'} a área do avatar/nome: pedindo correção à IA (${round}/${MAX_ROUNDS})…`);
+      setBusy(true, `${failing.length === 1 ? 'Uma arte foi reprovada' : failing.length + ' artes foram reprovadas'} na verificação (zonas ou arte vazia): pedindo correção à IA (${round}/${MAX_ROUNDS})…`);
       const lines = failing.map(({ it, chk }) => {
-        const bad = chk.issues.filter((i) => i.bad).map((i) => `${i.label} (${zoneText(i.zone)}): ${Math.round(i.avg * 100)}% coberto em média e ${Math.round(i.peak * 100)}% no pior quadro — limite ${Math.round(i.zone.avg * 100)}%`).join('; ');
+        const bad = chk.issues.filter((i) => i.bad).map((i) => (i.empty
+          ? `a arte está QUASE VAZIA: ocupa só ${Math.round(i.avg * 100)}% do canvas (mínimo ${Math.round(i.min * 100)}%; os itens oficiais ocupam 11–15%). Desenhe a ilustração completa e rica do tema, com formas grandes e bem acabadas nas áreas permitidas`
+          : `${i.label} (${zoneText(i.zone)}): ${Math.round(i.avg * 100)}% coberto em média e ${Math.round(i.peak * 100)}% no pior quadro — limite ${Math.round(i.zone.avg * 100)}%`)).join('; ');
         return `• ${CAT_TO_API[it.cat]} "${it.raw.name}": ${bad}.\nSVG atual (loop):\n${it.raw.asset.svg}${it.raw.asset.introSvg ? `\nSVG atual (entrada):\n${it.raw.asset.introSvg}` : ''}`;
       });
-      const feedback = `CORREÇÃO. Estas artes invadiram as zonas protegidas do perfil. As imagens anexas mostram o pior quadro com as zonas proibidas marcadas em VERMELHO. Refaça cada uma mantendo o tema, o estilo, a paleta e a qualidade, mas tirando todas as formas opacas dessas zonas (mova os elementos grandes para as bordas/topo ou encolha-os). Devolva o mesmo formato JSON, um item por categoria abaixo, na mesma ordem.
+      const feedback = `CORREÇÃO. Estas artes foram reprovadas na verificação automática (invadiram as zonas protegidas do perfil ou ficaram quase vazias). Quando houver imagem anexa, ela mostra o pior quadro com as zonas proibidas marcadas em VERMELHO. Refaça cada uma mantendo o tema, o estilo, a paleta e a qualidade, mas tirando todas as formas opacas dessas zonas (mova os elementos grandes para as bordas/topo ou encolha-os). Devolva o mesmo formato JSON, um item por categoria abaixo, na mesma ordem.
 
 Tema original: ${req.prompt || '(variações das referências)'}
 
@@ -1447,6 +1460,52 @@ ${lines.join('\n\n')}`;
     return added;
   }
 
+  /** Modo Ilustração: o modelo de imagem pinta, o app recorta, protege as zonas e anima. */
+  async function generateIllustrations(prompt, cats, refs, cfg) {
+    const native = PROVIDERS[cfg.provider] && PROVIDERS[cfg.provider].native === 'gemini' ? 'gemini' : cfg.provider;
+    if (native !== 'gemini' && native !== 'openai') {
+      return CS.toast('O modo Ilustração precisa do Google Gemini (modelo "…-image") ou da OpenAI (gpt-image).', 'danger');
+    }
+    if (!window.CosmeticIllustration) return CS.toast('Módulo de ilustração não carregou. Atualize a página.', 'danger');
+    setBusy(true, 'Pintando as ilustrações… isso leva de 10 a 40 s por item.');
+    showSkeletons(cats.length);
+    const dropSkeletons = () => document.querySelectorAll('#gen-results .gen-skeleton').forEach((n) => n.remove());
+    try {
+      // Referências por categoria (só Gemini aceita imagens aqui): as escolhidas + exemplos oficiais
+      const refsByCat = {};
+      if (native === 'gemini') {
+        for (const cat of cats) {
+          const urls = refs.filter((r) => r.cat === cat).map((r) => refImageUrl(r.item)).filter(Boolean);
+          if (ui.styleRefs) styleExamples([cat], prompt, 2).forEach((x) => urls.push(x.url));
+          const list = [];
+          for (const u of urls.slice(0, 3)) { try { list.push(await toBase64(u)); } catch (e) { /* segue sem */ } }
+          refsByCat[cat] = list;
+        }
+      }
+      const theme = [prompt, ...refs.map((r) => r.item.name)].filter(Boolean).join(' — ');
+      const list = await window.CosmeticIllustration.generate({ prompt: theme, cats }, { ...cfg, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl }, {
+        refs: refsByCat,
+        onProgress: (msg) => setBusy(true, msg + ' (10 a 40 s por item)'),
+      });
+      list.forEach((it) => {
+        if (it.cat === 'nameplates' && it.palette && it.palette[0]) it.raw.asset.discordPalette = nearestDiscordPalette(it.palette[0]);
+      });
+      dropSkeletons();
+      const added = addResults(list);
+      added.forEach((a, i) => { if (list[i] && list[i].quality) ui.quality.set(a.id, list[i].quality); });
+      renderResults();
+      CS.toast(`${list.length} ${list.length === 1 ? 'ilustração gerada' : 'ilustrações geradas'}!`, 'success');
+      if (list.failed) CS.toast('Falhou: ' + list.failed.join(' · '), 'danger');
+    } catch (err) {
+      console.error('[Ilustração]', err);
+      dropSkeletons();
+      renderResults();
+      CS.toast(err.message || 'Falha ao gerar.', 'danger');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onGenerate(e) {
     e.preventDefault();
     if (ui.busy) return;
@@ -1473,8 +1532,14 @@ ${lines.join('\n\n')}`;
       }
       ai.keys[ai.provider] = cfg.key;
       persistAiSettings();
-      const mode = cats.includes('frames') ? 'svg' : ui.mode;
+      let mode = cats.includes('frames') && ui.mode === 'particles' ? 'svg' : ui.mode;
       if (mode !== ui.mode) CS.toast('Profile frames são desenhados no estilo Arte (SVG).', 'info');
+      // Modelo de IMAGEM escolhido num modo de código: ele escreve SVG muito mal — usa o modo Ilustração
+      if (mode !== 'raster' && /(^|[-/])image|gpt-image|dall-e|imagen/i.test(cfg.model)) {
+        mode = 'raster';
+        CS.toast(`"${cfg.model}" é um modelo de imagem: usando o modo Ilustração.`, 'info');
+      }
+      if (mode === 'raster') return generateIllustrations(prompt, cats, refs, cfg);
       setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está ${mode === 'svg' ? 'desenhando a arte' : 'montando'} do seu kit… ${mode === 'svg' ? 'isso pode levar até 1–2 minutos.' : 'isso leva alguns segundos.'}`);
       showSkeletons(cats.length);
       const req = { prompt, cats, mode, refs: refs.map((r) => ({ ...r })), images: [] };

@@ -434,15 +434,19 @@
   const SVG_TAGS = new Set(['svg', 'g', 'defs', 'style', 'title', 'desc', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon',
     'lineargradient', 'radialgradient', 'stop', 'clippath', 'mask', 'pattern', 'symbol', 'use', 'text', 'tspan', 'filter',
     'fegaussianblur', 'feoffset', 'feblend', 'fecolormatrix', 'fecomposite', 'feflood', 'femerge', 'femergenode', 'femorphology',
-    'feturbulence', 'fedisplacementmap', 'fedropshadow', 'fecomponenttransfer', 'fefunca', 'fefuncr', 'fefuncg', 'fefuncb']);
+    'feturbulence', 'fedisplacementmap', 'fedropshadow', 'fecomponenttransfer', 'fefunca', 'fefuncr', 'fefuncg', 'fefuncb', 'image']);
   const SVG_MAX = 60000;
+  /* SVG com ilustração embutida (modo Ilustração): só imagens raster em data: base64. */
+  const SVG_MAX_RASTER = 3000000;
+  const RASTER_HREF = /^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/=]+$/;
 
   /**
    * Limpa um SVG vindo da IA/link: só tags de desenho, sem scripts, eventos,
    * foreignObject, imagens ou recursos externos. Anima só com CSS (@keyframes).
    */
   function sanitizeSvg(text, cat) {
-    if (typeof text !== 'string' || !text.includes('<svg') || text.length > SVG_MAX) return '';
+    if (typeof text !== 'string' || !text.includes('<svg')) return '';
+    if (text.length > (/<image[\s>]/.test(text) ? SVG_MAX_RASTER : SVG_MAX)) return '';
     let doc;
     try { doc = new DOMParser().parseFromString(text, 'image/svg+xml'); } catch (e) { return ''; }
     const root = doc.documentElement;
@@ -452,10 +456,13 @@
         if (!SVG_TAGS.has(child.nodeName.toLowerCase())) { child.remove(); continue; }
         for (const attr of Array.from(child.attributes)) {
           const n = attr.name.toLowerCase(), v = attr.value;
+          const isImg = child.nodeName.toLowerCase() === 'image';
+          if (isImg && (n === 'href' || n === 'xlink:href') && RASTER_HREF.test(v.trim())) continue;
           if (n.startsWith('on') || n === 'src') child.removeAttribute(attr.name);
           else if ((n === 'href' || n === 'xlink:href') && !v.trim().startsWith('#')) child.removeAttribute(attr.name);
           else if (/url\(\s*['"]?(?!#)/i.test(v) || /javascript:|data:/i.test(v)) child.removeAttribute(attr.name);
         }
+        if (child.nodeName.toLowerCase() === 'image' && !RASTER_HREF.test((child.getAttribute('href') || child.getAttribute('xlink:href') || '').trim())) { child.remove(); continue; }
         if (child.nodeName.toLowerCase() === 'style') {
           child.textContent = child.textContent
             .replace(/@import[^;]*;?/gi, '')
@@ -947,9 +954,16 @@
       customEntries = customEntries.filter((e) => !drop.has(e.item.id));
       for (const cat in CATS) DATA[cat] = DATA[cat].filter((it) => !drop.has(it.id));
     }
-    try {
-      localStorage.setItem(CUSTOM_KEY, JSON.stringify(customEntries.map((e) => ({ c: e.cat, s: !!e.item._saved, t: e.item._createdAt, i: publicItem(e.item) }))));
-    } catch (e) { /* armazenamento indisponível */ }
+    // Ilustrações embutidas pesam (~100–300 KB): se o localStorage encher,
+    // guarda primeiro sem as ilustrações não salvas e, por fim, sem nenhuma.
+    const heavy = (e) => e.item.asset && e.item.asset.type === 'svg' && /<image[\s>]/.test(e.item.asset.svg || '');
+    const tries = [() => true, (e) => e.item._saved || equipped.has(e.item.id) || !heavy(e), (e) => !heavy(e)];
+    for (const keep of tries) {
+      try {
+        localStorage.setItem(CUSTOM_KEY, JSON.stringify(customEntries.filter(keep).map((e) => ({ c: e.cat, s: !!e.item._saved, t: e.item._createdAt, i: publicItem(e.item) }))));
+        break;
+      } catch (e) { /* cheio ou indisponível: tenta com menos */ }
+    }
   }
   const saveCustom = persistCustom;
   function loadCustom() {
