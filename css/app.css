@@ -478,3 +478,87 @@ input[type='color'].swatch::-moz-color-swatch { border: none; border-radius: 6px
 }
 .fade-in { animation: fadeIn .25s ease both; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Gerador IA ---------- */
+.tab-ai { color: #fff; background: linear-gradient(90deg, rgba(88, 101, 242, .35), rgba(235, 69, 158, .35)); }
+.tab-ai:hover { background: linear-gradient(90deg, rgba(88, 101, 242, .55), rgba(235, 69, 158, .55)); color: #fff; }
+.tab-ai[aria-selected='true'] { background: linear-gradient(90deg, #5865F2, #EB459E); }
+.tab-new {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #F23F43;
+  color: #fff;
+}
+.gen-orb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: conic-gradient(#5865F2, #EB459E, #FEE75C, #57F287, #00A8FC, #5865F2);
+  box-shadow: 0 0 14px rgba(235, 69, 158, .6);
+  animation: cs-spin 3s linear infinite;
+  display: inline-block;
+}
+.gen-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--dc-dark);
+  border: 1px solid rgba(255, 255, 255, .06);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dc-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: all .15s ease;
+}
+.gen-check:has(input:checked) { border-color: var(--dc-blurple); color: #fff; background: rgba(88, 101, 242, .18); }
+.gen-check input { accent-color: var(--dc-blurple); }
+.gen-chip {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  background: var(--dc-dark);
+  color: var(--dc-muted);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, .06);
+  transition: all .15s ease;
+}
+.gen-chip:hover { color: #fff; border-color: rgba(88, 101, 242, .6); }
+.is-loading .gen-btn-label { opacity: .85; }
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(255, 255, 255, .35);
+  border-top-color: #fff;
+  animation: cs-spin .7s linear infinite;
+  display: inline-block;
+}
+.gen-skeleton {
+  border-radius: 12px;
+  height: 330px;
+  background: linear-gradient(100deg, var(--dc-side) 30%, #35373C 50%, var(--dc-side) 70%);
+  background-size: 250% 100%;
+  animation: cs-sweep 1.4s linear infinite;
+  border: 1px solid rgba(255, 255, 255, .05);
+}
+.engine-badge {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 5;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, .55);
+  color: #DBDEE1;
+}
+.json-modal::backdrop { background: rgba(0, 0, 0, .7); }

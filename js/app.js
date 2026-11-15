@@ -7,14 +7,17 @@
 
   const DATA = window.COSMETICS_DATA;
   const STORAGE_KEY = 'cosmetic-studio:v1';
+  const CUSTOM_KEY = 'cosmetic-studio:custom:v1';
+  const CUSTOM_COLLECTION = 'Criações IA';
+  DATA.collections[CUSTOM_COLLECTION] = DATA.collections[CUSTOM_COLLECTION] || { color: '#57F287' };
 
   /* ---------------------------------------------------------------- */
   /* Configuração                                                      */
   /* ---------------------------------------------------------------- */
   const CATS = {
-    nameplates: { key: 'nameplate', label: 'Nameplates', singular: 'Nameplate', short: 'np' },
-    decorations: { key: 'decoration', label: 'Molduras de Avatar', singular: 'Moldura', short: 'deco' },
-    effects: { key: 'effect', label: 'Efeitos de Perfil', singular: 'Efeito', short: 'fx' },
+    nameplates: { key: 'nameplate', label: 'Nameplates', singular: 'Nameplate', short: 'np', g: 'a' },
+    decorations: { key: 'decoration', label: 'Molduras de Avatar', singular: 'Moldura', short: 'deco', g: 'a' },
+    effects: { key: 'effect', label: 'Efeitos de Perfil', singular: 'Efeito', short: 'fx', g: 'o' },
   };
   const CAT_BY_KEY = { nameplate: 'nameplates', decoration: 'decorations', effect: 'effects' };
 
@@ -181,6 +184,18 @@
       s.textContent = txt;
       return s;
     },
+    glyph: (o) => {
+      const motion = o.motion || 'fall';
+      const chars = Array.from(o.glyphs || '✦');
+      const s = el('span', 'p p-glyph p-glyph-' + motion, {
+        '--x': R(-5, 95) + '%', left: R(0, 92) + '%', top: R(0, 88) + '%',
+        '--s': R(10, 18) * o.size + 'px', '--d': (motion === 'fall' ? R(4, 8) : motion === 'rise' ? R(5, 9) : R(2, 4)) / o.speed + 's',
+        '--delay': -R(0, 8) + 's', '--drift': R(-15, 25) * o.wind + 'cqw', '--r': R(-50, 50) + 'deg',
+        '--dx': R(-12, 12) + 'cqw', '--dy': R(-12, 12) + 'cqh',
+      });
+      s.textContent = chars[Math.floor(Math.random() * chars.length)];
+      return s;
+    },
     orb: (o) => el('span', 'p p-orb', {
       left: R(0, 90) + '%', top: R(5, 90) + '%', '--s': R(14, 34) * o.size + 'px',
       '--d': R(4, 8) / o.speed + 's', '--delay': -R(0, 8) + 's', '--dx': R(-15, 15) + 'cqw', '--dy': R(-15, 15) + 'cqh',
@@ -198,6 +213,10 @@
           '--k': o.size, '--delay': -R(0, 3) + 's',
         });
         if (o.color) shape.style.setProperty('--c', o.color);
+        if (o.shape === 'glyph') {
+          const chars = Array.from(o.glyphs || '✦');
+          shape.textContent = chars[i % chars.length];
+        }
         item.appendChild(shape);
         wrap.appendChild(item);
       }
@@ -253,6 +272,8 @@
       img.decoding = 'async';
       if (a.staticSrc) img.style.position = 'absolute';
       layer.appendChild(img);
+    } else if (a.type === 'gen') {
+      buildGen(layer, a, cat);
     } else if (a.type === 'video') {
       const v = el('video', 'asset-anim');
       Object.assign(v, { src: a.src, autoplay: true, muted: true, loop: true, playsInline: true });
@@ -262,6 +283,215 @@
       (a.particles || []).forEach((spec) => spawnParticles(layer, spec));
     }
     return layer;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Cosméticos gerativos (asset.type = 'gen') — usados pelo Gerador IA */
+  /* ---------------------------------------------------------------- */
+  const GEN = {
+    styles: ['gradient', 'radial', 'nebula', 'aurora', 'scanlines', 'storm', 'pixelfire', 'solid', 'none'],
+    anims: ['none', 'shift', 'pulse', 'sweep', 'flash'],
+    speeds: { slow: 0.6, normal: 1, fast: 1.7 },
+    sizes: { small: 0.7, medium: 1, large: 1.45 },
+    rings: ['none', 'conic', 'dashed', 'double', 'glow', 'pixel', 'hud'],
+    kinds: ['petal', 'star', 'ember', 'streak', 'bolt', 'sparkle', 'sparkle-rise', 'warp', 'rain', 'orb', 'drop', 'ring', 'glyph'],
+    shapes: ['none', 'petal', 'blossom', 'flame', 'bolt', 'crystal', 'planet', 'star', 'pixel', 'glyph'],
+    motions: ['fall', 'rise', 'float', 'twinkle'],
+    counts: {
+      nameplates: { few: 4, some: 8, many: 13 },
+      decorations: { few: 5, some: 8, many: 12 },
+      effects: { few: 10, some: 22, many: 38 },
+    },
+    rarities: ['Raro', 'Épico', 'Lendário'],
+  };
+  const pick = (v, list, def) => (list.includes(v) ? v : def);
+  const cleanText = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+  const hexOr = (v, def) => (isHex(v) ? v.toUpperCase() : def);
+
+  function hexToHue(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    if (!d) return 0;
+    let h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return (h * 60 + 360) % 360;
+  }
+
+  /** Valida/normaliza a spec gerada (pela IA, pelo gerador local ou por um link). */
+  function sanitizeGenAsset(a, cat) {
+    a = a && typeof a === 'object' ? a : {};
+    const pal = a.palette || {};
+    const palette = {
+      primary: hexOr(pal.primary, '#5865F2'),
+      secondary: hexOr(pal.secondary, '#EB459E'),
+      accent: hexOr(pal.accent, '#FFFFFF'),
+      background: hexOr(pal.background, '#14151A'),
+    };
+    const base = a.base || {};
+    const layers = (Array.isArray(a.layers) ? a.layers : []).slice(0, 5).map((l) => {
+      l = l && typeof l === 'object' ? l : {};
+      return {
+        kind: pick(l.kind, GEN.kinds, 'sparkle'),
+        color: hexOr(l.color, palette.accent),
+        count: pick(l.count, ['few', 'some', 'many'], 'some'),
+        size: pick(l.size, Object.keys(GEN.sizes), 'medium'),
+        speed: pick(l.speed, Object.keys(GEN.speeds), 'normal'),
+        shape: pick(l.shape, GEN.shapes, 'none'),
+        motion: pick(l.motion, GEN.motions, 'fall'),
+        glyphs: Array.from(cleanText(l.glyphs, 40).replace(/\s/g, '')).slice(0, 8).join(''),
+      };
+    });
+    return {
+      type: 'gen',
+      palette,
+      base: {
+        style: pick(base.style, GEN.styles, cat === 'effects' ? 'none' : 'gradient'),
+        animation: pick(base.animation, GEN.anims, 'shift'),
+        speed: pick(base.speed, Object.keys(GEN.speeds), 'normal'),
+      },
+      ring: { style: pick(a.ring && a.ring.style, GEN.rings, cat === 'decorations' ? 'conic' : 'none') },
+      layers,
+    };
+  }
+
+  function sanitizeGenItem(cat, raw) {
+    if (!CATS[cat] || !raw || typeof raw !== 'object') return null;
+    const id = /^ai-[a-z0-9-]{4,40}$/.test(raw.id) ? raw.id : 'ai-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+    return {
+      id,
+      name: cleanText(raw.name, 40) || 'Criação IA',
+      collection: CUSTOM_COLLECTION,
+      rarity: pick(raw.rarity, GEN.rarities, 'Épico'),
+      description: cleanText(raw.description, 160),
+      tags: (Array.isArray(raw.tags) ? raw.tags : []).slice(0, 6).map((t) => cleanText(t, 24)).filter(Boolean),
+      prompt: cleanText(raw.prompt, 300),
+      engine: pick(raw.engine, ['claude', 'local'], 'local'),
+      asset: sanitizeGenAsset(raw.asset, cat),
+      _custom: true,
+    };
+  }
+
+  /** Converte uma camada da spec para o formato do sistema de partículas. */
+  function genLayerToSpec(l, cat, i) {
+    let kind = l.kind;
+    if (cat !== 'decorations' && kind === 'ring') kind = 'sparkle';
+    if (cat === 'decorations' && ['warp', 'rain', 'drop', 'streak'].includes(kind)) kind = 'sparkle';
+    const spec = {
+      kind,
+      color: l.color,
+      count: GEN.counts[cat][l.count],
+      size: GEN.sizes[l.size],
+      speed: GEN.speeds[l.speed],
+    };
+    if (kind === 'sparkle-rise') Object.assign(spec, { kind: 'sparkle', rise: true });
+    if (kind === 'glyph') Object.assign(spec, { glyphs: l.glyphs || '✦', motion: l.motion });
+    if (kind === 'ring') {
+      const shape = l.shape === 'none' ? (l.glyphs ? 'glyph' : 'star') : l.shape;
+      Object.assign(spec, {
+        shape,
+        glyphs: l.glyphs || '✦',
+        radius: i % 2 ? 48 : 44.5,
+        spin: { slow: 32, normal: 18, fast: 8 }[l.speed],
+        reverse: i % 2 === 1,
+        offset: i * 17,
+      });
+    }
+    if (cat === 'nameplates' && (kind === 'petal' || (kind === 'glyph' && l.motion === 'fall'))) {
+      spec.speed *= 2.2;
+      spec.wind = 2;
+    }
+    return spec;
+  }
+
+  function buildGen(layer, a, cat) {
+    const p = a.palette;
+    const spd = GEN.speeds[a.base.speed];
+    layer.classList.add('gen', 'gen-cat-' + cat);
+    setVars(layer, {
+      '--g1': p.primary, '--g2': p.secondary, '--g3': p.accent, '--gbg': p.background,
+      '--gs': (7 / spd).toFixed(2) + 's', '--rs': (4 / spd).toFixed(2) + 's',
+      '--hue': Math.round(hexToHue(p.primary) - 22) + 'deg',
+    });
+    if (cat === 'decorations') {
+      const r = a.ring.style;
+      if (r === 'dashed') spawnParticles(layer, { kind: 'svgring', radius: 44, width: 1.4, dash: '6 4', color: p.primary, spin: 10 / spd, glow: true });
+      else if (r === 'double') {
+        spawnParticles(layer, { kind: 'svgring', radius: 43.5, width: 1.6, color: p.primary, spin: 0, glow: true });
+        spawnParticles(layer, { kind: 'svgring', radius: 48, width: 0.7, dash: '2 4', color: p.secondary, spin: 14 / spd, reverse: true, glow: true });
+      } else if (r !== 'none') layer.appendChild(el('span', 'gen-ring gen-ring-' + r));
+    } else if (a.base.style !== 'none') {
+      const b = el('span', 'gen-base gen-' + a.base.style + (a.base.animation === 'shift' || a.base.animation === 'pulse' ? ' gen-anim-' + a.base.animation : ''));
+      layer.appendChild(b);
+      if (a.base.animation === 'sweep') layer.appendChild(el('span', 'gen-base gen-sweep'));
+      if (a.base.animation === 'flash') layer.appendChild(el('span', 'gen-base gen-flash'));
+    }
+    a.layers.forEach((l, i) => spawnParticles(layer, genLayerToSpec(l, cat, i)));
+  }
+
+  /* Armazenamento das criações (localStorage) */
+  let customEntries = []; // { cat, item }
+
+  function registerCustom(cat, item, { saved = false } = {}) {
+    item._custom = true;
+    item._saved = !!saved;
+    item._createdAt = item._createdAt || Date.now();
+    DATA[cat].push(item);
+    customEntries.push({ cat, item });
+    persistCustom();
+    return item;
+  }
+  function persistCustom() {
+    // Mantém todas as salvas + equipadas + as 24 mais recentes
+    const equipped = new Set([state.nameplate, state.decoration, state.effect]);
+    const unsaved = customEntries.filter((e) => !e.item._saved && !equipped.has(e.item.id));
+    const drop = new Set(unsaved.slice(0, Math.max(0, unsaved.length - 24)).map((e) => e.item.id));
+    if (drop.size) {
+      customEntries = customEntries.filter((e) => !drop.has(e.item.id));
+      for (const cat in CATS) DATA[cat] = DATA[cat].filter((it) => !drop.has(it.id));
+    }
+    try {
+      localStorage.setItem(CUSTOM_KEY, JSON.stringify(customEntries.map((e) => ({ c: e.cat, s: !!e.item._saved, t: e.item._createdAt, i: publicItem(e.item) }))));
+    } catch (e) { /* armazenamento indisponível */ }
+  }
+  const saveCustom = persistCustom;
+  function loadCustom() {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]'); } catch (e) { list = []; }
+    (Array.isArray(list) ? list : []).forEach((e) => {
+      const item = sanitizeGenItem(e && e.c, e && e.i);
+      if (!item || findItem(e.c, item.id)) return;
+      item._saved = !!e.s;
+      item._createdAt = e.t || Date.now();
+      DATA[e.c].push(item);
+      customEntries.push({ cat: e.c, item });
+    });
+  }
+  function deleteCustom(id) {
+    const entry = customEntries.find((e) => e.item.id === id);
+    if (!entry) return;
+    const key = CATS[entry.cat].key;
+    if (state[key] === id) state[key] = null;
+    customEntries = customEntries.filter((e) => e !== entry);
+    DATA[entry.cat] = DATA[entry.cat].filter((it) => it.id !== id);
+    persistCustom();
+    commit();
+    renderGallery();
+    toast(`“${entry.item.name}” excluída.`, 'info');
+  }
+  /** Versão do item sem campos internos (para link/JSON/exportação). */
+  function publicItem(it) {
+    const { _custom, _saved, _createdAt, ...rest } = it;
+    return rest;
+  }
+  function b64urlEncode(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    bytes.forEach((b) => { bin += String.fromCharCode(b); });
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function b64urlDecode(s) {
+    const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+    return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
   }
 
   /* ---------------------------------------------------------------- */
@@ -312,12 +542,31 @@
     if (state.nameplate) p.set('np', state.nameplate);
     if (state.decoration) p.set('deco', state.decoration);
     if (state.effect) p.set('fx', state.effect);
+    const custom = [];
+    for (const key of ['nameplate', 'decoration', 'effect']) {
+      const cat = CAT_BY_KEY[key];
+      const it = findItem(cat, state[key]);
+      if (it && it._custom) custom.push({ c: cat, i: publicItem(it) });
+    }
+    if (custom.length) p.set('g', b64urlEncode(JSON.stringify(custom)));
     return p.toString();
   }
   function fromHash() {
     const h = location.hash.replace(/^#/, '');
     if (!h || !/(^|&)(np|deco|fx|n)=/.test(h)) return null;
     const p = new URLSearchParams(h);
+    if (p.get('g')) {
+      try {
+        const list = JSON.parse(b64urlDecode(p.get('g')));
+        (Array.isArray(list) ? list.slice(0, 3) : []).forEach((e) => {
+          if (!CATS[e.c]) return;
+          const item = sanitizeGenItem(e.c, e.i);
+          if (item && !findItem(e.c, item.id)) registerCustom(e.c, item, { saved: false });
+        });
+      } catch (err) {
+        console.warn('[Cosmetic Studio] link com criações inválido', err);
+      }
+    }
     return {
       name: p.get('n') ?? undefined,
       avatar: p.get('a'),
@@ -373,7 +622,7 @@
   }
   function filtered(cat) {
     const q = normalize(ui.query).trim();
-    return DATA[cat].filter((it) => matches(it, q));
+    return DATA[cat].filter((it) => !(it._custom && !it._saved) && matches(it, q));
   }
 
   function renderTabs() {
@@ -388,6 +637,13 @@
       b.innerHTML = `<span>${CATS[cat].label}</span><span class="tab-count">${filtered(cat).length}</span>`;
       tabs.appendChild(b);
     }
+    const g = el('button', 'tab-btn tab-ai');
+    g.type = 'button';
+    g.setAttribute('role', 'tab');
+    g.setAttribute('aria-selected', String(ui.tab === 'generator'));
+    g.dataset.tab = 'generator';
+    g.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 2c.5 4 2.6 6.1 6.6 6.6-4 .5-6.1 2.6-6.6 6.6-.5-4-2.6-6.1-6.6-6.6C7.4 8.1 9.5 6 10 2Z"/><path d="M18 13c.3 2.3 1.5 3.5 3.8 3.8-2.3.3-3.5 1.5-3.8 3.8-.3-2.3-1.5-3.5-3.8-3.8 2.3-.3 3.5-1.5 3.8-3.8Z"/></svg><span>Gerador IA</span><span class="tab-new">NOVO</span>';
+    tabs.appendChild(g);
     $$('.rail-btn[data-tab]').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === ui.tab));
   }
 
@@ -439,11 +695,12 @@
     return wrap;
   }
 
-  function buildCard(cat, item) {
+  function buildCard(cat, item, { variant = 'gallery' } = {}) {
     const coll = DATA.collections[item.collection] || { color: '#B5BAC1' };
     const rar = DATA.rarities[item.rarity] || { color: '#B5BAC1' };
     const card = el('article', 'cosmetic-card hover-host fade-in rounded-xl bg-dc-side border border-white/5 overflow-hidden flex flex-col');
     card.dataset.id = item.id;
+    card.dataset.cat = cat;
     card.appendChild(cardPreview(cat, item));
     card.insertAdjacentHTML('beforeend', `
       <span class="equipped-badge hidden"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Equipado</span>
@@ -455,14 +712,29 @@
         <p class="text-xs text-dc-muted leading-snug">${escapeHtml(item.description || '')}</p>
         <div class="mt-auto pt-2 flex items-center justify-between gap-2">
           <button type="button" class="tag" style="--tag:${coll.color}" data-collection="${escapeHtml(item.collection)}" title="Filtrar pela coleção ${escapeHtml(item.collection)}">#${escapeHtml(item.collection)}</button>
-          <button type="button" class="btn btn-sm btn-primary btn-try" data-id="${escapeHtml(item.id)}">Testar no Perfil</button>
+          <button type="button" class="btn btn-sm btn-primary btn-try" data-id="${escapeHtml(item.id)}" data-cat="${cat}">Testar no Perfil</button>
         </div>
+        ${variant === 'gen' ? `
+        <div class="flex flex-wrap gap-1.5 pt-1 border-t border-white/5 mt-1">
+          <button type="button" class="btn btn-sm btn-ghost !px-2 gen-save" data-id="${escapeHtml(item.id)}">${item._saved ? '★ Salvo' : '☆ Salvar'}</button>
+          <button type="button" class="btn btn-sm btn-ghost !px-2 gen-vary" data-id="${escapeHtml(item.id)}">🎲 Variar</button>
+          <button type="button" class="btn btn-sm btn-ghost !px-2 gen-json" data-id="${escapeHtml(item.id)}">{ } JSON</button>
+        </div>` : ''}
+        ${variant === 'gallery' && item._custom ? `<button type="button" class="self-start text-[11px] text-dc-faint hover:text-dc-red gen-delete" data-id="${escapeHtml(item.id)}">Excluir criação</button>` : ''}
       </div>`);
     return card;
   }
 
   function renderGrid() {
     const grid = $('#grid');
+    const isGen = ui.tab === 'generator';
+    $('#generator-panel').classList.toggle('hidden', !isGen);
+    ['#grid', '#collection-chips', '#results-row'].forEach((s) => $(s).classList.toggle('hidden', isGen));
+    if (isGen) {
+      $('#empty').classList.add('hidden');
+      document.dispatchEvent(new CustomEvent('cs:generator-open'));
+      return;
+    }
     const items = filtered(ui.tab);
     grid.innerHTML = '';
     const frag = document.createDocumentFragment();
@@ -508,8 +780,8 @@
   }
 
   function updateCardStates() {
-    const key = CATS[ui.tab].key;
-    $$('#grid .cosmetic-card').forEach((card) => {
+    $$('.cosmetic-card[data-cat]').forEach((card) => {
+      const key = CATS[card.dataset.cat].key;
       const on = state[key] === card.dataset.id;
       card.classList.toggle('is-equipped', on);
       card.querySelector('.equipped-badge').classList.toggle('hidden', !on);
@@ -753,9 +1025,9 @@
     const removing = state[key] === id;
     state[key] = removing ? null : id;
     commit();
-    if (removing) toast(`${CATS[cat].singular} “${item.name}” removida do perfil.`, 'info');
+    if (removing) toast(`${CATS[cat].singular} “${item.name}” removid${CATS[cat].g} do perfil.`, 'info');
     else {
-      toast(`${CATS[cat].singular} “${item.name}” aplicada ao perfil!`, 'success');
+      toast(`${CATS[cat].singular} “${item.name}” aplicad${CATS[cat].g} ao perfil!`, 'success');
       pulsePreview();
     }
   }
@@ -768,7 +1040,7 @@
   }
 
   function setTab(tab) {
-    if (!CATS[tab] || tab === ui.tab) return;
+    if ((!CATS[tab] && tab !== 'generator') || tab === ui.tab) return;
     ui.tab = tab;
     renderTabs();
     renderGrid();
@@ -894,7 +1166,9 @@
 
     $('#grid').addEventListener('click', (e) => {
       const tryBtn = e.target.closest('.btn-try');
-      if (tryBtn) return toggleEquip(ui.tab, tryBtn.dataset.id);
+      if (tryBtn) return toggleEquip(tryBtn.dataset.cat, tryBtn.dataset.id);
+      const del = e.target.closest('.gen-delete');
+      if (del) return deleteCustom(del.dataset.id);
       const tag = e.target.closest('[data-collection]');
       if (tag) {
         ui.collection = tag.dataset.collection;
@@ -1008,6 +1282,7 @@
   /* Inicialização                                                     */
   /* ---------------------------------------------------------------- */
   function init() {
+    loadCustom();
     const fromLink = fromHash();
     if (fromLink) {
       // Link compartilhado: aplica exatamente a combinação recebida
@@ -1035,5 +1310,17 @@
   else init();
 
   // Exposto para depuração / extensões
-  window.CosmeticStudio = { buildAsset, get state() { return { ...state }; } };
+  window.CosmeticStudio = {
+    CATS, DATA, GEN, buildAsset, buildCard, toast, syncUserBits, updateCardStates, findItem,
+    sanitizeGenItem, registerCustom, saveCustom, deleteCustom, publicItem,
+    equip: (cat, id) => toggleEquip(cat, id),
+    setSaved(cat, id, saved) {
+      const it = findItem(cat, id);
+      if (!it) return;
+      it._saved = !!saved;
+      persistCustom();
+      renderTabs();
+    },
+    get state() { return { ...state }; },
+  };
 })();

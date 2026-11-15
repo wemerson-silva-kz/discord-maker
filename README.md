@@ -26,6 +26,34 @@ python3 -m http.server 8080
 - **Limpar Tudo**, **Copiar Link da Combinação** (estado codificado no `#hash` da URL) e **Salvar Print** (simulado, com flash e toast).
 - O estado fica salvo no `localStorage`.
 
+## Gerador de cosméticos com IA ✨
+
+A aba **Gerador IA** cria nameplates, molduras e efeitos de perfil **animados** a partir de uma descrição ("dragão de jade cuspindo fogo verde", "café lo-fi numa tarde chuvosa"…).
+
+- **Motor Claude (IA):** cole sua chave da API da Anthropic (fica só no seu navegador). O app chama o modelo `claude-opus-5-5` direto do navegador pelo SDK oficial (`@anthropic-ai/sdk`, com `dangerouslyAllowBrowser`) e usa **saída estruturada (JSON Schema)** para receber uma especificação válida de cada item. Cada geração consome créditos da sua conta.
+- **Motor Local (offline):** gerador procedural por palavras-chave (fogo, gelo, galáxia, neon, Halloween, oceano…), instantâneo e sem internet. Temas desconhecidos ganham uma paleta derivada do texto.
+
+Nos resultados você pode **Testar no Perfil**, **Salvar** (entra na galeria, coleção *Criações IA*), **Variar** (nova paleta/ritmo) e ver o **JSON** para colar em `js/data.js`. O "Copiar Link" inclui as criações equipadas, então quem abrir o link vê exatamente o mesmo kit.
+
+> Como a chave é usada no navegador, use o motor Claude apenas na sua própria máquina. Para publicar o site para outras pessoas, o ideal é mover a chamada para um backend.
+
+### Spec gerativa (`asset.type: 'gen'`)
+
+```js
+asset: {
+  type: 'gen',
+  palette: { primary: '#2BE38B', secondary: '#9BFF6B', accent: '#E8FFF4', background: '#04170F' },
+  base: { style: 'pixelfire', animation: 'sweep', speed: 'normal' }, // gradient | radial | nebula | aurora | scanlines | storm | pixelfire | solid | none
+  ring: { style: 'conic' },                                         // molduras: conic | dashed | double | glow | pixel | hud | none
+  layers: [
+    { kind: 'ember', color: '#9BFF6B', count: 'many', size: 'medium', speed: 'fast', shape: 'none', motion: 'fall', glyphs: '' },
+    { kind: 'glyph', color: '#2BE38B', count: 'few', size: 'small', speed: 'normal', shape: 'none', motion: 'float', glyphs: '🐉' },
+  ],
+}
+```
+
+Toda spec (da IA, do gerador local ou de um link) passa por validação: cores só em hex, valores só das listas permitidas e textos limpos, sem HTML.
+
 ## Estrutura
 
 ```
@@ -34,6 +62,7 @@ css/app.css         Interface (botões, abas, toasts, status…)
 css/cosmetics.css   Todas as animações dos cosméticos + partículas
 js/data.js          CATÁLOGO DE ITENS — edite aqui
 js/app.js           Renderização, estado, partículas e eventos
+js/ai-generator.js  Gerador IA (Claude + motor local)
 ```
 
 ## Trocando os efeitos CSS por imagens reais

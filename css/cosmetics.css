@@ -662,3 +662,170 @@
 @media (prefers-reduced-motion: reduce) {
   .p, .p-ring, .p-svgring, .ring-shape { animation-duration: 0s !important; animation-iteration-count: 1 !important; }
 }
+
+/* ==========================================================================
+   COSMÉTICOS GERATIVOS (asset.type = 'gen') — Gerador IA
+   Cores vêm das variáveis --g1 (primária), --g2 (secundária), --g3 (destaque)
+   e --gbg (fundo); velocidade via --gs / --rs.
+   ========================================================================== */
+@keyframes cs-gen-shift { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+@keyframes cs-pulse-soft { 0%, 100% { opacity: .22; } 50% { opacity: .5; } }
+
+.gen-base { position: absolute; inset: 0; }
+.gen-gradient {
+  background: linear-gradient(110deg, var(--gbg) 0%, var(--g1) 35%, var(--g2) 65%, var(--g3) 100%);
+  background-size: 220% 100%;
+}
+.gen-radial {
+  background:
+    radial-gradient(ellipse 55% 140% at 85% 50%, var(--g1), transparent 70%),
+    radial-gradient(ellipse 40% 120% at 15% 50%, color-mix(in srgb, var(--g2) 70%, transparent), transparent 70%),
+    var(--gbg);
+  background-size: 160% 100%, 160% 100%, 100% 100%;
+}
+.gen-nebula {
+  background:
+    radial-gradient(ellipse 40% 90% at 20% 50%, color-mix(in srgb, var(--g1) 80%, transparent), transparent 70%),
+    radial-gradient(ellipse 35% 80% at 75% 40%, color-mix(in srgb, var(--g2) 70%, transparent), transparent 70%),
+    radial-gradient(ellipse 30% 70% at 50% 100%, color-mix(in srgb, var(--g3) 55%, transparent), transparent 70%),
+    var(--gbg);
+  background-size: 200% 100%, 200% 100%, 200% 100%, 100% 100%;
+}
+.gen-aurora { background: var(--gbg); overflow: hidden; }
+.gen-aurora::before {
+  content: '';
+  position: absolute;
+  inset: -40% -30%;
+  background: linear-gradient(100deg, transparent 15%, var(--g1) 28%, transparent 40%, var(--g2) 55%, transparent 68%, var(--g3) 82%, transparent 95%);
+  background-size: 200% 100%;
+  filter: blur(10px);
+  opacity: .7;
+  animation: cs-aurora var(--gs) ease-in-out infinite alternate;
+}
+.gen-scanlines {
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, .07) 0 1px, transparent 1px 3px),
+    linear-gradient(90deg, var(--gbg), var(--g1) 60%, var(--g2));
+  box-shadow: inset 0 -2px 0 var(--g2), inset 0 0 18px color-mix(in srgb, var(--g2) 35%, transparent);
+}
+.gen-scanlines.gen-anim-shift { animation: cs-scan .6s linear infinite; }
+.gen-storm { background: linear-gradient(90deg, var(--gbg), var(--g1)); }
+.gen-storm::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 50% 130% at 75% 0%, var(--g3), transparent 70%);
+  opacity: 0;
+  animation: cs-flash 3.4s linear infinite;
+}
+.gen-pixelfire { background: linear-gradient(0deg, color-mix(in srgb, var(--g1) 35%, #000), var(--gbg)); overflow: hidden; }
+.gen-pixelfire::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(60%, 30px);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='24' shape-rendering='crispEdges'%3E%3Cpath fill='%23FF3D00' d='M0 24V12h4V8h4v4h4V4h4v8h4V8h4V0h4v12h4v12z'/%3E%3Cpath fill='%23FF9100' d='M0 24v-6h4v-4h4v4h4v-6h4v6h4v-4h4v-6h4v10h4v6z'/%3E%3Cpath fill='%23FFD600' d='M0 24v-2h4v-2h4v2h4v-4h4v4h4v-2h4v-4h4v6h4v2z'/%3E%3C/svg%3E") left bottom / auto 100% repeat-x;
+  image-rendering: pixelated;
+  filter: hue-rotate(var(--hue, 0deg));
+  animation: cs-pixelflame 1s steps(8) infinite;
+}
+.gen-solid { background: linear-gradient(90deg, var(--gbg), color-mix(in srgb, var(--g1) 45%, var(--gbg))); }
+.gen-anim-shift { animation: cs-gen-shift var(--gs) ease-in-out infinite alternate; }
+.gen-anim-pulse { animation: cs-pulse var(--gs) ease-in-out infinite; }
+.gen-sweep {
+  background: linear-gradient(105deg, transparent 35%, color-mix(in srgb, var(--g3) 60%, transparent) 50%, transparent 65%);
+  background-size: 250% 100%;
+  mix-blend-mode: screen;
+  animation: cs-sweep var(--gs) linear infinite;
+}
+.gen-flash {
+  background: radial-gradient(ellipse 60% 120% at 70% 0%, var(--g3), transparent 70%);
+  opacity: 0;
+  animation: cs-flash 3.2s linear infinite;
+}
+/* Em efeitos de perfil a base vira um "tingimento" nas bordas do card */
+.gen-cat-effects > .gen-base {
+  opacity: .4;
+  -webkit-mask-image: linear-gradient(180deg, #000, transparent 38%, transparent 62%, #000);
+          mask-image: linear-gradient(180deg, #000, transparent 38%, transparent 62%, #000);
+}
+.gen-cat-effects > .gen-anim-pulse { animation-name: cs-pulse-soft; }
+.gen-cat-effects > .gen-sweep, .gen-cat-effects > .gen-flash { opacity: 0; }
+
+/* Anéis das molduras geradas */
+.gen-ring { position: absolute; border-radius: 50%; }
+.gen-ring-conic {
+  inset: 7%;
+  background: conic-gradient(var(--g1), var(--g2), var(--g3), var(--g1));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4.5cqw), #000 calc(100% - 4cqw));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 4.5cqw), #000 calc(100% - 4cqw));
+  filter: drop-shadow(0 0 1.5cqw var(--g1)) drop-shadow(0 0 3cqw var(--g2));
+  animation: cs-spin var(--rs) linear infinite;
+}
+.gen-ring-glow {
+  inset: 8.5%;
+  box-shadow: 0 0 0 1.4cqw var(--g1), 0 0 5cqw var(--g2), inset 0 0 3cqw color-mix(in srgb, var(--g3) 50%, transparent);
+  animation: cs-pulse 2.4s ease-in-out infinite;
+}
+.gen-ring-pixel {
+  inset: 8.5%;
+  border: 2.4cqw solid var(--g1);
+  box-shadow: 0 0 3cqw var(--g2), inset 0 0 2cqw var(--g3);
+  animation: cs-pulse .8s steps(2) infinite;
+}
+.gen-ring-hud {
+  inset: 0;
+  border-radius: 0;
+  --b: 1.8cqw;
+  --l: 14cqw;
+  background:
+    linear-gradient(var(--g1), var(--g1)) left top / var(--l) var(--b) no-repeat,
+    linear-gradient(var(--g1), var(--g1)) left top / var(--b) var(--l) no-repeat,
+    linear-gradient(var(--g2), var(--g2)) right top / var(--l) var(--b) no-repeat,
+    linear-gradient(var(--g2), var(--g2)) right top / var(--b) var(--l) no-repeat,
+    linear-gradient(var(--g2), var(--g2)) left bottom / var(--l) var(--b) no-repeat,
+    linear-gradient(var(--g2), var(--g2)) left bottom / var(--b) var(--l) no-repeat,
+    linear-gradient(var(--g1), var(--g1)) right bottom / var(--l) var(--b) no-repeat,
+    linear-gradient(var(--g1), var(--g1)) right bottom / var(--b) var(--l) no-repeat;
+  filter: drop-shadow(0 0 1.2cqw var(--g1));
+  animation: cs-hud 1.6s ease-in-out infinite;
+}
+.gen-ring-hud::after {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  border: 1.2cqw solid var(--g1);
+  border-left-color: transparent;
+  border-right-color: var(--g2);
+  animation: cs-spin var(--rs) linear infinite;
+}
+
+/* Glifos / emojis */
+.p-glyph {
+  line-height: 1;
+  font-size: var(--s);
+  color: var(--c, #fff);
+  text-shadow: 0 0 6px var(--c, #fff);
+  user-select: none;
+}
+.p-glyph-fall { left: var(--x); top: calc(var(--s) * -1.6); animation: cs-fall var(--d) linear var(--delay) infinite; }
+.p-glyph-rise { left: var(--x); top: 100% !important; animation: cs-float-up var(--d) linear var(--delay) infinite; }
+.p-glyph-float { animation: cs-orb var(--d) ease-in-out var(--delay) infinite alternate; }
+.p-glyph-twinkle { animation: cs-twinkle var(--d) ease-in-out var(--delay) infinite; }
+.shape-glyph {
+  --w: calc(11cqw * var(--k, 1));
+  --h: calc(11cqw * var(--k, 1));
+  display: grid;
+  place-items: center;
+  font-size: calc(9cqw * var(--k, 1));
+  line-height: 1;
+  color: var(--c, #fff);
+  text-shadow: 0 0 1.5cqw var(--c, #fff);
+  animation: cs-bob 2.4s ease-in-out var(--delay) infinite;
+}
+/* Partículas de cor fixa seguem a paleta quando o item é gerado */
+.gen .shape-flame { filter: hue-rotate(var(--hue, 0deg)) drop-shadow(0 0 1.5cqw var(--g1)); }
+.gen .p-ember { box-shadow: 0 0 6px 1px var(--c, #FF5A00); }
