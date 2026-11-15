@@ -1,0 +1,831 @@
+/* ==========================================================================
+   COSMETIC STUDIO — Animações dos cosméticos
+   Cada classe aqui é referenciada por `asset.className` em js/data.js.
+   Unidades cqw/cqh = % do tamanho da camada (container queries), assim o
+   mesmo efeito funciona no card da galeria, na lista e no popout.
+   ========================================================================== */
+
+/* ---------- Camadas base ---------- */
+.cosmetic-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  container-type: size;
+  border-radius: inherit;
+}
+.deco-layer {
+  position: absolute;
+  inset: -12%;
+  pointer-events: none;
+  container-type: size;
+  z-index: 2;
+}
+.cosmetic-layer > img,
+.cosmetic-layer > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.deco-layer > img,
+.deco-layer > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.asset-anim, .asset-static { transition: opacity .2s ease; }
+.is-paused.has-static > .asset-anim { opacity: 0; }
+.hover-host:hover .is-paused.has-static > .asset-anim,
+.force-anim .is-paused.has-static > .asset-anim { opacity: 1; }
+.hover-host:hover .is-paused.has-static > .asset-static,
+.force-anim .is-paused.has-static > .asset-static { opacity: 0; }
+
+/* ---------- Pausa / Hover ---------- */
+.is-paused, .is-paused::before, .is-paused::after,
+.is-paused *, .is-paused *::before, .is-paused *::after {
+  animation-play-state: paused !important;
+}
+.hover-host:hover .is-paused, .hover-host:hover .is-paused::before, .hover-host:hover .is-paused::after,
+.hover-host:hover .is-paused *, .hover-host:hover .is-paused *::before, .hover-host:hover .is-paused *::after,
+.force-anim .is-paused, .force-anim .is-paused::before, .force-anim .is-paused::after,
+.force-anim .is-paused *, .force-anim .is-paused *::before, .force-anim .is-paused *::after {
+  animation-play-state: running !important;
+}
+@media (hover: none) {
+  .is-paused, .is-paused::before, .is-paused::after,
+  .is-paused *, .is-paused *::before, .is-paused *::after { animation-play-state: running !important; }
+  .is-paused.has-static > .asset-anim { opacity: 1; }
+  .is-paused.has-static > .asset-static { opacity: 0; }
+}
+
+/* ---------- Keyframes compartilhados ---------- */
+@keyframes cs-spin { to { transform: rotate(360deg); } }
+@keyframes cs-fall {
+  0%   { transform: translate3d(0, 0, 0) rotate(0deg); }
+  100% { transform: translate3d(var(--drift), calc(100cqh + var(--s) * 3), 0) rotate(var(--r)); }
+}
+@keyframes cs-twinkle {
+  0%, 100% { opacity: .15; transform: scale(.6); }
+  50%      { opacity: 1; transform: scale(1.15); }
+}
+@keyframes cs-rise {
+  0%   { transform: translate3d(0, 0, 0); opacity: 0; }
+  10%  { opacity: 1; }
+  75%  { opacity: .9; }
+  100% { transform: translate3d(var(--drift), -110cqh, 0); opacity: 0; }
+}
+@keyframes cs-streak {
+  from { transform: translateX(-50cqw); }
+  to   { transform: translateX(150cqw); }
+}
+@keyframes cs-bolt {
+  0%, 82%, 100% { opacity: 0; }
+  83% { opacity: 1; }
+  85% { opacity: .25; }
+  87% { opacity: 1; }
+  91% { opacity: 0; }
+}
+@keyframes cs-sparkle {
+  0%, 100% { transform: scale(0) rotate(0deg); opacity: 0; }
+  50%      { transform: scale(1) rotate(90deg); opacity: 1; }
+}
+@keyframes cs-float-up {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(var(--drift, 0), -120cqh, 0); }
+}
+@keyframes cs-warp {
+  0%   { transform: rotate(var(--a)) translateY(2cqmin) scaleY(.1); opacity: 0; }
+  15%  { opacity: 1; }
+  100% { transform: rotate(var(--a)) translateY(75cqmax) scaleY(1.6); opacity: 0; }
+}
+@keyframes cs-rain {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(115cqh); }
+}
+@keyframes cs-drop {
+  from { transform: translate3d(0, -20cqh, 0) rotate(12deg); }
+  to   { transform: translate3d(-22cqh, 120cqh, 0) rotate(12deg); }
+}
+@keyframes cs-orb {
+  from { transform: translate(0, 0) scale(.8); opacity: .25; }
+  to   { transform: translate(var(--dx), var(--dy)) scale(1.2); opacity: .95; }
+}
+@keyframes cs-flash {
+  0%, 86%, 100% { opacity: 0; }
+  87%   { opacity: .85; }
+  88.5% { opacity: .15; }
+  90%   { opacity: .6; }
+  93%   { opacity: 0; }
+}
+@keyframes cs-sweep { from { background-position: 180% 0; } to { background-position: -80% 0; } }
+@keyframes cs-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@keyframes cs-flicker { 0%, 100% { opacity: 1; } 8% { opacity: .35; } 10% { opacity: 1; } 52% { opacity: .65; } 54% { opacity: 1; } }
+@keyframes cs-sway { 0%, 100% { transform: rotate(-18deg); } 50% { transform: rotate(18deg); } }
+@keyframes cs-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2cqw); } }
+@keyframes cs-flame {
+  0%   { transform: scale(1, 1); }
+  25%  { transform: scale(1.1, .8); }
+  50%  { transform: scale(.95, 1.15); }
+  75%  { transform: scale(1.05, .9); }
+  100% { transform: scale(1, 1); }
+}
+@keyframes cs-outward {
+  0%   { transform: translateY(0); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translateY(-12cqw); opacity: 0; }
+}
+@keyframes cs-scan { to { background-position: 0 3px, 0 0; } }
+@keyframes cs-pixelflame { from { background-position-x: 0; } to { background-position-x: 32px; } }
+@keyframes cs-pixelflame-lg { from { background-position-x: 0; } to { background-position-x: 48px; } }
+@keyframes cs-nebula {
+  from { background-position: 0% 0, 100% 0, 30% 0, 0 0; }
+  to   { background-position: 100% 0, 0% 0, 70% 0, 0 0; }
+}
+@keyframes cs-aurora {
+  0%   { transform: translateX(-12%) skewX(-12deg); background-position: 0% 50%; }
+  100% { transform: translateX(12%) skewX(12deg); background-position: 100% 50%; }
+}
+@keyframes cs-rainfall { to { background-position: -22px 0; } }
+@keyframes cs-glitch {
+  0%   { clip-path: inset(10% 0 82% 0); transform: translateX(-4px); opacity: .9; }
+  15%  { clip-path: inset(62% 0 26% 0); transform: translateX(5px); }
+  30%  { clip-path: inset(35% 0 58% 0); transform: translateX(-2px); opacity: .3; }
+  45%  { clip-path: inset(80% 0 6% 0);  transform: translateX(3px); opacity: .9; }
+  60%  { clip-path: inset(4% 0 90% 0);  transform: translateX(-6px); }
+  75%  { clip-path: inset(48% 0 44% 0); transform: translateX(2px); opacity: 0; }
+  100% { clip-path: inset(20% 0 70% 0); transform: translateX(0); opacity: .7; }
+}
+@keyframes cs-hud { 0%, 100% { opacity: .9; transform: scale(1); } 50% { opacity: .5; transform: scale(.96); } }
+
+/* ==========================================================================
+   PARTÍCULAS (geradas por js/app.js)
+   ========================================================================== */
+.p { position: absolute; display: block; pointer-events: none; will-change: transform, opacity; }
+
+.p-petal {
+  left: var(--x);
+  top: calc(var(--s) * -1.6);
+  width: var(--s);
+  height: calc(var(--s) * .72);
+  background: linear-gradient(135deg, #FFF0F6, var(--c, #FFB3D1));
+  border-radius: 100% 0 100% 0;
+  opacity: .92;
+  filter: drop-shadow(0 0 2px rgba(255, 150, 200, .6));
+  animation: cs-fall var(--d) linear var(--delay) infinite;
+}
+.p-star {
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: var(--c, #fff);
+  box-shadow: 0 0 calc(var(--s) * 2.5) var(--c, #fff);
+  animation: cs-twinkle var(--d) ease-in-out var(--delay) infinite;
+}
+.p-ember {
+  left: var(--x);
+  bottom: -6px;
+  width: var(--s);
+  height: var(--s);
+  background: var(--c, #FFC400);
+  box-shadow: 0 0 6px 1px #FF5A00;
+  animation: cs-rise var(--d) steps(14) var(--delay) infinite;
+}
+.p-streak {
+  left: 0;
+  height: 2px;
+  width: var(--w);
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--c, #00F0FF));
+  box-shadow: 0 0 8px var(--c, #00F0FF);
+  animation: cs-streak var(--d) linear var(--delay) infinite;
+}
+.p-bolt {
+  left: var(--x);
+  top: 0;
+  height: 100%;
+  width: var(--w);
+  opacity: 0;
+  overflow: visible;
+  filter: drop-shadow(0 0 3px var(--c, #9FD4FF)) drop-shadow(0 0 9px var(--c, #4AA3FF));
+  animation: cs-bolt var(--d) linear var(--delay) infinite;
+}
+.p-bolt path { fill: none; stroke: #F3FBFF; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.p-bolt path.branch { stroke-width: 1.2; opacity: .8; }
+.p-sparkle { width: var(--s); height: var(--s); }
+.p-sparkle svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: var(--c, #FFF6C2);
+  filter: drop-shadow(0 0 3px var(--c, #FFE27A));
+  animation: cs-sparkle var(--d) ease-in-out var(--delay) infinite;
+}
+.p-sparkle.p-rise { top: 100% !important; animation: cs-float-up var(--rd) linear var(--rdelay) infinite; }
+.p-warp {
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  margin-left: -1px;
+  height: var(--l);
+  border-radius: 2px;
+  transform-origin: 50% 0;
+  background: linear-gradient(to bottom, transparent, var(--c, #CFE3FF));
+  animation: cs-warp var(--d) cubic-bezier(.55, 0, 1, .45) var(--delay) infinite;
+}
+.p-rain {
+  left: var(--x);
+  top: 0;
+  font: 700 var(--fs)/1.05 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+  color: var(--c, #00FFA3);
+  text-shadow: 0 0 6px var(--c, #00FFA3);
+  opacity: .8;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 75%);
+          mask-image: linear-gradient(to bottom, transparent, #000 75%);
+  animation: cs-rain var(--d) linear var(--delay) infinite;
+}
+.p-orb {
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--c, #B4FFE9) 0%, transparent 70%);
+  animation: cs-orb var(--d) ease-in-out var(--delay) infinite alternate;
+}
+.p-drop {
+  left: var(--x);
+  top: 0;
+  width: 1px;
+  height: var(--l);
+  background: linear-gradient(to bottom, transparent, rgba(190, 220, 255, .75));
+  animation: cs-drop var(--d) linear var(--delay) infinite;
+}
+
+/* Anéis (para molduras de avatar) */
+.p-ring { position: absolute; inset: 0; animation: cs-spin var(--spin, 20s) linear infinite var(--dir, normal); }
+.p-ring.no-spin { animation: none; }
+.ring-item {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: rotate(var(--a)) translateY(calc(var(--r) * -1));
+}
+.ring-shape {
+  position: absolute;
+  width: var(--w);
+  height: var(--h);
+  left: calc(var(--w) / -2);
+  top: calc(var(--h) / -2);
+}
+.shape-petal {
+  --w: calc(11cqw * var(--k, 1));
+  --h: calc(8cqw * var(--k, 1));
+  background: linear-gradient(135deg, #FFF3F8, var(--c, #FF9CC8));
+  border-radius: 100% 0 100% 0;
+  filter: drop-shadow(0 0 1.5cqw rgba(255, 140, 190, .7));
+  animation: cs-sway 2.6s ease-in-out var(--delay) infinite;
+}
+.shape-blossom {
+  --w: calc(14cqw * var(--k, 1));
+  --h: calc(14cqw * var(--k, 1));
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cg fill='%23FFB8D6'%3E%3Ccircle cx='10' cy='4.5' r='4'/%3E%3Ccircle cx='15.2' cy='8.3' r='4'/%3E%3Ccircle cx='13.2' cy='14.5' r='4'/%3E%3Ccircle cx='6.8' cy='14.5' r='4'/%3E%3Ccircle cx='4.8' cy='8.3' r='4'/%3E%3C/g%3E%3Ccircle cx='10' cy='10' r='3.4' fill='%23FF7FB5'/%3E%3Ccircle cx='10' cy='10' r='1.8' fill='%23FFE07A'/%3E%3C/svg%3E") center / contain no-repeat;
+  filter: drop-shadow(0 0 1.5cqw rgba(255, 140, 190, .8));
+  animation: cs-spin 7s linear infinite;
+}
+.shape-flame {
+  --w: calc(10cqw * var(--k, 1));
+  --h: calc(15cqw * var(--k, 1));
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 12' shape-rendering='crispEdges'%3E%3Cpath fill='%23FF3D00' d='M3 0h1v2h1v1h1v2h1v2h1v5H0V7h1V5h1V2h1z'/%3E%3Cpath fill='%23FF9100' d='M3 4h1v1h1v2h1v2h1v3H1V9h1V7h1z'/%3E%3Cpath fill='%23FFD600' d='M3 8h2v1h1v3H2V9h1z'/%3E%3C/svg%3E") center bottom / 100% 100% no-repeat;
+  image-rendering: pixelated;
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 0 1.5cqw #FF5A00);
+  animation: cs-flame .6s steps(1) var(--delay) infinite;
+}
+.shape-bolt {
+  --w: calc(8cqw * var(--k, 1));
+  --h: calc(14cqw * var(--k, 1));
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16'%3E%3Cpath d='M6 0 1 9h3l-1 7 6-10H6l1-6z' fill='%23E8F6FF'/%3E%3C/svg%3E") center / contain no-repeat;
+  opacity: 0;
+  filter: drop-shadow(0 0 1.2cqw #9FD4FF) drop-shadow(0 0 3cqw #4AA3FF);
+  animation: cs-bolt 2.2s linear var(--delay) infinite;
+}
+.shape-crystal {
+  --w: calc(8cqw * var(--k, 1));
+  --h: calc(14cqw * var(--k, 1));
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 18'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23F2FDFF'/%3E%3Cstop offset='.45' stop-color='%2384E9FF'/%3E%3Cstop offset='1' stop-color='%237B5CFF'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M5 0 10 6 5 18 0 6z' fill='url(%23g)'/%3E%3Cpath d='M5 0 5 18 0 6z' fill='%23fff' opacity='.28'/%3E%3C/svg%3E") center / contain no-repeat;
+  filter: drop-shadow(0 0 1.5cqw #7FE7FF);
+  animation: cs-bob 2.4s ease-in-out var(--delay) infinite;
+}
+.shape-planet {
+  --w: calc(9cqw * var(--k, 1));
+  --h: calc(9cqw * var(--k, 1));
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #fff, var(--c, #9B8CFF) 45%, #2A1A6B 100%);
+  box-shadow: 0 0 2.5cqw var(--c, #9B8CFF);
+}
+.shape-star {
+  --w: calc(3cqw * var(--k, 1));
+  --h: calc(3cqw * var(--k, 1));
+  border-radius: 50%;
+  background: var(--c, #fff);
+  box-shadow: 0 0 2cqw #fff, 0 0 4cqw var(--c, #8C7BFF);
+  animation: cs-twinkle 2s ease-in-out var(--delay) infinite;
+}
+.shape-pixel {
+  --w: calc(3cqw * var(--k, 1));
+  --h: calc(3cqw * var(--k, 1));
+  background: var(--c, #FFC400);
+  box-shadow: 0 0 1.5cqw #FF5A00;
+  animation: cs-outward 1.6s steps(8) var(--delay) infinite;
+}
+
+/* Anel SVG */
+.p-svgring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.p-svgring circle { fill: none; stroke: var(--c, #fff); }
+.p-svgring.spin { animation: cs-spin var(--spin, 10s) linear infinite var(--dir, normal); }
+.p-svgring.flicker circle { animation: cs-flicker 1.3s steps(1) infinite; }
+.p-svgring.glow { filter: drop-shadow(0 0 1.2cqw var(--c)) drop-shadow(0 0 3cqw var(--c)); }
+
+/* ==========================================================================
+   NAMEPLATES
+   ========================================================================== */
+
+/* Neon Overdrive — Cyberpunk */
+.np-neon {
+  background: linear-gradient(90deg, #14032B 0%, #2A0950 50%, #071A33 100%);
+  box-shadow: inset 0 -2px 0 rgba(255, 43, 214, .9), inset 0 0 20px rgba(255, 43, 214, .25);
+}
+.np-neon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 43, 214, .55) 45%, rgba(0, 240, 255, .6) 55%, transparent 70%);
+  background-size: 220% 100%;
+  mix-blend-mode: screen;
+  animation: cs-sweep 3.2s linear infinite;
+}
+.np-neon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, .07) 0 1px, transparent 1px 3px),
+    linear-gradient(90deg, transparent 55%, rgba(0, 240, 255, .25));
+  animation: cs-scan .6s linear infinite;
+}
+
+/* Brisa de Sakura — Anime */
+.np-sakura { background: linear-gradient(90deg, #2A1D2B 0%, #4D2343 60%, #7A2E5C 100%); }
+.np-sakura::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 60% 120% at 90% 50%, rgba(255, 170, 210, .55), transparent 70%);
+  animation: cs-pulse 4s ease-in-out infinite;
+}
+.np-sakura::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 44'%3E%3Cpath d='M120 6C96 10 84 18 70 30M92 15c-4-6-10-8-16-8M100 11c2 8 0 14-6 20' stroke='%233A1A2A' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3Cg fill='%23FFC2DC'%3E%3Ccircle cx='70' cy='30' r='3.2'/%3E%3Ccircle cx='76' cy='7' r='3'/%3E%3Ccircle cx='94' cy='31' r='2.6'/%3E%3Ccircle cx='84' cy='20' r='2.2'/%3E%3Ccircle cx='108' cy='9' r='2.8'/%3E%3C/g%3E%3Cg fill='%23FF8FC0'%3E%3Ccircle cx='70' cy='30' r='1.2'/%3E%3Ccircle cx='76' cy='7' r='1.1'/%3E%3Ccircle cx='108' cy='9' r='1'/%3E%3C/g%3E%3C/svg%3E") right center / auto 100% no-repeat;
+}
+
+/* Deriva Nebular — Galaxy */
+.np-galaxy {
+  background:
+    radial-gradient(ellipse 40% 90% at 20% 50%, rgba(140, 82, 255, .75), transparent 70%),
+    radial-gradient(ellipse 35% 80% at 75% 40%, rgba(0, 170, 255, .6), transparent 70%),
+    radial-gradient(ellipse 30% 70% at 50% 100%, rgba(255, 70, 200, .5), transparent 70%),
+    #0A0820;
+  background-size: 200% 100%, 200% 100%, 200% 100%, 100% 100%;
+  animation: cs-nebula 9s ease-in-out infinite alternate;
+}
+.np-galaxy::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 40%, rgba(255, 255, 255, .18) 50%, transparent 60%);
+  background-size: 250% 100%;
+  animation: cs-sweep 5s ease-in-out infinite;
+}
+
+/* Inferno 8-Bit — Pixel */
+.np-pixel { background: linear-gradient(0deg, #4A0C00 0%, #1C0603 70%, #120404 100%); }
+.np-pixel::before,
+.np-pixel::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='24' shape-rendering='crispEdges'%3E%3Cpath fill='%23FF3D00' d='M0 24V12h4V8h4v4h4V4h4v8h4V8h4V0h4v12h4v12z'/%3E%3Cpath fill='%23FF9100' d='M0 24v-6h4v-4h4v4h4v-6h4v6h4v-4h4v-6h4v10h4v6z'/%3E%3Cpath fill='%23FFD600' d='M0 24v-2h4v-2h4v2h4v-4h4v4h4v-2h4v-4h4v6h4v2z'/%3E%3C/svg%3E") left bottom / 32px 24px repeat-x;
+  image-rendering: pixelated;
+}
+.np-pixel::before {
+  height: 24px;
+  -webkit-mask-image: linear-gradient(90deg, transparent 5%, #000 60%);
+          mask-image: linear-gradient(90deg, transparent 5%, #000 60%);
+  animation: cs-pixelflame 1s steps(8) infinite;
+}
+.np-pixel::after {
+  height: 18px;
+  background-size: 24px 18px;
+  opacity: .55;
+  transform: scaleX(-1);
+  -webkit-mask-image: linear-gradient(270deg, transparent 10%, #000 70%);
+          mask-image: linear-gradient(270deg, transparent 10%, #000 70%);
+  animation: cs-pixelflame .7s steps(8) infinite;
+}
+
+/* Thunderstrike — Elemental */
+.np-thunder { background: linear-gradient(90deg, #050A1F 0%, #0B1D55 55%, #16409A 100%); }
+.np-thunder::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(100deg, transparent 0 10px, rgba(160, 200, 255, .08) 10px 11px);
+  animation: cs-rainfall .45s linear infinite;
+}
+.np-thunder::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 50% 130% at 75% 0%, rgba(190, 225, 255, .9), transparent 70%);
+  opacity: 0;
+  animation: cs-flash 3.4s linear infinite;
+}
+
+/* Aurora Élfica — Fantasia */
+.np-aurora { background: linear-gradient(90deg, #03141A, #062A2A 60%, #0A1F3D); }
+.np-aurora::before {
+  content: '';
+  position: absolute;
+  inset: -40% -30%;
+  background: linear-gradient(100deg, transparent 15%, rgba(0, 255, 170, .55) 28%, transparent 40%, rgba(130, 90, 255, .5) 55%, transparent 68%, rgba(0, 210, 255, .55) 82%, transparent 95%);
+  background-size: 200% 100%;
+  filter: blur(10px);
+  animation: cs-aurora 7s ease-in-out infinite alternate;
+}
+.np-aurora::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(3, 20, 26, .55), transparent 60%);
+}
+
+/* ==========================================================================
+   MOLDURAS DE AVATAR (Avatar Decorations)
+   ========================================================================== */
+
+/* Halo Neon — Cyberpunk */
+.deco-neon::before {
+  content: '';
+  position: absolute;
+  inset: 7%;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, #FF2BD6, #7A5CFF, #00F0FF, #FF2BD6);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4.5cqw), #000 calc(100% - 4cqw));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 4.5cqw), #000 calc(100% - 4cqw));
+  filter: drop-shadow(0 0 1.5cqw #FF2BD6) drop-shadow(0 0 3cqw #00F0FF);
+  animation: cs-spin 2.8s linear infinite;
+}
+.deco-neon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  --b: 1.8cqw;
+  --l: 14cqw;
+  background:
+    linear-gradient(#00F0FF, #00F0FF) left top / var(--l) var(--b) no-repeat,
+    linear-gradient(#00F0FF, #00F0FF) left top / var(--b) var(--l) no-repeat,
+    linear-gradient(#FF2BD6, #FF2BD6) right top / var(--l) var(--b) no-repeat,
+    linear-gradient(#FF2BD6, #FF2BD6) right top / var(--b) var(--l) no-repeat,
+    linear-gradient(#FF2BD6, #FF2BD6) left bottom / var(--l) var(--b) no-repeat,
+    linear-gradient(#FF2BD6, #FF2BD6) left bottom / var(--b) var(--l) no-repeat,
+    linear-gradient(#00F0FF, #00F0FF) right bottom / var(--l) var(--b) no-repeat,
+    linear-gradient(#00F0FF, #00F0FF) right bottom / var(--b) var(--l) no-repeat;
+  filter: drop-shadow(0 0 1.2cqw #00F0FF);
+  animation: cs-hud 1.6s ease-in-out infinite;
+}
+
+/* Coroa de Sakura — Anime */
+.deco-sakura::before {
+  content: '';
+  position: absolute;
+  inset: 8.5%;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.4cqw rgba(255, 170, 210, .6), 0 0 5cqw rgba(255, 140, 190, .65);
+  animation: cs-pulse 3s ease-in-out infinite;
+}
+
+/* Órbita Estelar — Galaxy */
+.deco-orbit::before {
+  content: '';
+  position: absolute;
+  inset: 5%;
+  border-radius: 50%;
+  background: conic-gradient(from 90deg, rgba(140, 82, 255, .0), rgba(140, 82, 255, .55), rgba(0, 170, 255, .45), rgba(255, 70, 200, .4), rgba(140, 82, 255, .0));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7cqw), #000 calc(100% - 4cqw), transparent);
+          mask: radial-gradient(farthest-side, transparent calc(100% - 7cqw), #000 calc(100% - 4cqw), transparent);
+  filter: blur(1.2cqw);
+  animation: cs-spin 12s linear infinite;
+}
+
+/* Aura Ígnea 8-Bit — Pixel */
+.deco-flame::before {
+  content: '';
+  position: absolute;
+  inset: 8.5%;
+  border-radius: 50%;
+  border: 2.4cqw solid #FF6A00;
+  box-shadow: 0 0 3cqw #FF3D00, inset 0 0 2cqw #FFD600;
+  animation: cs-pulse .8s steps(2) infinite;
+}
+
+/* Coroa da Tempestade — Elemental */
+.deco-storm::before {
+  content: '';
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  background: radial-gradient(farthest-side, transparent 82%, rgba(74, 163, 255, .55) 92%, transparent);
+  animation: cs-flicker 1.1s steps(1) infinite;
+}
+
+/* Cristais Arcanos — Fantasia */
+.deco-crystal::before {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: conic-gradient(#3EE6B0, #7B5CFF, #84E9FF, #3EE6B0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.2cqw), #000 calc(100% - 1.8cqw));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 2.2cqw), #000 calc(100% - 1.8cqw));
+  filter: drop-shadow(0 0 2cqw #3EE6B0);
+  animation: cs-spin 6s linear infinite reverse;
+}
+
+/* ==========================================================================
+   EFEITOS DE PERFIL (Profile Effects)
+   ========================================================================== */
+
+/* Chuva de Sakura — Anime */
+.fx-sakura::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 170, 210, .2), transparent 40%);
+}
+
+/* Salto Hiperespacial — Galaxy */
+.fx-hyperspace::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(140, 110, 255, .35), transparent 55%);
+  mix-blend-mode: screen;
+  animation: cs-pulse 2.4s ease-in-out infinite;
+}
+
+/* Brasas Pixeladas — Pixel */
+.fx-embers::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(255, 90, 0, .38), transparent 45%);
+  animation: cs-pulse 1.2s steps(3) infinite;
+}
+.fx-embers::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 36px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='24' shape-rendering='crispEdges'%3E%3Cpath fill='%23FF3D00' d='M0 24V12h4V8h4v4h4V4h4v8h4V8h4V0h4v12h4v12z'/%3E%3Cpath fill='%23FF9100' d='M0 24v-6h4v-4h4v4h4v-6h4v6h4v-4h4v-6h4v10h4v6z'/%3E%3Cpath fill='%23FFD600' d='M0 24v-2h4v-2h4v2h4v-4h4v4h4v-2h4v-4h4v6h4v2z'/%3E%3C/svg%3E") left bottom / 48px 36px repeat-x;
+  image-rendering: pixelated;
+  opacity: .9;
+  animation: cs-pixelflame-lg 1.1s steps(12) infinite;
+}
+
+/* Tempestade Elétrica — Elemental */
+.fx-lightning::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(20, 40, 120, .5), transparent 55%);
+}
+.fx-lightning::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 50% at 60% 0%, rgba(200, 230, 255, .85), transparent 70%);
+  opacity: 0;
+  animation: cs-flash 3s linear infinite;
+}
+
+/* Código Glitch — Cyberpunk */
+.fx-glitch::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 240, 255, .07) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, rgba(0, 240, 255, .08), rgba(255, 43, 214, .1));
+  animation: cs-scan .5s linear infinite;
+}
+.fx-glitch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(255, 43, 214, .45), rgba(0, 240, 255, .45));
+  mix-blend-mode: screen;
+  animation: cs-glitch 2.2s steps(1) infinite;
+}
+
+/* Pó de Fada — Fantasia */
+.fx-fairy::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 40% at 50% 100%, rgba(62, 230, 176, .3), transparent 70%),
+    radial-gradient(ellipse 60% 30% at 50% 0%, rgba(255, 230, 150, .15), transparent 70%);
+  animation: cs-pulse 4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .p, .p-ring, .p-svgring, .ring-shape { animation-duration: 0s !important; animation-iteration-count: 1 !important; }
+}
+
+/* ==========================================================================
+   COSMÉTICOS GERATIVOS (asset.type = 'gen') — Gerador IA
+   Cores vêm das variáveis --g1 (primária), --g2 (secundária), --g3 (destaque)
+   e --gbg (fundo); velocidade via --gs / --rs.
+   ========================================================================== */
+@keyframes cs-gen-shift { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+@keyframes cs-pulse-soft { 0%, 100% { opacity: .22; } 50% { opacity: .5; } }
+
+.gen-base { position: absolute; inset: 0; }
+.gen-gradient {
+  background: linear-gradient(110deg, var(--gbg) 0%, var(--g1) 35%, var(--g2) 65%, var(--g3) 100%);
+  background-size: 220% 100%;
+}
+.gen-radial {
+  background:
+    radial-gradient(ellipse 55% 140% at 85% 50%, var(--g1), transparent 70%),
+    radial-gradient(ellipse 40% 120% at 15% 50%, color-mix(in srgb, var(--g2) 70%, transparent), transparent 70%),
+    var(--gbg);
+  background-size: 160% 100%, 160% 100%, 100% 100%;
+}
+.gen-nebula {
+  background:
+    radial-gradient(ellipse 40% 90% at 20% 50%, color-mix(in srgb, var(--g1) 80%, transparent), transparent 70%),
+    radial-gradient(ellipse 35% 80% at 75% 40%, color-mix(in srgb, var(--g2) 70%, transparent), transparent 70%),
+    radial-gradient(ellipse 30% 70% at 50% 100%, color-mix(in srgb, var(--g3) 55%, transparent), transparent 70%),
+    var(--gbg);
+  background-size: 200% 100%, 200% 100%, 200% 100%, 100% 100%;
+}
+.gen-aurora { background: var(--gbg); overflow: hidden; }
+.gen-aurora::before {
+  content: '';
+  position: absolute;
+  inset: -40% -30%;
+  background: linear-gradient(100deg, transparent 15%, var(--g1) 28%, transparent 40%, var(--g2) 55%, transparent 68%, var(--g3) 82%, transparent 95%);
+  background-size: 200% 100%;
+  filter: blur(10px);
+  opacity: .7;
+  animation: cs-aurora var(--gs) ease-in-out infinite alternate;
+}
+.gen-scanlines {
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, .07) 0 1px, transparent 1px 3px),
+    linear-gradient(90deg, var(--gbg), var(--g1) 60%, var(--g2));
+  box-shadow: inset 0 -2px 0 var(--g2), inset 0 0 18px color-mix(in srgb, var(--g2) 35%, transparent);
+}
+.gen-scanlines.gen-anim-shift { animation: cs-scan .6s linear infinite; }
+.gen-storm { background: linear-gradient(90deg, var(--gbg), var(--g1)); }
+.gen-storm::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 50% 130% at 75% 0%, var(--g3), transparent 70%);
+  opacity: 0;
+  animation: cs-flash 3.4s linear infinite;
+}
+.gen-pixelfire { background: linear-gradient(0deg, color-mix(in srgb, var(--g1) 35%, #000), var(--gbg)); overflow: hidden; }
+.gen-pixelfire::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(60%, 30px);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='24' shape-rendering='crispEdges'%3E%3Cpath fill='%23FF3D00' d='M0 24V12h4V8h4v4h4V4h4v8h4V8h4V0h4v12h4v12z'/%3E%3Cpath fill='%23FF9100' d='M0 24v-6h4v-4h4v4h4v-6h4v6h4v-4h4v-6h4v10h4v6z'/%3E%3Cpath fill='%23FFD600' d='M0 24v-2h4v-2h4v2h4v-4h4v4h4v-2h4v-4h4v6h4v2z'/%3E%3C/svg%3E") left bottom / auto 100% repeat-x;
+  image-rendering: pixelated;
+  filter: hue-rotate(var(--hue, 0deg));
+  animation: cs-pixelflame 1s steps(8) infinite;
+}
+.gen-solid { background: linear-gradient(90deg, var(--gbg), color-mix(in srgb, var(--g1) 45%, var(--gbg))); }
+.gen-anim-shift { animation: cs-gen-shift var(--gs) ease-in-out infinite alternate; }
+.gen-anim-pulse { animation: cs-pulse var(--gs) ease-in-out infinite; }
+.gen-sweep {
+  background: linear-gradient(105deg, transparent 35%, color-mix(in srgb, var(--g3) 60%, transparent) 50%, transparent 65%);
+  background-size: 250% 100%;
+  mix-blend-mode: screen;
+  animation: cs-sweep var(--gs) linear infinite;
+}
+.gen-flash {
+  background: radial-gradient(ellipse 60% 120% at 70% 0%, var(--g3), transparent 70%);
+  opacity: 0;
+  animation: cs-flash 3.2s linear infinite;
+}
+/* Em efeitos de perfil a base vira um "tingimento" nas bordas do card */
+.gen-cat-effects > .gen-base {
+  opacity: .4;
+  -webkit-mask-image: linear-gradient(180deg, #000, transparent 38%, transparent 62%, #000);
+          mask-image: linear-gradient(180deg, #000, transparent 38%, transparent 62%, #000);
+}
+.gen-cat-effects > .gen-anim-pulse { animation-name: cs-pulse-soft; }
+.gen-cat-effects > .gen-sweep, .gen-cat-effects > .gen-flash { opacity: 0; }
+
+/* Anéis das molduras geradas */
+.gen-ring { position: absolute; border-radius: 50%; }
+.gen-ring-conic {
+  inset: 7%;
+  background: conic-gradient(var(--g1), var(--g2), var(--g3), var(--g1));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4.5cqw), #000 calc(100% - 4cqw));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 4.5cqw), #000 calc(100% - 4cqw));
+  filter: drop-shadow(0 0 1.5cqw var(--g1)) drop-shadow(0 0 3cqw var(--g2));
+  animation: cs-spin var(--rs) linear infinite;
+}
+.gen-ring-glow {
+  inset: 8.5%;
+  box-shadow: 0 0 0 1.4cqw var(--g1), 0 0 5cqw var(--g2), inset 0 0 3cqw color-mix(in srgb, var(--g3) 50%, transparent);
+  animation: cs-pulse 2.4s ease-in-out infinite;
+}
+.gen-ring-pixel {
+  inset: 8.5%;
+  border: 2.4cqw solid var(--g1);
+  box-shadow: 0 0 3cqw var(--g2), inset 0 0 2cqw var(--g3);
+  animation: cs-pulse .8s steps(2) infinite;
+}
+.gen-ring-hud {
+  inset: 0;
+  border-radius: 0;
+  --b: 1.8cqw;
+  --l: 14cqw;
+  background:
+    linear-gradient(var(--g1), var(--g1)) left top / var(--l) var(--b) no-repeat,
+    linear-gradient(var(--g1), var(--g1)) left top / var(--b) var(--l) no-repeat,
+    linear-gradient(var(--g2), var(--g2)) right top / var(--l) var(--b) no-repeat,
+    linear-gradient(var(--g2), var(--g2)) right top / var(--b) var(--l) no-repeat,
+    linear-gradient(var(--g2), var(--g2)) left bottom / var(--l) var(--b) no-repeat,
+    linear-gradient(var(--g2), var(--g2)) left bottom / var(--b) var(--l) no-repeat,
+    linear-gradient(var(--g1), var(--g1)) right bottom / var(--l) var(--b) no-repeat,
+    linear-gradient(var(--g1), var(--g1)) right bottom / var(--b) var(--l) no-repeat;
+  filter: drop-shadow(0 0 1.2cqw var(--g1));
+  animation: cs-hud 1.6s ease-in-out infinite;
+}
+.gen-ring-hud::after {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  border: 1.2cqw solid var(--g1);
+  border-left-color: transparent;
+  border-right-color: var(--g2);
+  animation: cs-spin var(--rs) linear infinite;
+}
+
+/* Glifos / emojis */
+.p-glyph {
+  line-height: 1;
+  font-size: var(--s);
+  color: var(--c, #fff);
+  text-shadow: 0 0 6px var(--c, #fff);
+  user-select: none;
+}
+.p-glyph-fall { left: var(--x); top: calc(var(--s) * -1.6); animation: cs-fall var(--d) linear var(--delay) infinite; }
+.p-glyph-rise { left: var(--x); top: 100% !important; animation: cs-float-up var(--d) linear var(--delay) infinite; }
+.p-glyph-float { animation: cs-orb var(--d) ease-in-out var(--delay) infinite alternate; }
+.p-glyph-twinkle { animation: cs-twinkle var(--d) ease-in-out var(--delay) infinite; }
+.shape-glyph {
+  --w: calc(11cqw * var(--k, 1));
+  --h: calc(11cqw * var(--k, 1));
+  display: grid;
+  place-items: center;
+  font-size: calc(9cqw * var(--k, 1));
+  line-height: 1;
+  color: var(--c, #fff);
+  text-shadow: 0 0 1.5cqw var(--c, #fff);
+  animation: cs-bob 2.4s ease-in-out var(--delay) infinite;
+}
+/* Partículas de cor fixa seguem a paleta quando o item é gerado */
+.gen .shape-flame { filter: hue-rotate(var(--hue, 0deg)) drop-shadow(0 0 1.5cqw var(--g1)); }
+.gen .p-ember { box-shadow: 0 0 6px 1px var(--c, #FF5A00); }
