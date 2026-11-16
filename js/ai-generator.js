@@ -336,10 +336,109 @@ Gere exatamente um item por categoria pedida, na ordem pedida, formando um kit c
     introSeconds: 0, introSvg: '', discordPalette: 'teal',
   }] });
 
+  /* ------------------------------------------------------------------ */
+  /* Prompt por formato: "tema geral" + linhas "nameplate: …", "moldura: …" */
+  /* ------------------------------------------------------------------ */
+  const FORMAT_LINES = [
+    ['frames', /^\s*(?:profile\s*frame|frame|moldura\s+(?:de|do)\s+perfil|moldura\s+do\s+card)\s*[:=-]\s*/i],
+    ['decorations', /^\s*(?:avatar\s*decoration|decoration|decora[cç][aã]o|moldura(?:\s+de\s+avatar)?|avatar)\s*[:=-]\s*/i],
+    ['effects', /^\s*(?:profile\s*effect|effect|efeito(?:\s+de\s+perfil)?|aura)\s*[:=-]\s*/i],
+    ['nameplates', /^\s*(?:nameplate|name\s*plate|placa(?:\s+de\s+nome)?|plate)\s*[:=-]\s*/i],
+  ];
+  const FORMAT_LABEL = { nameplates: 'nameplate', decorations: 'moldura', effects: 'efeito', frames: 'frame' };
+  /** Separa o tema geral das linhas de detalhe por formato. */
+  function parsePrompt(text) {
+    const details = {};
+    const theme = [];
+    String(text || '').split(/\r?\n/).forEach((line) => {
+      for (const [cat, re] of FORMAT_LINES) {
+        if (re.test(line)) { const v = line.replace(re, '').trim(); if (v) details[cat] = (details[cat] ? details[cat] + ' ' : '') + v; return; }
+      }
+      if (line.trim()) theme.push(line.trim());
+    });
+    return { theme: theme.join(' '), details };
+  }
+  const hasFormatLines = (text) => Object.keys(parsePrompt(text).details).length > 0;
+  /** Texto "tema + linhas por formato" que vai de volta para a caixa do prompt. */
+  function formatPrompt(theme, details) {
+    return [theme, ...['nameplates', 'decorations', 'effects', 'frames'].filter((c) => details[c]).map((c) => `${FORMAT_LABEL[c]}: ${details[c]}`)].filter(Boolean).join('\n');
+  }
+
+  const REWRITE_SYSTEM = `Você ajusta prompts para um gerador de cosméticos de perfil do Discord. O gerador cria UM item por formato, cada um numa imagem separada, e já cuida sozinho do tamanho, da composição, do fundo transparente e das áreas livres do avatar e do nome.
+
+Formatos do sistema:
+- nameplate: faixa horizontal atrás do nome na lista de membros; a arte fica à direita.
+- moldura (avatar decoration): enfeite REDONDO em volta do avatar, com o centro vazio. Toda "moldura de avatar", "frame circular", "borda do avatar" ou "avatar frame" (mesmo quadrada) é isto.
+- efeito (profile effect): animação sobre o card de perfil inteiro (partículas, chamas, auras, fumaça, pétalas), passando pelas bordas e pelo topo.
+- frame (profile frame): moldura do CARD de perfil inteiro: ornamento no topo e colunas finas nas laterais.
+
+Reescreva o pedido do usuário assim:
+- "tema": 1 a 2 frases com o assunto, o clima, a paleta e o estilo de arte que valem para todos os itens.
+- um campo por formato com 1 frase descrevendo SÓ o que aparece naquele item (materiais, criatura, elementos, cores de destaque). Se o usuário não falou de um formato, invente algo coerente com o tema.
+- Remova tudo que é de apresentação ou de técnica: interface, UI, asset, sprite sheet, bundle, kit, conjunto, mockup, "alinhados", numeração, cor ou tipo de fundo (fundo preto, fundo branco), resolução, "ideal para…".
+- Não descreva layout, tamanho nem posição (o sistema já faz). Nada de texto, letras ou logos na arte.
+- Escreva em português do Brasil, frases curtas e visuais (no máximo 220 caracteres por campo).
+
+Responda SOMENTE com JSON: {"tema": "...", "nameplate": "...", "moldura": "...", "efeito": "...", "frame": "..."}`;
+
+  /** Modelo de TEXTO para a reescrita (o escolhido pode ser de imagem). */
+  function textModelFor(cfg) {
+    const preset = PROVIDERS[cfg.provider] || {};
+    const isImg = /(^|[-/])image|gpt-image|dall-e|imagen/i.test(cfg.model || '');
+    if (!isImg && cfg.model) return cfg.model;
+    if (preset.native === 'gemini') {
+      const cached = geminiModelsCache.get(cfg.key);
+      return (cached && pickGeminiModel(cached)) || preset.model;
+    }
+    return preset.model;
+  }
+
+  /** Pede ao modelo de texto do provedor a versão do prompt separada por formato. */
+  async function rewritePrompt(text, cfg) {
+    const model = textModelFor(cfg);
+    const user = `Pedido do usuário:\n${text}`;
+    let out = '';
+    if (cfg.provider === 'anthropic') {
+      const mod = await loadSdk();
+      const client = new mod.default({ apiKey: cfg.key, dangerouslyAllowBrowser: true });
+      const res = await client.messages.create({ model, max_tokens: 2000, system: REWRITE_SYSTEM, messages: [{ role: 'user', content: user }] });
+      out = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    } else if (PROVIDERS[cfg.provider].native === 'gemini') {
+      const res = await fetch(`${GEMINI_BASE}/models/${encodeURIComponent(geminiModelName(model))}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: REWRITE_SYSTEM }] }, contents: [{ role: 'user', parts: [{ text: user }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.7 } }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw geminiError(res.status, data, model);
+      const cand = data && data.candidates && data.candidates[0];
+      out = ((cand && cand.content && cand.content.parts) || []).filter((pt) => !pt.thought).map((pt) => pt.text || '').join('');
+    } else {
+      const base = (cfg.baseUrl || PROVIDERS[cfg.provider].base || '').replace(/\/+$/, '');
+      const headers = { 'Content-Type': 'application/json' };
+      if (cfg.key) headers.Authorization = 'Bearer ' + cfg.key;
+      const body = { model, messages: [{ role: 'system', content: REWRITE_SYSTEM }, { role: 'user', content: user }], response_format: { type: 'json_object' } };
+      let res = await fetch(base + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(body) });
+      if (res.status === 400) { delete body.response_format; res = await fetch(base + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(body) }); }
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((data && data.error && (data.error.message || data.error)) || 'HTTP ' + res.status);
+      out = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+    }
+    const j = parseJsonLoose(out);
+    const clip = (v) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+    const details = { nameplates: clip(j.nameplate), decorations: clip(j.moldura || j.decoration), effects: clip(j.efeito || j.effect), frames: clip(j.frame) };
+    Object.keys(details).forEach((k) => { if (!details[k]) delete details[k]; });
+    const theme = clip(j.tema || j.theme);
+    if (!theme && !Object.keys(details).length) throw new Error('A IA não devolveu o prompt ajustado.');
+    return { theme, details };
+  }
+
   /** Monta o texto do pedido com tema, categorias e referências da biblioteca. */
   function userTextFor(req) {
     if (req.feedback) return req.feedback;
     let t = `Tema: ${req.prompt || '(sem tema: crie variações das referências)'}\nCategorias, nesta ordem: ${req.cats.map((c) => CAT_TO_API[c]).join(', ')}`;
+    const det = req.cats.filter((c) => req.details && req.details[c]);
+    if (det.length) t += '\n\nDETALHES POR FORMATO (siga à risca; valem só para aquele item):\n' + det.map((c) => `- ${CAT_TO_API[c]}: ${req.details[c]}`).join('\n');
     if (req.refs.length) {
       t += '\n\nREFERÊNCIAS da biblioteca. Crie VARIAÇÕES inspiradas nelas: mantenha a essência (paleta, estilo, tipo de movimento, clima), mas traga algo novo e aplique o tema, se houver.';
       req.refs.forEach((r, i) => {
@@ -985,9 +1084,11 @@ ${sparks}
   const MODE_STORAGE = 'cosmetic-studio:gen-mode';
   const REVIEW_KEY = 'cosmetic-studio:gen-review';
   const STYLE_KEY = 'cosmetic-studio:gen-style-refs';
+  const REWRITE_KEY = 'cosmetic-studio:gen-rewrite';
   const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', mode: ['particles', 'raster'].includes(store.get(MODE_STORAGE)) ? store.get(MODE_STORAGE) : 'svg', busy: false, results: [], refs: [],
     review: (() => { try { return localStorage.getItem(REVIEW_KEY) !== '0'; } catch (e) { return true; } })(), quality: new Map(),
-    styleRefs: (() => { try { return localStorage.getItem(STYLE_KEY) !== '0'; } catch (e) { return true; } })() };
+    styleRefs: (() => { try { return localStorage.getItem(STYLE_KEY) !== '0'; } catch (e) { return true; } })(),
+    autoRewrite: (() => { try { return localStorage.getItem(REWRITE_KEY) !== '0'; } catch (e) { return true; } })() };
 
   /* ---------- Verificação automática + correção pela IA ---------- */
   const MAX_ROUNDS = 2;
@@ -1461,7 +1562,7 @@ ${lines.join('\n\n')}`;
   }
 
   /** Modo Ilustração: o modelo de imagem pinta, o app recorta, protege as zonas e anima. */
-  async function generateIllustrations(prompt, cats, refs, cfg) {
+  async function generateIllustrations(prompt, cats, refs, cfg, details = {}) {
     const native = PROVIDERS[cfg.provider] && PROVIDERS[cfg.provider].native === 'gemini' ? 'gemini' : cfg.provider;
     if (native !== 'gemini' && native !== 'openai') {
       return CS.toast('O modo Ilustração precisa do Google Gemini (modelo "…-image") ou da OpenAI (gpt-image).', 'danger');
@@ -1483,7 +1584,7 @@ ${lines.join('\n\n')}`;
         }
       }
       const theme = [prompt, ...refs.map((r) => r.item.name)].filter(Boolean).join(' — ');
-      const list = await window.CosmeticIllustration.generate({ prompt: theme, cats }, { ...cfg, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl }, {
+      const list = await window.CosmeticIllustration.generate({ prompt: theme, cats, details }, { ...cfg, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl }, {
         refs: refsByCat,
         onProgress: (msg) => setBusy(true, msg + ' (10 a 40 s por item)'),
       });
@@ -1509,7 +1610,8 @@ ${lines.join('\n\n')}`;
   async function onGenerate(e) {
     e.preventDefault();
     if (ui.busy) return;
-    const prompt = $('#gen-prompt').value.trim();
+    let prompt = $('#gen-prompt').value.trim();
+    let details = {};
     const cats = selectedCats();
     const refs = refsResolved();
     if (!prompt && !refs.length) {
@@ -1532,6 +1634,23 @@ ${lines.join('\n\n')}`;
       }
       ai.keys[ai.provider] = cfg.key;
       persistAiSettings();
+      // Prompt livre → a IA reescreve no formato "tema + uma linha por formato"
+      if (ui.autoRewrite && prompt && !hasFormatLines(prompt)) {
+        setBusy(true, 'Ajustando o prompt para os formatos do Discord…');
+        try {
+          const r = await rewritePrompt(prompt, cfg);
+          const txt = formatPrompt(r.theme, r.details);
+          $('#gen-prompt').value = txt;
+          $('#gen-prompt').dispatchEvent(new Event('input'));
+          prompt = txt;
+        } catch (err) {
+          console.warn('[Ajuste de prompt]', err);
+          CS.toast('Não deu para ajustar o prompt (' + (err.message || 'erro') + '); usando como está.', 'info');
+        } finally {
+          setBusy(false);
+        }
+      }
+      ({ theme: prompt, details } = parsePrompt(prompt));
       let mode = cats.includes('frames') && ui.mode === 'particles' ? 'svg' : ui.mode;
       if (mode !== ui.mode) CS.toast('Profile frames são desenhados no estilo Arte (SVG).', 'info');
       // Modelo de IMAGEM escolhido num modo de código: ele escreve SVG muito mal — usa o modo Ilustração
@@ -1539,10 +1658,10 @@ ${lines.join('\n\n')}`;
         mode = 'raster';
         CS.toast(`"${cfg.model}" é um modelo de imagem: usando o modo Ilustração.`, 'info');
       }
-      if (mode === 'raster') return generateIllustrations(prompt, cats, refs, cfg);
+      if (mode === 'raster') return generateIllustrations(prompt, cats, refs, cfg, details);
       setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está ${mode === 'svg' ? 'desenhando a arte' : 'montando'} do seu kit… ${mode === 'svg' ? 'isso pode levar até 1–2 minutos.' : 'isso leva alguns segundos.'}`);
       showSkeletons(cats.length);
-      const req = { prompt, cats, mode, refs: refs.map((r) => ({ ...r })), images: [] };
+      const req = { prompt, details, cats, mode, refs: refs.map((r) => ({ ...r })), images: [] };
       // Imagens das referências oficiais (Claude/OpenAI recebem a URL; Gemini, os bytes)
       for (const r of req.refs) {
         const url = refImageUrl(r.item);
@@ -1600,7 +1719,9 @@ ${lines.join('\n\n')}`;
       showSkeletons(cats.length);
       setTimeout(() => {
         $$('#gen-results .gen-skeleton').forEach((n) => n.remove());
-        const list = refs.length ? generateLocalFromRefs(prompt, cats, refs) : generateLocal(prompt, cats);
+        const pp = parsePrompt(prompt);
+        const flat = [pp.theme, ...Object.values(pp.details)].filter(Boolean).join(' ');
+        const list = refs.length ? generateLocalFromRefs(flat, cats, refs) : generateLocal(flat, cats);
         addResults(list);
         setBusy(false);
         CS.toast(`${list.length} ${list.length === 1 ? 'cosmético gerado' : 'cosméticos gerados'} localmente!`, 'success');
@@ -1756,6 +1877,36 @@ ${lines.join('\n\n')}`;
       });
     }
     loadStyleGuide();
+    const aw = $('#gen-rewrite');
+    if (aw) {
+      aw.checked = ui.autoRewrite;
+      aw.addEventListener('change', () => {
+        ui.autoRewrite = aw.checked;
+        try { localStorage.setItem(REWRITE_KEY, ui.autoRewrite ? '1' : '0'); } catch (e) { /* ok */ }
+      });
+    }
+    const rb = $('#gen-rewrite-now');
+    if (rb) rb.addEventListener('click', async () => {
+      const text = $('#gen-prompt').value.trim();
+      if (!text) { $('#gen-prompt').focus(); return CS.toast('Escreva um tema primeiro.', 'info'); }
+      if (ui.engine !== 'ai') return CS.toast('O ajuste com IA usa o motor IA (sua chave).', 'info');
+      const preset = PROVIDERS[ai.provider];
+      const cfg = { provider: ai.provider, key: $('#gen-key').value.trim(), model: $('#gen-model').value.trim() || preset.model, baseUrl: $('#gen-baseurl').value.trim() || preset.base };
+      if (!cfg.key && !preset.keyOptional) { $('#gen-key').focus(); return CS.toast(`Cole sua chave da ${preset.label}.`, 'danger'); }
+      if (ui.busy) return;
+      setBusy(true, 'Ajustando o prompt para os formatos do Discord…');
+      try {
+        const base = parsePrompt(text);
+        const r = await rewritePrompt(text, cfg);
+        $('#gen-prompt').value = formatPrompt(r.theme, { ...r.details, ...base.details });
+        $('#gen-prompt').dispatchEvent(new Event('input'));
+        CS.toast('Prompt ajustado: confira e edite as linhas se quiser.', 'success');
+      } catch (err) {
+        CS.toast('Não deu para ajustar: ' + (err.message || 'erro'), 'danger');
+      } finally {
+        setBusy(false);
+      }
+    });
     rv.checked = ui.review;
     rv.addEventListener('change', () => {
       ui.review = rv.checked;
@@ -1789,5 +1940,5 @@ ${lines.join('\n\n')}`;
   else init();
 
   // Exposto para testes / depuração
-  window.CosmeticGenerator = { STYLE, styleGuidePrompt, styleExamples, generateLocal, varyItem, addRef, checkArt, ZONES, OUTPUT_SCHEMA, SYSTEM_PROMPT, SVG_OUTPUT_SCHEMA, SVG_SYSTEM_PROMPT, userTextFor };
+  window.CosmeticGenerator = { parsePrompt, formatPrompt, rewritePrompt, REWRITE_SYSTEM, STYLE, styleGuidePrompt, styleExamples, generateLocal, varyItem, addRef, checkArt, ZONES, OUTPUT_SCHEMA, SYSTEM_PROMPT, SVG_OUTPUT_SCHEMA, SVG_SYSTEM_PROMPT, userTextFor };
 })();
