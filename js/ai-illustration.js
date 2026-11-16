@@ -39,7 +39,20 @@
   };
   const CAT_WORD = { nameplates: 'nameplate', decorations: 'avatar decoration', effects: 'profile effect', frames: 'profile frame' };
 
+  /** Tira do tema pedidos de apresentação (sprite sheet, kit, mockup…) que fazem o modelo desenhar vários itens. */
+  function cleanTheme(theme) {
+    const t = String(theme || '')
+      .replace(/\b(professional|high[- ]quality|premium)\b/gi, '')
+      .replace(/\b(game\s+)?ui\s+assets?\b/gi, '')
+      .replace(/\b(sprite\s*sheets?|spritesheets?|asset\s*sheets?|mock-?ups?|presentation|showcase|bundles?|kits?|sets?|collections?|several items|multiple items)\b/gi, '')
+      .replace(/\b(for user profiles?|displaying( a)?( cosmetic)?|cosmetics?)\b/gi, '')
+      .replace(/\b(folha de sprites?|kit|conjunto|cole[cç][aã]o|v[aá]rios itens|apresenta[cç][aã]o)\b/gi, '')
+      .replace(/\s+,/g, ',').replace(/\s{2,}/g, ' ').replace(/^[\s,.;:-]+|[\s,;:-]+$/g, '').trim();
+    return t || String(theme || '').trim();
+  }
+
   function promptFor(cat, theme, provider, hasRefs) {
+    theme = cleanTheme(theme);
     const bg = provider === 'gemini'
       ? 'BACKGROUND: perfectly flat solid pure green (#00FF00) everywhere outside the artwork — including any empty hole in the middle — with no gradient, texture, shadow, vignette or white margin. Do not use any green-screen green inside the artwork itself (if the theme needs green, use jade, emerald or teal tones that are clearly darker or bluer).'
       : 'BACKGROUND: fully transparent.';
@@ -50,7 +63,8 @@
       STYLE,
       bg,
       'Also reply with one short line of text: NOME: <a creative item name in Brazilian Portuguese, 2 to 4 words>.',
-      hasRefs ? 'The attached images are official Discord shop items: match their level of finish and their composition, but do NOT copy their subject.' : '',
+      hasRefs ? 'The attached image is only an inspiration for colors and mood. Do NOT copy it and do NOT place it in the result.' : '',
+      'The output must be ONE image containing ONE object. No numbers, no captions, no panels, no grid.',
     ].filter(Boolean).join('\n\n');
   }
 
@@ -408,9 +422,25 @@ mask{mask-type:alpha}
 @keyframes tw{0%,100%{opacity:0;transform:scale(.3) rotate(0)}50%{opacity:1;transform:scale(1) rotate(45deg)}}
 @keyframes rise{0%{opacity:0;transform:translateY(0)}20%{opacity:1}100%{opacity:0;transform:translateY(-${rise}px)}}`;
     const shine = `<g mask="url(#am)"><rect class="shine" x="0" y="0" width="${shineW}" height="${H}" fill="url(#sg)" transform="skewX(-20)"/></g>`;
-    const lights = hl ? `<use class="hlb" href="#hl"/><use class="hl" href="#hl"/>` : '';
+    // Ondulação: a arte é fatiada em faixas horizontais que oscilam com fase defasada —
+    // chamas, fumaça, tecido e energia parecem se mover de verdade.
+    const N = { effects: 24, frames: 16, nameplates: 6, decorations: 14 }[cat];
+    const A = { effects: 3.5, frames: 2.5, nameplates: 1.2, decorations: 1.8 }[cat];
+    const sh = H / N;
+    const clips = Array.from({ length: N }, (_, i) => `<clipPath id="c${i}"><rect x="-20" y="${f(i * sh - 0.6)}" width="${W + 40}" height="${f(sh + 1.2)}"/></clipPath>`).join('');
+    const waveCss = Array.from({ length: 8 }, (_, k) => `.v${k}{animation-delay:-${f(k * 0.25)}s}`).join('');
+    const body = Array.from({ length: N }, (_, i) => `<g clip-path="url(#c${i})"><use class="wv v${i % 8}" href="#full"/></g>`).join('');
+    const lick = { effects: 'translateY(-26px) scaleY(1.1)', frames: 'translateY(-16px)', nameplates: 'translateY(-6px)', decorations: 'scale(1.07)' }[cat];
+    const licks = hl ? `<use class="lk" href="#hl"/><use class="lk lk2" href="#hl"/><use class="hlb" href="#hl"/>` : '';
+    const lights = '';
     const head = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">`;
-    const loop = `${head}<style>${css}</style>${defs}<g class="art"><use class="glow" href="#art"/><use href="#art"/>${lights}${shine}</g>${motes}${sparkles}</svg>`;
+    const fullDef = `<g id="full"><use href="#art"/>${hl ? '<use class="hl" href="#hl"/>' : ''}</g>`;
+    const css2 = css.replace(',heat .5s steps(1) infinite', '') + `
+.wv{animation:wave 2s ease-in-out infinite}${waveCss}
+@keyframes wave{0%,100%{transform:translateX(-${A}px)}50%{transform:translateX(${A}px)}}
+.lk{transform-box:view-box;transform-origin:50% ${cat === 'decorations' ? '50%' : '100%'};mix-blend-mode:screen;opacity:0;animation:lick 1s ease-out infinite}.lk2{animation-delay:-.5s}
+@keyframes lick{0%{opacity:.7;transform:none}100%{opacity:0;transform:${lick}}}`;
+    const loop = `${head}<style>${css2}</style>${defs.replace('</defs>', clips + fullDef + '</defs>')}<g class="art"><use class="glow" href="#art"/>${body}${licks}${shine}</g>${motes}${sparkles}</svg>`;
     if (cat !== 'effects') return { svg: loop, loopSeconds: 4 };
 
     // Entrada (3 s): a arte surge de cima para baixo com clarão, partículas estourando
@@ -459,7 +489,7 @@ ${pts.map((_, i) => `.b${i}{animation-delay:${f(0.4 + (i % 8) * 0.12)}s}`).join(
   async function generate(req, cfg, opts = {}) {
     const provider = cfg.provider === 'openai' ? 'openai' : cfg.provider === 'gemini' ? 'gemini' : null;
     if (!provider) throw new Error('O modo Ilustração usa modelos de imagem: escolha Google Gemini ou OpenAI.');
-    const theme = req.prompt || 'tema livre, item premium';
+    const theme = cleanTheme(req.prompt) || 'tema livre, item premium';
     let done = 0;
     const tick = () => opts.onProgress && opts.onProgress(`Pintando as ilustrações… ${done}/${req.cats.length}`);
     tick();
@@ -505,5 +535,5 @@ ${pts.map((_, i) => `.b${i}{animation-delay:${f(0.4 + (i % 8) * 0.12)}s}`).join(
     return ok;
   }
 
-  window.CosmeticIllustration = { generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
+  window.CosmeticIllustration = { cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
 })();
