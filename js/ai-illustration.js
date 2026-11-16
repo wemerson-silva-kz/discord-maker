@@ -52,7 +52,7 @@
   }
 
   function promptFor(cat, theme, provider, hasRefs) {
-    theme = cleanTheme(theme);
+    theme = cleanTheme(theme).replace(/[\s.]+$/, '');
     const bg = provider === 'gemini'
       ? 'BACKGROUND: perfectly flat solid pure green (#00FF00) everywhere outside the artwork — including any empty hole in the middle — with no gradient, texture, shadow, vignette or white margin. Do not use any green-screen green inside the artwork itself (if the theme needs green, use jade, emerald or teal tones that are clearly darker or bluer).'
       : 'BACKGROUND: fully transparent.';
@@ -501,9 +501,11 @@ ${pts.map((_, i) => `.b${i}{animation-delay:${f(0.4 + (i % 8) * 0.12)}s}`).join(
         let gen = null;
         for (let attempt = 0; ; attempt++) {
           try {
+            const detail = req.details && req.details[cat] ? cleanTheme(req.details[cat]) : '';
+            const catTheme = detail ? `${detail}. General theme and art style: ${theme}` : theme;
             gen = provider === 'gemini'
-              ? await geminiImage(cat, theme, cfg, (opts.refs && opts.refs[cat]) || [])
-              : await openaiImage(cat, theme, cfg);
+              ? await geminiImage(cat, catTheme, cfg, (opts.refs && opts.refs[cat]) || [])
+              : await openaiImage(cat, catTheme, cfg);
             break;
           } catch (e) {
             if (!e.retryAfter || attempt >= 2) throw e;
@@ -518,7 +520,7 @@ ${pts.map((_, i) => `.b${i}{animation-delay:${f(0.4 + (i % 8) * 0.12)}s}`).join(
         const label = (provider === 'gemini' ? 'Gemini · ' : 'OpenAI · ') + gen.model;
         return {
           cat,
-          raw: { ...metaFor(cat, theme), ...(gen.name ? { name: gen.name.slice(0, 28) } : {}), prompt: theme, engine: provider, engineLabel: label, asset: { type: 'svg', ...anim } },
+          raw: { ...metaFor(cat, (req.details && req.details[cat]) || theme), ...(gen.name ? { name: gen.name.slice(0, 28) } : {}), prompt: theme, engine: provider, engineLabel: label, asset: { type: 'svg', ...anim } },
           quality: { ok: true, issues: [], summary: '✓ ilustração · zonas protegidas por máscara' },
           palette: art.palette,
         };

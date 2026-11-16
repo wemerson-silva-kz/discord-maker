@@ -130,11 +130,19 @@
 
               <form id="gen-form" class="p-4 sm:p-5 space-y-4" autocomplete="off">
                 <div>
-                  <label class="field-label" for="gen-prompt">Descreva o seu tema</label>
+                  <div class="flex items-center justify-between gap-2 mb-1.5">
+                    <label class="field-label !mb-0" for="gen-prompt">Descreva o seu tema</label>
+                    <button type="button" id="gen-rewrite-now" class="btn btn-sm btn-secondary" title="A IA reescreve o texto em tema + uma linha por formato">🪄 Ajustar com IA</button>
+                  </div>
                   <div class="relative">
-                    <textarea id="gen-prompt" rows="4" maxlength="2000" required class="dc-input h-auto py-2.5 pb-6 resize-y min-h-[110px] max-h-[60vh] leading-relaxed" placeholder="Ex.: dragão de jade cuspindo fogo verde em um templo nas nuvens"></textarea>
+                    <textarea id="gen-prompt" rows="4" maxlength="2000" required class="dc-input h-auto py-2.5 pb-6 resize-y min-h-[110px] max-h-[60vh] leading-relaxed" placeholder="Ex.: dragão de jade cuspindo fogo verde em um templo nas nuvens&#10;nameplate: escamas de jade com chamas verdes&#10;moldura: dragão enrolado em volta do avatar&#10;efeito: rajada de fogo verde e nuvens escuras&#10;frame: telhados do templo no topo"></textarea>
                     <span id="gen-prompt-count" class="absolute right-3 bottom-2 text-[11px] text-dc-faint">0/2000</span>
                   </div>
+                  <p class="text-[11px] text-dc-faint mt-1.5">Dica: depois do tema geral, detalhe cada item numa linha — <code>nameplate:</code> <code>moldura:</code> <code>efeito:</code> <code>frame:</code>. Cada linha vai só para o seu formato.</p>
+                  <label class="flex items-start gap-2 mt-1.5 text-xs text-dc-muted cursor-pointer select-none">
+                    <input type="checkbox" id="gen-rewrite" class="accent-[#5865F2] mt-0.5" checked />
+                    <span><b class="text-dc-text">Ajustar o prompt com IA antes de gerar</b> quando não houver linhas por formato (usa o modelo de texto do provedor; o resultado aparece aqui para você editar).</span>
+                  </label>
                   <div class="flex flex-wrap gap-1.5 mt-2" id="gen-examples"></div>
                 </div>
 
