@@ -19,14 +19,14 @@
     nameplates: { w: 448, h: 84 },
     decorations: { w: 288, h: 288 },
     effects: { w: 450, h: 880 },
-    frames: { w: 1312, h: 716 },
+    frames: { w: 1312, h: 2528 }, // em volta do card: card 1200 px, 304 por cima, 212 por baixo, 56 dos lados
   };
   /* Proporção pedida a cada provedor. */
   const ASPECT = {
     nameplates: { gemini: '21:9', openai: '1536x1024' },
     decorations: { gemini: '1:1', openai: '1024x1024' },
     effects: { gemini: '9:16', openai: '1024x1536' },
-    frames: { gemini: '16:9', openai: '1536x1024' },
+    frames: { gemini: '9:16', openai: '1024x1536' },
   };
 
   const STYLE = 'Polished 2D game cosmetic illustration in the style of official Discord shop items: clean cel shading with 2-3 tones per color, crisp smooth edges, soft rim light, a short harmonious palette (one dominant color, one support, one accent), bright and readable at small size, a few big well-drawn shapes rather than clutter. No text, no letters, no numbers, no logos, no watermark, no UI elements, no photo realism, no 3D render look.';
@@ -35,8 +35,10 @@
     decorations: 'FORMAT: square avatar decoration. The artwork is a decorative ring that wraps around an EMPTY CIRCULAR HOLE in the exact center of the image; the hole diameter is about 72% of the image width and must contain only background. Place the main ornament on the top or a top corner of the ring and smaller accents around the rest so it feels balanced. The art hugs the hole edge and stays inside the image borders.',
     nameplates: 'FORMAT: very wide horizontal banner ornament. All artwork must sit inside the central horizontal band (the middle 40% of the image height); everything above and below that band is plain background. The LEFT HALF of the image is completely empty background. The illustration grows in density toward the right end, with the main motif on the far right.',
     effects: 'FORMAT: tall vertical overlay effect for a profile card. Decorative elements run along the top quarter and down the left and right edges like a living border (e.g. flames, petals, clouds, vines, sparks). The middle of the image and the bottom third stay mostly empty background, with only a few small floating particles.',
-    frames: 'FORMAT: wide ornamental profile frame. A rich ornament spans the TOP band of the image (top 40% of the height), and slim decorative columns run down the far left and far right edges to the bottom corners. The entire center and lower middle of the image is empty background.',
+    frames: 'FORMAT: tall ornamental frame that WRAPS AROUND a tall portrait profile card. Imagine an empty rounded rectangle (the card) occupying the middle of the image: from 4% to 96% of the width and from 12% to 92% of the height — it must stay empty background. The frame hugs the OUTSIDE of that rectangle: a rich main ornament sits on and above the TOP edge (it can overhang the card top slightly), a smaller ornament on and below the BOTTOM edge, and slim decorative borders run down the left and right edges connecting them. Nothing inside the card area except the very edge.',
   };
+  /* Frame gerado = uma camada "border" em volta do card: topo e base fixos, o meio estica. */
+  const FRAME_WRAP = { inner: 1200, top: 304, bottom: 212, side: 56, layers: [{ kind: 'border', order: 'front', anchor: 'center', sliceTop: 304 + 560, sliceBottom: 212 + 420, imgW: 1312 }] };
   const CAT_WORD = { nameplates: 'nameplate', decorations: 'avatar decoration', effects: 'profile effect', frames: 'profile frame' };
 
   /** Tira do tema pedidos de apresentação (sprite sheet, kit, mockup…) que fazem o modelo desenhar vários itens. */
@@ -277,9 +279,13 @@
         // texto do perfil: no máximo semitransparente
         if (x > 21 && x < 429 && y > 199 && y < 556) k = Math.min(k, 0.55 + 0.45 * smooth(0, 60, Math.min(x - 21, 429 - x)));
       } else if (cat === 'frames') {
-        const inX = smooth(60, 110, x) * smooth(60, 110, W - x);
-        const inY = smooth(360, 430, y);
-        k = 1 - inX * inY; // centro e área do nome livres; topo e laterais ficam
+        // card em (56, 304)–(1256, 2316): o miolo fica livre; o ornamento pode invadir a borda
+        // (até ~180 px no topo, sobre o banner, ~110 na base e ~90 dos lados)
+        const inX = smooth(56 + 60, 56 + 110, x) * smooth(56 + 60, 56 + 110, W - x);
+        const inY = smooth(304 + 130, 304 + 200, y) * smooth(212 + 60, 212 + 120, H - y);
+        k = 1 - inX * inY;
+        // avatar (card: centro 290,487 raio ~235)
+        k = Math.min(k, smooth(225, 260, Math.hypot(x - (56 + 290), y - (304 + 487))) + (1 - inX * inY) * 0);
       }
       if (k < 1) d[(y * W + x) * 4 + 3] = Math.round(d[(y * W + x) * 4 + 3] * k);
     }
@@ -376,7 +382,7 @@
       let x, y;
       if (cat === 'decorations') { const a = R() * Math.PI * 2, r = 112 + R() * 26; x = 144 + Math.cos(a) * r; y = 144 + Math.sin(a) * r; }
       else if (cat === 'nameplates') { x = 230 + R() * 210; y = 10 + R() * 64; }
-      else if (cat === 'frames') { const top = R() < 0.7; x = top ? 40 + R() * (W - 80) : (R() < 0.5 ? 20 + R() * 50 : W - 70 + R() * 50); y = top ? 20 + R() * 300 : 300 + R() * 380; }
+      else if (cat === 'frames') { const z = R(); if (z < 0.45) { x = 40 + R() * (W - 80); y = 20 + R() * 420; } else if (z < 0.65) { x = 40 + R() * (W - 80); y = H - 300 + R() * 260; } else { x = R() < 0.5 ? 10 + R() * 120 : W - 130 + R() * 120; y = 300 + R() * (H - 600); } }
       else { const side = R(); x = side < 0.35 ? 10 + R() * 60 : side < 0.7 ? W - 70 + R() * 60 : 30 + R() * (W - 60); y = side < 0.7 ? 40 + R() * (H - 140) : 20 + R() * 190; }
       if (cat === 'effects' && Math.hypot(x - 82, y - 138) < 80) continue;
       pts.push([x, y]);
@@ -569,7 +575,8 @@ ${isparks}</svg>`;
         const label = (provider === 'gemini' ? 'Gemini · ' : 'OpenAI · ') + gen.model;
         return {
           cat,
-          raw: { ...metaFor(cat, (req.details && req.details[cat]) || theme), ...(gen.name ? { name: gen.name.slice(0, 28) } : {}), prompt: theme, engine: provider, engineLabel: label, asset: { type: 'svg', ...anim } },
+          raw: { ...metaFor(cat, (req.details && req.details[cat]) || theme),
+            ...(cat === 'frames' ? { _wrap: true } : {}), ...(gen.name ? { name: gen.name.slice(0, 28) } : {}), prompt: theme, engine: provider, engineLabel: label, asset: { type: 'svg', ...anim, ...(cat === 'frames' ? { wrap: FRAME_WRAP } : {}) } },
           quality: { ok: true, issues: [], summary: '✓ ilustração · zonas protegidas por máscara' },
           palette: art.palette,
         };

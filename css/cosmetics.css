@@ -904,3 +904,31 @@
 
 /* Paleta do Discord por trás da arte da nameplate (como no app: cor mais forte à direita) */
 .np-palette { background: linear-gradient(90deg, color-mix(in srgb, var(--np-dark) 55%, transparent) 0%, var(--np-dark) 45%, var(--np-light) 100%); }
+
+
+/* ---------- Profile frame "em volta do card" (como no Discord) ----------
+   Medidas no espaço de um card de 1200 px; 100cqw = largura do card (host). */
+.fw-host { position: relative; container-type: inline-size; }
+.fw-host > .fw-card { position: relative; z-index: 1; }
+/* margem para o frame que sobra em cima/embaixo (--fw-w = largura do card, posta via JS: cqw não vale na própria caixa) */
+.fw-host.has-wrap-frame { margin-top: calc(var(--fw-top, 0) * var(--fw-w, 340px) / 1200); margin-bottom: calc(var(--fw-bottom, 0) * var(--fw-w, 340px) / 1200); }
+.fw-layer {
+  position: absolute; pointer-events: none;
+  left: calc(var(--fw-side, 0) * -100cqw / 1200); right: calc(var(--fw-side, 0) * -100cqw / 1200);
+  top: calc(var(--fw-top, 0) * -100cqw / 1200); bottom: calc(var(--fw-bottom, 0) * -100cqw / 1200);
+}
+.fw-back { z-index: 0; }
+.fw-front { z-index: 35; }
+.fw-staple { position: absolute; left: 0; width: 100%; height: auto; display: block; }
+.fw-staple.fw-top { top: 0; }
+.fw-staple.fw-bottom { bottom: 0; }
+.fw-rail { position: absolute; inset: 0; background: center / 100% 100% no-repeat; }
+.fw-border {
+  position: absolute; inset: 0; box-sizing: border-box;
+  border-style: solid; border-color: transparent;
+  border-width: calc(var(--fw-bt, 0) * 100cqw / 1200) 0 calc(var(--fw-bb, 0) * 100cqw / 1200) 0;
+  border-image-repeat: stretch;
+}
+/* Miniatura nos cards: perfil menor para caber o frame que sobra em cima e embaixo */
+.fw-mini { width: 98px; }
+.fw-mini > .mini-profile { width: 98px; height: 112px; }

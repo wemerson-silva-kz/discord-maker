@@ -210,12 +210,14 @@
     const introSecs = CS.introOf(cat, a);
     const loopSecs = a.type === 'svg' ? a.loopSeconds : opt.loopSeconds;
     const jobs = [];
+    // Frame "em volta do card" (1312×2528) ou o antigo, preso no topo (1312×716)
+    const full = cat === 'frames' && a.wrap ? { w: 1312, h: 2528 } : FRAME_FULL;
+    const half = cat === 'frames' && a.wrap ? { w: 656, h: 1264 } : undefined;
     if (cat === 'frames' && a.type === 'svg') {
-      // Formato do Discord: um PNG estático 1312×716 (+ APNG animado, se quiser animar fora do Discord)
-      jobs.push({ phase: 'loop', label: 'PNG estático 1312×716 (formato do Discord)', secs: 1 / opt.fps, plays: 0, file: `${slug}-frame.png`, size: FRAME_FULL, still: true });
+      jobs.push({ phase: 'loop', label: `PNG estático ${full.w}×${full.h} (formato do Discord)`, secs: 1 / opt.fps, plays: 0, file: `${slug}-frame.png`, size: full, still: true });
     }
     if (introSecs) jobs.push({ phase: 'intro', label: 'Entrada', secs: introSecs, plays: 1, file: `${slug}-entrada.png` });
-    jobs.push({ phase: 'loop', label: introSecs ? 'Loop' : 'Animação', secs: loopSecs, plays: 0, file: `${slug}${introSecs ? '-loop' : ''}.png` });
+    jobs.push({ phase: 'loop', label: introSecs ? 'Loop' : 'Animação', secs: loopSecs, plays: 0, file: `${slug}${introSecs ? '-loop' : ''}.png`, size: half });
 
     const total = jobs.reduce((s, j) => s + Math.max(1, Math.round(j.secs * opt.fps)), 0);
     let done = 0;
@@ -292,12 +294,14 @@
     current = { cat, item };
     const a = item.asset || {};
     const introSecs = CS.introOf(cat, a);
-    const size = { nameplates: '448×84', decorations: '288×288', effects: '450×880', frames: '1312×716' }[cat];
+    const size = { nameplates: '448×84', decorations: '288×288', effects: '450×880', frames: a.wrap ? '1312×2528' : '1312×716' }[cat];
     $('#apng-title').innerHTML = '';
     $('#apng-title').append(Object.assign(document.createElement('b'), { textContent: item.name }), ` · ${CS.CATS[cat].singular} · ${size}`);
     $('#apng-loop-box').classList.toggle('hidden', a.type === 'svg');
     $('#apng-note').textContent = cat === 'frames'
-      ? 'No Discord o frame é um PNG estático de 1312 px: sai esse PNG e também um APNG animado em meia resolução (656×358).'
+      ? (a.wrap
+        ? 'Frame em volta do card (1312×2528, card de 1200 px com 304 px por cima, 212 por baixo e 56 de cada lado): sai o PNG estático e um APNG animado em meia resolução (656×1264).'
+        : 'No Discord o frame é um PNG estático de 1312 px: sai esse PNG e também um APNG animado em meia resolução (656×358).')
       : introSecs
         ? `Efeito em duas fases, como no Discord: um arquivo de ENTRADA (${introSecs.toFixed(1)} s, toca 1×) e um de LOOP (repete).`
         : 'Um arquivo em loop infinito, com fundo transparente.';

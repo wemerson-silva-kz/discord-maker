@@ -187,7 +187,7 @@
      CORS. Traz a config completa do efeito (camadas de entrada/loop com tempos)
      e o conteúdo exato dos pacotes. Buscado só sob demanda e guardado 7 dias. */
   const PRODUCT_API = 'https://discord.com/api/v9/collectibles-products/';
-  const PRODUCT_CACHE = 'cosmetic-studio:discord-products:v1';
+  const PRODUCT_CACHE = 'cosmetic-studio:discord-products:v2';
   const PRODUCT_TTL = 7 * 24 * 3600 * 1000;
   const productInflight = new Map();
   let productBlockedUntil = 0;
@@ -208,6 +208,13 @@
         layers: fx.effects.map((e) => ({ src: e.src, loop: !!e.loop, duration: e.duration, start: e.start, loopDelay: e.loopDelay, zIndex: e.zIndex })),
         thumb: fx.thumbnailPreviewSrc || '',
         reduced: fx.reducedMotionSrc || '',
+      };
+    }
+    const fr = (p.items || []).find((it) => String(it.type) === '3' && Array.isArray(it.layers));
+    if (fr) {
+      out.frame = {
+        inner: fr.inner_width || 1200, top: fr.overflow_top || 0, bottom: fr.overflow_bottom || 0, side: fr.overflow_horizontal || 0,
+        layers: fr.layers.map((l) => ({ id: String(l.id), type: l.type, order: l.order, anchor: l.anchor, responsive: !!l.responsive })),
       };
     }
     const np = (p.items || []).find((it) => String(it.type) === '2' && it.palette);
@@ -270,11 +277,46 @@
         if (c && c.palette && Date.now() - c.t < PRODUCT_TTL) e.raw.asset = { ...e.raw.asset, discordPalette: c.palette };
         continue;
       }
+      if (e.cat === 'frames') {
+        const sku = ((e.raw.asset.src || '').match(/collectibles-shop\/(\d{15,21})\//) || [])[1];
+        const c = sku && all[sku];
+        if (c && c.frame && Date.now() - c.t < PRODUCT_TTL) e.raw.asset = { ...e.raw.asset, wrap: frameWrap(sku, c.frame) };
+        continue;
+      }
       if (e.cat !== 'effects') continue;
       const c = all[e.raw.id.replace(/^dc-fx-/, '')];
       if (c && c.effect && Date.now() - c.t < PRODUCT_TTL) e.raw.asset = effectAsset(c.effect);
     }
   }
+  /** Camadas oficiais do frame → asset.wrap (imagens: /collectibles-shop/<sku>/<camada>/static). */
+  function frameWrap(sku, fr) {
+    return {
+      inner: fr.inner, top: fr.top, bottom: fr.bottom, side: fr.side,
+      layers: fr.layers.map((l) => ({
+        src: `https://cdn.discordapp.com/media/v1/collectibles-shop/${sku}/${l.id}/static`,
+        kind: ['staple', 'border', 'rail'].includes(l.type) ? l.type : 'staple',
+        order: l.order === 'back' ? 'back' : 'front',
+        anchor: ['top', 'bottom', 'center'].includes(l.anchor) ? l.anchor : 'top',
+        // border oficial: 1312×2528; as pontas (cantos e ornamentos) ficam fixas e o meio estica
+        sliceTop: 900, sliceBottom: 900, imgW: 1312,
+      })),
+    };
+  }
+  const frameSku = (it) => ((it.asset.src || '').match(/collectibles-shop\/(\d{15,21})\//) || [])[1] || it.id.replace(/^dc-frame-/, '');
+  /** Frame da loja: busca as camadas oficiais e monta o frame em volta do card. */
+  async function wrapShopFrame(id) {
+    const it = CS.findItem('frames', id);
+    if (!it || it.asset.wrap || !/^dc-frame-/.test(id)) return;
+    const sku = frameSku(it);
+    try {
+      const prod = await fetchProduct(sku);
+      if (!prod.frame || !prod.frame.layers.length) return;
+      CS.updateAsset('frames', id, { ...it.asset, wrap: frameWrap(sku, prod.frame) });
+    } catch (e) {
+      console.warn('[Discord] frame', sku, e.message);
+    }
+  }
+
   /** Nameplate da loja: aplica a paleta oficial (nome da API; cor da tabela em data.js). */
   async function paletteShopNameplate(id) {
     const it = CS.findItem('nameplates', id);
@@ -290,11 +332,13 @@
   document.addEventListener('cs:visible', (ev) => {
     if (ev.detail.cat === 'effects') animateShopEffect(ev.detail.id, { play: true });
     if (ev.detail.cat === 'nameplates') paletteShopNameplate(ev.detail.id);
+    if (ev.detail.cat === 'frames') wrapShopFrame(ev.detail.id);
   });
   document.addEventListener('cs:need-effect', (ev) => animateShopEffect(ev.detail.id, { play: !!ev.detail.hover }));
   document.addEventListener('cs:equip', (ev) => {
     if (ev.detail.cat === 'effects') animateShopEffect(ev.detail.id);
     if (ev.detail.cat === 'nameplates') paletteShopNameplate(ev.detail.id);
+    if (ev.detail.cat === 'frames') wrapShopFrame(ev.detail.id);
   });
 
   /* ---------------- Pacotes (bundles) da loja ---------------- */
