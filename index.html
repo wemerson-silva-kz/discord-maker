@@ -152,7 +152,7 @@
                     <button type="button" id="gen-refs-add" class="btn btn-sm btn-secondary">🧬 Escolher da biblioteca</button>
                   </div>
                   <div id="gen-refs" class="flex flex-wrap gap-2"></div>
-                  <p id="gen-refs-empty" class="text-[11px] text-dc-faint">Escolha até 3 itens (da galeria, da loja do Discord ou criações suas) para a IA criar variações deles.</p>
+                  <p id="gen-refs-empty" class="text-[11px] text-dc-faint">Escolha até 12 itens (da galeria, da loja do Discord ou criações suas). Cada um guia o item do mesmo formato; os animados são lidos quadro a quadro.</p>
                 </div>
 
                 <div class="grid gap-4 md:grid-cols-2">
@@ -342,7 +342,8 @@
               <span class="text-[11px] text-dc-faint">340 × auto</span>
             </div>
             <div class="rounded-xl p-4 bg-dc-bg/60 border border-black/20" style="background-image: radial-gradient(rgba(255,255,255,.04) 1px, transparent 1px); background-size: 14px 14px;">
-              <div id="profile-card" class="profile-card relative mx-auto w-full max-w-[340px] rounded-xl bg-dc-dark overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,.5)] ring-1 ring-black/40">
+              <div id="profile-host" class="fw-host relative mx-auto w-full max-w-[340px]">
+              <div id="profile-card" class="fw-card profile-card relative mx-auto w-full max-w-[340px] rounded-xl bg-dc-dark overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,.5)] ring-1 ring-black/40">
                 <div id="profile-banner" class="relative h-[106px] transition-colors duration-300">
                   <button id="btn-fps" type="button" class="absolute top-2.5 right-12 z-40 h-8 px-2 rounded-full bg-black/40 hover:bg-black/60 text-white text-[11px] font-bold transition" title="Medir FPS da animação" aria-pressed="false">FPS</button>
                   <button id="btn-replay" type="button" class="absolute top-2.5 right-2.5 z-40 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 grid place-items-center text-white transition" title="Repetir efeito de perfil" aria-label="Repetir efeito de perfil">
@@ -396,6 +397,7 @@
                 <div id="fps-hud" class="fps-hud hidden" aria-live="off"></div>
                 <div id="profile-flash" class="profile-flash absolute inset-0 z-50 bg-white opacity-0 pointer-events-none"></div>
               </div>
+              </div>
             </div>
           </div>
 
@@ -427,6 +429,7 @@
 
   <script src="js/data.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/ref-frames.js"></script>
   <script src="js/ai-illustration.js"></script>
   <script src="js/ai-generator.js"></script>
   <script src="js/itemshop.js"></script>

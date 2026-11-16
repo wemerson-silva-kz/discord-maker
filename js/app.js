@@ -474,7 +474,9 @@
     };
     for (const attr of Array.from(root.attributes)) if (attr.name.toLowerCase().startsWith('on')) root.removeAttribute(attr.name);
     walk(root);
-    const [w, h] = SVG_SIZE[cat] || [300, 300];
+    let [w, h] = SVG_SIZE[cat] || [300, 300];
+    const vb = (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    if (vb.length === 4 && vb[2] > 0 && vb[3] > 0 && vb[2] <= 4096 && vb[3] <= 4096) { w = vb[2]; h = vb[3]; }
     if (!root.getAttribute('viewBox')) root.setAttribute('viewBox', `0 0 ${w} ${h}`);
     root.setAttribute('width', w);
     root.setAttribute('height', h);
@@ -777,6 +779,7 @@
       if (Object.keys(meta).length) asset.meta = meta;
     }
     if (cat === 'nameplates' && DATA.discordPalettes && DATA.discordPalettes[a.discordPalette]) asset.discordPalette = a.discordPalette;
+    if (cat === 'frames') { const w = sanitizeWrap(a.wrap, false); if (w) asset.wrap = w; }
     const idur = Number(a.introDuration);
     if (Number.isFinite(idur) && idur > 0) asset.introDuration = Math.min(15, idur);
     if (cat === 'effects' && asset.src && !asset.loop && !asset.intro) { asset.loop = asset.src; delete asset.src; }
@@ -808,8 +811,82 @@
         loopSeconds: num(a.loopSeconds, 1, 8, 4),
         ...(introSvg ? { introSvg, introSeconds: num(a.introSeconds, 0.5, GEN.maxIntro, 3) } : {}),
         ...(cat === 'nameplates' && DATA.discordPalettes && DATA.discordPalettes[a.discordPalette] ? { discordPalette: a.discordPalette } : {}),
+        ...(cat === 'frames' && sanitizeWrap(a.wrap, true) ? { wrap: sanitizeWrap(a.wrap, true) } : {}),
       },
     };
+  }
+
+  /**
+   * Profile frame "em volta do card", como no Discord (API de produtos):
+   * medidas no espaço de um card de 1200 px (inner), quanto passa por cima (top),
+   * por baixo (bottom) e dos lados (side), e camadas:
+   *   staple = peça presa no topo/base · border = laterais que esticam (3 fatias) ·
+   *   rail = coluna que estica · order front/back = na frente/atrás do card.
+   * Em SVG gerados (selfSrc), a camada sem src usa a própria arte do item.
+   */
+  function sanitizeWrap(w, selfSrc) {
+    if (!w || typeof w !== 'object') return null;
+    const n = (v, max) => (Number.isFinite(+v) ? Math.round(Math.min(max, Math.max(0, +v))) : 0);
+    const layers = (Array.isArray(w.layers) ? w.layers : []).slice(0, 8).map((l) => ({
+      src: httpsUrl(l && l.src),
+      kind: pick(l && l.kind, ['staple', 'border', 'rail'], 'staple'),
+      order: pick(l && l.order, ['front', 'back'], 'front'),
+      anchor: pick(l && l.anchor, ['top', 'bottom', 'center'], 'top'),
+      sliceTop: n(l && l.sliceTop, 4000),
+      sliceBottom: n(l && l.sliceBottom, 4000),
+      imgW: n(l && l.imgW, 4096) || 1312,
+    })).filter((l) => l.src || selfSrc);
+    if (!layers.length) return null;
+    return { inner: n(w.inner, 4000) || 1200, top: n(w.top, 1200), bottom: n(w.bottom, 1200), side: n(w.side, 400), layers };
+  }
+
+  /**
+   * Monta um frame "wrap" em volta de `host` (que envolve o card): camadas de trás
+   * entram antes do card, as da frente depois. As medidas usam cqw do host.
+   */
+  function mountWrapFrame(host, item) {
+    host.querySelectorAll(':scope > .fw-layer').forEach((n) => n.remove());
+    host.classList.remove('has-wrap-frame');
+    host.style.removeProperty('--fw-top'); host.style.removeProperty('--fw-bottom');
+    const a = item && item.asset;
+    if (!a || !a.wrap) return false;
+    const w = a.wrap;
+    const own = a.type === 'svg' ? svgUrl(a.svg) : '';
+    const u = 1200 / w.inner; // converte para o espaço de 1200 do CSS
+    host.classList.add('has-wrap-frame');
+    const setW = () => { if (host.clientWidth) host.style.setProperty('--fw-w', host.clientWidth + 'px'); };
+    setW();
+    if (!host._fwRo && 'ResizeObserver' in window) { host._fwRo = new ResizeObserver(setW); host._fwRo.observe(host); }
+    host.style.setProperty('--fw-top', w.top * u);
+    host.style.setProperty('--fw-bottom', w.bottom * u);
+    host.style.setProperty('--fw-side', w.side * u);
+    const card = host.querySelector(':scope > .fw-card') || host.firstElementChild;
+    for (const order of ['back', 'front']) {
+      const box = el('div', `fw-layer fw-${order}`);
+      w.layers.filter((l) => l.order === order).forEach((l) => {
+        const src = l.src || own;
+        const scale = ((w.inner + 2 * w.side) / (l.imgW || 1312)) * u; // px da imagem → espaço de 1200
+        if (l.kind === 'staple') {
+          const img = el('img', `fw-staple fw-${l.anchor === 'bottom' ? 'bottom' : 'top'}`);
+          img.alt = ''; img.src = src; img.decoding = 'async';
+          box.appendChild(img);
+        } else if (l.kind === 'rail') {
+          const d = el('div', 'fw-rail');
+          d.style.backgroundImage = `url("${src}")`;
+          box.appendChild(d);
+        } else {
+          const d = el('div', 'fw-border');
+          d.style.setProperty('--fw-bt', Math.round(l.sliceTop * scale));
+          d.style.setProperty('--fw-bb', Math.round(l.sliceBottom * scale));
+          d.style.borderImageSource = `url("${src}")`;
+          d.style.borderImageSlice = `${l.sliceTop} 0 ${l.sliceBottom} 0 fill`;
+          box.appendChild(d);
+        }
+      });
+      if (!box.children.length) continue;
+      if (order === 'back') host.insertBefore(box, card); else host.appendChild(box);
+    }
+    return true;
   }
   function sanitizeCustomItem(cat, raw) {
     if (!CATS[cat] || !raw || typeof raw !== 'object') return null;
@@ -1288,8 +1365,16 @@
     } else if (cat === 'frames') {
       const mini = miniProfile();
       mini.classList.add('mini-profile--frame');
-      mini.appendChild(buildAsset(item, cat));
-      wrap.appendChild(mini);
+      if (a.wrap) {
+        const host = el('div', 'fw-host fw-mini');
+        mini.classList.add('fw-card');
+        host.appendChild(mini);
+        mountWrapFrame(host, item);
+        wrap.appendChild(host);
+      } else {
+        mini.appendChild(buildAsset(item, cat));
+        wrap.appendChild(mini);
+      }
     } else {
       const mini = miniProfile();
       mini.appendChild(buildAsset(item, cat, { paused: true }));
@@ -1347,14 +1432,14 @@
     }
     if (a.type === 'svg') {
       if (!(cat === 'effects' && a.introSvg)) {
-        badge.textContent = cat === 'frames' ? `Frame · arte SVG 1312×716` : `Arte SVG · loop ${a.loopSeconds}s · 60 fps`;
+        badge.textContent = cat === 'frames' ? (a.wrap ? 'Frame em volta do card · arte 1312×2528' : 'Frame · arte SVG 1312×716') : `Arte SVG · loop ${a.loopSeconds}s · 60 fps`;
         preview.appendChild(badge);
       }
       return;
     }
     if (a.type !== 'image') return;
     if (cat === 'frames') {
-      badge.textContent = 'Frame estático · PNG 1312 px';
+      badge.textContent = a.wrap ? `Frame oficial · ${a.wrap.layers.length} camadas em volta do card` : 'Frame estático · PNG 1312 px';
       preview.appendChild(badge);
       return;
     }
@@ -1549,7 +1634,9 @@
     } else if (key === 'frame') {
       const slot = $('#profile-frame');
       slot.innerHTML = '';
-      if (item) slot.appendChild(buildAsset(item, cat));
+      // Frame "wrap" (como no Discord): em volta do card, por fora. Os antigos ficam dentro, no topo.
+      const wrapped = mountWrapFrame($('#profile-host'), item);
+      if (item && !wrapped) slot.appendChild(buildAsset(item, cat));
     } else if (key === 'decoration') {
       $$('#preview-panel .js-deco-slot').forEach((slot) => {
         slot.innerHTML = '';
@@ -2080,7 +2167,7 @@
     sanitizeGenItem, sanitizeCustomItem, registerCustom, saveCustom, deleteCustom, publicItem,
     loadApng, getMetrics, canFetch, metricsLabel, renderGallery, addCatalogItems, catalogReady,
     observeCards,
-    sanitizeSvg, SVG_SIZE, parseApng, parseWebp, introOf, mediaProxyUrl,
+    sanitizeSvg, SVG_SIZE, mountWrapFrame, parseApng, parseWebp, introOf, mediaProxyUrl,
     setShopAttribution(url, terms, shopDate, stale) {
       const a = $('#shop-attribution');
       if (/^https:\/\/itemshop\.gg(\/|$)/.test(url || '')) a.href = url;

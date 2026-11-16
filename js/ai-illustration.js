@@ -19,14 +19,14 @@
     nameplates: { w: 448, h: 84 },
     decorations: { w: 288, h: 288 },
     effects: { w: 450, h: 880 },
-    frames: { w: 1312, h: 716 },
+    frames: { w: 1312, h: 2528 }, // em volta do card: card 1200 px, 304 por cima, 212 por baixo, 56 dos lados
   };
   /* Proporção pedida a cada provedor. */
   const ASPECT = {
     nameplates: { gemini: '21:9', openai: '1536x1024' },
     decorations: { gemini: '1:1', openai: '1024x1024' },
     effects: { gemini: '9:16', openai: '1024x1536' },
-    frames: { gemini: '16:9', openai: '1536x1024' },
+    frames: { gemini: '9:16', openai: '1024x1536' },
   };
 
   const STYLE = 'Polished 2D game cosmetic illustration in the style of official Discord shop items: clean cel shading with 2-3 tones per color, crisp smooth edges, soft rim light, a short harmonious palette (one dominant color, one support, one accent), bright and readable at small size, a few big well-drawn shapes rather than clutter. No text, no letters, no numbers, no logos, no watermark, no UI elements, no photo realism, no 3D render look.';
@@ -35,8 +35,10 @@
     decorations: 'FORMAT: square avatar decoration. The artwork is a decorative ring that wraps around an EMPTY CIRCULAR HOLE in the exact center of the image; the hole diameter is about 72% of the image width and must contain only background. Place the main ornament on the top or a top corner of the ring and smaller accents around the rest so it feels balanced. The art hugs the hole edge and stays inside the image borders.',
     nameplates: 'FORMAT: very wide horizontal banner ornament. All artwork must sit inside the central horizontal band (the middle 40% of the image height); everything above and below that band is plain background. The LEFT HALF of the image is completely empty background. The illustration grows in density toward the right end, with the main motif on the far right.',
     effects: 'FORMAT: tall vertical overlay effect for a profile card. Decorative elements run along the top quarter and down the left and right edges like a living border (e.g. flames, petals, clouds, vines, sparks). The middle of the image and the bottom third stay mostly empty background, with only a few small floating particles.',
-    frames: 'FORMAT: wide ornamental profile frame. A rich ornament spans the TOP band of the image (top 40% of the height), and slim decorative columns run down the far left and far right edges to the bottom corners. The entire center and lower middle of the image is empty background.',
+    frames: 'FORMAT: tall ornamental frame that WRAPS AROUND a tall portrait profile card. Imagine an empty rounded rectangle (the card) occupying the middle of the image: from 4% to 96% of the width and from 12% to 92% of the height — it must stay empty background. The frame hugs the OUTSIDE of that rectangle: a rich main ornament sits on and above the TOP edge (it can overhang the card top slightly), a smaller ornament on and below the BOTTOM edge, and slim decorative borders run down the left and right edges connecting them. Nothing inside the card area except the very edge.',
   };
+  /* Frame gerado = uma camada "border" em volta do card: topo e base fixos, o meio estica. */
+  const FRAME_WRAP = { inner: 1200, top: 304, bottom: 212, side: 56, layers: [{ kind: 'border', order: 'front', anchor: 'center', sliceTop: 304 + 560, sliceBottom: 212 + 420, imgW: 1312 }] };
   const CAT_WORD = { nameplates: 'nameplate', decorations: 'avatar decoration', effects: 'profile effect', frames: 'profile frame' };
 
   /** Tira do tema pedidos de apresentação (sprite sheet, kit, mockup…) que fazem o modelo desenhar vários itens. */
@@ -277,9 +279,13 @@
         // texto do perfil: no máximo semitransparente
         if (x > 21 && x < 429 && y > 199 && y < 556) k = Math.min(k, 0.55 + 0.45 * smooth(0, 60, Math.min(x - 21, 429 - x)));
       } else if (cat === 'frames') {
-        const inX = smooth(60, 110, x) * smooth(60, 110, W - x);
-        const inY = smooth(360, 430, y);
-        k = 1 - inX * inY; // centro e área do nome livres; topo e laterais ficam
+        // card em (56, 304)–(1256, 2316): o miolo fica livre; o ornamento pode invadir a borda
+        // (até ~180 px no topo, sobre o banner, ~110 na base e ~90 dos lados)
+        const inX = smooth(56 + 60, 56 + 110, x) * smooth(56 + 60, 56 + 110, W - x);
+        const inY = smooth(304 + 130, 304 + 200, y) * smooth(212 + 60, 212 + 120, H - y);
+        k = 1 - inX * inY;
+        // avatar (card: centro 290,487 raio ~235)
+        k = Math.min(k, smooth(225, 260, Math.hypot(x - (56 + 290), y - (304 + 487))) + (1 - inX * inY) * 0);
       }
       if (k < 1) d[(y * W + x) * 4 + 3] = Math.round(d[(y * W + x) * 4 + 3] * k);
     }
@@ -376,7 +382,7 @@
       let x, y;
       if (cat === 'decorations') { const a = R() * Math.PI * 2, r = 112 + R() * 26; x = 144 + Math.cos(a) * r; y = 144 + Math.sin(a) * r; }
       else if (cat === 'nameplates') { x = 230 + R() * 210; y = 10 + R() * 64; }
-      else if (cat === 'frames') { const top = R() < 0.7; x = top ? 40 + R() * (W - 80) : (R() < 0.5 ? 20 + R() * 50 : W - 70 + R() * 50); y = top ? 20 + R() * 300 : 300 + R() * 380; }
+      else if (cat === 'frames') { const z = R(); if (z < 0.45) { x = 40 + R() * (W - 80); y = 20 + R() * 420; } else if (z < 0.65) { x = 40 + R() * (W - 80); y = H - 300 + R() * 260; } else { x = R() < 0.5 ? 10 + R() * 120 : W - 130 + R() * 120; y = 300 + R() * (H - 600); } }
       else { const side = R(); x = side < 0.35 ? 10 + R() * 60 : side < 0.7 ? W - 70 + R() * 60 : 30 + R() * (W - 60); y = side < 0.7 ? 40 + R() * (H - 140) : 20 + R() * 190; }
       if (cat === 'effects' && Math.hypot(x - 82, y - 138) < 80) continue;
       pts.push([x, y]);
@@ -384,8 +390,10 @@
     return pts;
   }
 
-  function buildSvgs(cat, art, seed) {
+  function buildSvgs(cat, art, seed, motion = {}) {
     const { url, hl, palette, W, H } = art;
+    const preset = motion.preset || 'rise';
+    const k = [0.6, 1, 1.6][(motion.intensity || 2) - 1] || 1;
     const R = rnd(seed || 7);
     const n = { decorations: 12, nameplates: 8, effects: 18, frames: 16 }[cat];
     const pts = sparklePoints(cat, W, H, n, R);
@@ -420,17 +428,24 @@ mask{mask-type:alpha}
 @keyframes heat{0%{filter:url(#w1)}33%{filter:url(#w2)}66%{filter:url(#w3)}}
 @keyframes shine{0%{transform:translateX(-${shineW * 2}px)}55%,100%{transform:translateX(${W + shineW}px)}}
 @keyframes tw{0%,100%{opacity:0;transform:scale(.3) rotate(0)}50%{opacity:1;transform:scale(1) rotate(45deg)}}
-@keyframes rise{0%{opacity:0;transform:translateY(0)}20%{opacity:1}100%{opacity:0;transform:translateY(-${rise}px)}}`;
+@keyframes rise{0%{opacity:0;transform:${({ rise: 'translateY(0)', fall: 'translateY(0)', drift: 'translateX(0)', orbit: 'rotate(0)', pulse: 'scale(.4)', sway: 'translate(0,0)', sweep: 'translateX(0)' })[preset]}}20%{opacity:1}100%{opacity:0;transform:${({ rise: `translateY(-${Math.round(rise * k)}px)`, fall: `translateY(${Math.round(rise * k)}px)`, drift: `translateX(${Math.round(rise * 1.4 * k)}px)`, orbit: `rotate(${Math.round(120 * k)}deg)`, pulse: `scale(${(1.6 * k).toFixed(2)})`, sway: `translate(${Math.round(12 * k)}px,-${Math.round(rise * 0.5 * k)}px)`, sweep: `translateX(${Math.round(rise * 1.4 * k)}px)` })[preset]}}}
+.m{transform-box:${preset === 'orbit' ? 'view-box;transform-origin:50% 50%' : 'fill-box;transform-origin:center'}}
+.glow{animation-duration:${preset === 'pulse' ? '1s' : '2s'}}
+.shine{animation-duration:${preset === 'sweep' ? '2s' : '4s'}}`;
     const shine = `<g mask="url(#am)"><rect class="shine" x="0" y="0" width="${shineW}" height="${H}" fill="url(#sg)" transform="skewX(-20)"/></g>`;
     // Ondulação: a arte é fatiada em faixas horizontais que oscilam com fase defasada —
     // chamas, fumaça, tecido e energia parecem se mover de verdade.
     const N = { effects: 24, frames: 16, nameplates: 6, decorations: 14 }[cat];
-    const A = { effects: 3.5, frames: 2.5, nameplates: 1.2, decorations: 1.8 }[cat];
+    const A = { effects: 3.5, frames: 2.5, nameplates: 1.2, decorations: 1.8 }[cat] * k * (preset === 'sway' ? 1.8 : preset === 'pulse' || preset === 'sweep' ? 0.6 : 1);
     const sh = H / N;
     const clips = Array.from({ length: N }, (_, i) => `<clipPath id="c${i}"><rect x="-20" y="${f(i * sh - 0.6)}" width="${W + 40}" height="${f(sh + 1.2)}"/></clipPath>`).join('');
     const waveCss = Array.from({ length: 8 }, (_, k) => `.v${k}{animation-delay:-${f(k * 0.25)}s}`).join('');
     const body = Array.from({ length: N }, (_, i) => `<g clip-path="url(#c${i})"><use class="wv v${i % 8}" href="#full"/></g>`).join('');
-    const lick = { effects: 'translateY(-26px) scaleY(1.1)', frames: 'translateY(-16px)', nameplates: 'translateY(-6px)', decorations: 'scale(1.07)' }[cat];
+    const up = { effects: 26, frames: 16, nameplates: 6, decorations: 10 }[cat] * k;
+    const lick = cat === 'decorations' || preset === 'pulse' || preset === 'orbit' ? `scale(${(1 + 0.07 * k).toFixed(3)})`
+      : preset === 'fall' ? `translateY(${f(up * 0.6)}px)`
+        : preset === 'drift' || preset === 'sweep' ? `translateX(${f(up)}px)`
+          : `translateY(-${f(up)}px)${cat === 'effects' ? ' scaleY(1.1)' : ''}`;
     const licks = hl ? `<use class="lk" href="#hl"/><use class="lk lk2" href="#hl"/><use class="hlb" href="#hl"/>` : '';
     const lights = '';
     const head = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">`;
@@ -440,27 +455,67 @@ mask{mask-type:alpha}
 @keyframes wave{0%,100%{transform:translateX(-${A}px)}50%{transform:translateX(${A}px)}}
 .lk{transform-box:view-box;transform-origin:50% ${cat === 'decorations' ? '50%' : '100%'};mix-blend-mode:screen;opacity:0;animation:lick 1s ease-out infinite}.lk2{animation-delay:-.5s}
 @keyframes lick{0%{opacity:.7;transform:none}100%{opacity:0;transform:${lick}}}`;
-    const loop = `${head}<style>${css2}</style>${defs.replace('</defs>', clips + fullDef + '</defs>')}<g class="art"><use class="glow" href="#art"/>${body}${licks}${shine}</g>${motes}${sparkles}</svg>`;
-    if (cat !== 'effects') return { svg: loop, loopSeconds: 4 };
+    if (cat !== 'effects') {
+      const loop = `${head}<style>${css2}</style>${defs.replace('</defs>', clips + fullDef + '</defs>')}<g class="art"><use class="glow" href="#art"/>${body}${licks}${shine}</g>${motes}${sparkles}</svg>`;
+      return { svg: loop, loopSeconds: 4 };
+    }
 
-    // Entrada (3 s): a arte surge de cima para baixo com clarão, partículas estourando
+    /* ---- EFEITO ----
+       Loop: versão leve — só topo (banner) e laterais finas, levemente translúcida, com ondulação,
+       brasas e poucos brilhos. O meio do card fica livre.
+       Entrada: o momento de impacto — clarão, onda de choque, a arte inteira entra com zoom e foco,
+       faísca explodindo do centro, faixa de luz, e no fim o miolo some e sobra o visual do loop. */
+    const edge = `<mask id="lm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}">
+<linearGradient id="gt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".72" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<linearGradient id="gl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff"/><stop offset=".6" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<linearGradient id="gr" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="#fff"/><stop offset=".6" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<linearGradient id="gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".75" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<rect x="0" y="0" width="${W}" height="250" fill="url(#gt)"/>
+<g mask="url(#lb)"><rect x="0" y="0" width="70" height="${H}" fill="url(#gl)"/><rect x="${W - 70}" y="0" width="70" height="${H}" fill="url(#gr)"/></g></mask>
+<mask id="lb" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${Math.round(H * 0.8)}" fill="url(#gb)"/></mask>`;
+    const fewSparks = sparkles.split('</path>').length > 1 ? pts.filter(([x, y]) => y < 240 || x < 75 || x > W - 75).slice(0, 8).map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * 0.8)}" fill="${palette[i % palette.length]}"/>`).join('') : '';
+    const fewMotes = sparklePoints(cat, W, H, 8, R).filter(([x, y]) => y < 240 || x < 75 || x > W - 75).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f(1.6 + R() * 2)}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
+    const loopDefs = defs.replace('</defs>', clips + fullDef + edge + '</defs>');
+    const loop = `${head}<style>${css2}
+.lite{opacity:.88}</style>${loopDefs}<g class="lite" mask="url(#lm)"><g class="art"><use class="glow" href="#art"/>${body}${licks}</g></g>${fewMotes}${fewSparks}</svg>`;
+
+    const cx = W / 2, cy = 300;
+    const T = 3.6; // duração da entrada
+    const burst = pts.map(([x, y], i) => {
+      const dx = f(cx - x), dy = f(cy - y);
+      return `@keyframes k${i}{0%{opacity:0;transform:translate(${dx}px,${dy}px) scale(.2)}15%{opacity:1}70%{opacity:1;transform:translate(0,0) scale(1.3) rotate(90deg)}100%{opacity:0;transform:translate(0,0) scale(.5) rotate(180deg)}}.b${i}{animation:k${i} 1.5s cubic-bezier(.15,.8,.3,1) ${f(0.25 + (i % 6) * 0.05)}s both}`;
+    }).join('\n');
     const icss = `
 mask{mask-type:alpha}
-.rv{animation:rv 1.6s cubic-bezier(.2,.8,.2,1) both}
-.in{transform-box:view-box;transform-origin:50% 20%;animation:pop 1.8s cubic-bezier(.2,.9,.3,1.2) both}
-.fl{opacity:0;mix-blend-mode:screen;filter:url(#blur);animation:fl 3s ease-out both}
+.flash{transform-box:fill-box;transform-origin:center;animation:flash .9s ease-out both}
+.ring{transform-box:fill-box;transform-origin:center;fill:none;animation:ring 1.1s cubic-bezier(.1,.7,.3,1) .1s both}
+.ring2{animation-delay:.35s}
+.in{transform-box:view-box;transform-origin:50% 34%;animation:zoom 1.3s cubic-bezier(.16,1,.3,1) .15s both}
+.full{animation:out .9s ease-in ${f(T - 1.1)}s both}
+.edge{opacity:0;animation:inn .9s ease-out ${f(T - 1.1)}s both}
+.fl{mix-blend-mode:screen;filter:url(#blur);opacity:0;animation:fl 1.6s ease-out .2s both}
 .hl{mix-blend-mode:screen;animation:flick 1s steps(1) infinite,heat .5s steps(1) infinite}
-.s{transform-box:fill-box;transform-origin:center;opacity:0;animation:burst 1.4s ease-out both}
-${pts.map((_, i) => `.b${i}{animation-delay:${f(0.4 + (i % 8) * 0.12)}s}`).join('')}
-@keyframes rv{from{height:0}to{height:${H}px}}
-@keyframes pop{from{transform:scale(1.08);opacity:0}60%{opacity:1}to{transform:scale(1);opacity:1}}
-@keyframes fl{0%{opacity:0}25%{opacity:1}100%{opacity:0}}
+.sw{animation:sw 1.1s cubic-bezier(.45,0,.25,1) 1.1s both}
+.s{transform-box:fill-box;transform-origin:center;opacity:0}
+${burst}
+@keyframes flash{0%{opacity:0;transform:scale(.1)}12%{opacity:1}100%{opacity:0;transform:scale(5)}}
+@keyframes ring{0%{opacity:1;stroke-width:14;transform:scale(.1)}100%{opacity:0;stroke-width:1;transform:scale(4.5)}}
+@keyframes zoom{0%{opacity:0;transform:scale(1.35) rotate(-2deg);filter:blur(10px) brightness(2.2)}55%{opacity:1;filter:blur(0) brightness(1.4)}100%{opacity:1;transform:none;filter:none}}
+@keyframes fl{0%{opacity:0}20%{opacity:1}100%{opacity:0}}
+@keyframes out{to{opacity:0}}
+@keyframes inn{to{opacity:.88}}
+@keyframes sw{0%{transform:translateX(-${Math.round(W * 0.6)}px)}100%{transform:translateX(${W + 40}px)}}
 @keyframes flick{0%{opacity:.55}25%{opacity:1}50%{opacity:.65}75%{opacity:.95}}
-@keyframes heat{0%{filter:url(#w1)}33%{filter:url(#w2)}66%{filter:url(#w3)}}
-@keyframes burst{0%{opacity:0;transform:scale(0)}40%{opacity:1;transform:scale(1.4) rotate(45deg)}100%{opacity:0;transform:scale(.4) rotate(90deg)}}`;
-    const isparks = pts.map(([x, y], i) => `<path class="s b${i}" d="${star(x, y, sz * 1.2)}" fill="${palette[i % palette.length]}"/>`).join('');
-    const intro = `${head}<style>${icss}</style>${defs.replace('</defs>', `<clipPath id="rc"><rect class="rv" x="0" y="0" width="${W}" height="${H}"/></clipPath></defs>`)}<g clip-path="url(#rc)"><g class="in"><use class="fl" href="#art"/><use href="#art"/>${hl ? '<use class="hl" href="#hl"/>' : ''}</g></g>${isparks}</svg>`;
-    return { svg: loop, loopSeconds: 4, introSvg: intro, introSeconds: 3 };
+@keyframes heat{0%{filter:url(#w1)}33%{filter:url(#w2)}66%{filter:url(#w3)}}`;
+    const isparks = pts.map(([x, y], i) => `<path class="s b${i}" d="${star(x, y, sz * 1.4)}" fill="${palette[i % palette.length]}"/>`).join('');
+    const c0 = palette[0] || '#fff';
+    const intro = `${head}<style>${icss}</style>${defs.replace('</defs>', edge + '</defs>')}
+<circle class="flash" cx="${cx}" cy="${cy}" r="70" fill="${c0}" opacity="0" filter="url(#blur)"/>
+<g class="in"><g class="full"><use class="fl" href="#art"/><use href="#art"/>${hl ? '<use class="hl" href="#hl"/>' : ''}<g mask="url(#am)"><rect class="sw" x="0" y="0" width="${Math.round(W * 0.35)}" height="${H}" fill="url(#sg)" transform="skewX(-20)"/></g></g>
+<g class="edge" mask="url(#lm)"><use href="#art"/></g></g>
+<circle class="ring" cx="${cx}" cy="${cy}" r="60" stroke="${c0}"/><circle class="ring ring2" cx="${cx}" cy="${cy}" r="60" stroke="${palette[1] || '#fff'}"/>
+${isparks}</svg>`;
+    return { svg: loop, loopSeconds: 4, introSvg: intro, introSeconds: T };
   }
 
   /* ---------------------------------------------------------------- */
@@ -516,11 +571,12 @@ ${pts.map((_, i) => `.b${i}{animation-delay:${f(0.4 + (i % 8) * 0.12)}s}`).join(
           }
         }
         const art = await processImage(gen, cat);
-        const anim = buildSvgs(cat, art, 1 + i * 97 + theme.length);
+        const anim = buildSvgs(cat, art, 1 + i * 97 + theme.length, (opts.motion && opts.motion[cat]) || {});
         const label = (provider === 'gemini' ? 'Gemini · ' : 'OpenAI · ') + gen.model;
         return {
           cat,
-          raw: { ...metaFor(cat, (req.details && req.details[cat]) || theme), ...(gen.name ? { name: gen.name.slice(0, 28) } : {}), prompt: theme, engine: provider, engineLabel: label, asset: { type: 'svg', ...anim } },
+          raw: { ...metaFor(cat, (req.details && req.details[cat]) || theme),
+            ...(cat === 'frames' ? { _wrap: true } : {}), ...(gen.name ? { name: gen.name.slice(0, 28) } : {}), prompt: theme, engine: provider, engineLabel: label, asset: { type: 'svg', ...anim, ...(cat === 'frames' ? { wrap: FRAME_WRAP } : {}) } },
           quality: { ok: true, issues: [], summary: '✓ ilustração · zonas protegidas por máscara' },
           palette: art.palette,
         };
