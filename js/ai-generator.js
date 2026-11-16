@@ -433,6 +433,92 @@ Responda SOMENTE com JSON: {"tema": "...", "nameplate": "...", "moldura": "...",
     return { theme, details };
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Análise das referências quadro a quadro (IA de visão)                 */
+  /* ------------------------------------------------------------------ */
+  const MOTIONS = ['rise', 'fall', 'drift', 'orbit', 'pulse', 'sway', 'sweep'];
+  const ANALYZE_SYSTEM = `Você é diretor de arte de cosméticos de perfil do Discord. Vai receber referências da biblioteca do usuário, agrupadas por formato (nameplate, moldura/decoration, efeito/effect, frame). Cada imagem é uma TIRA DE QUADROS: os quadros numerados vão da esquerda para a direita no tempo, então compare-os para entender o MOVIMENTO (o que se mexe, para onde, em que ritmo). Se só houver 1 quadro, a referência é estática.
+
+Para CADA formato que tiver referências, estude todas as referências daquele formato juntas e devolva:
+- "visual": o que elas têm em comum e que deve ser mantido — assunto, elementos, composição, traço/sombreamento, acabamento (1 a 2 frases).
+- "movimento": como as coisas se movem nos quadros (1 frase).
+- "preset": o movimento que mais combina, um de: rise (partículas/chamas sobem), fall (caem: chuva, pétalas, neve), drift (passam na horizontal: peixes, nuvens, vento), orbit (giram em volta), pulse (pulsam/brilham), sway (ondulam/balançam), sweep (faixa de brilho passando).
+- "intensidade": 1 (sutil), 2 (médio) ou 3 (forte).
+- "cores": 3 a 5 cores em hex que dominam as referências.
+- "pedido": 1 frase descrevendo um NOVO item daquele formato, no mesmo sentido das referências, mas com o TEMA do usuário (não copie as referências; traga algo novo que pareça da mesma família). Se o usuário deu um detalhe para o formato, respeite-o.
+Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"formato": "nameplate|decoration|effect|frame", "visual": "...", "movimento": "...", "preset": "...", "intensidade": 2, "cores": ["#..."], "pedido": "..."}]}`;
+
+  /** Monta as tiras de quadros das referências, agrupadas por formato. */
+  async function refStrips(refs, cats, limit = 10) {
+    const out = {};
+    let n = 0;
+    for (const r of refs) {
+      if (!cats.includes(r.cat) || n >= limit || !window.CosmeticRefFrames) continue;
+      const st = await window.CosmeticRefFrames.stripOf(r.item, r.cat, 4);
+      if (!st) continue;
+      (out[r.cat] = out[r.cat] || []).push({ name: r.item.name, ...st });
+      n++;
+    }
+    return out;
+  }
+
+  /** IA de visão estuda as tiras e devolve, por formato, visual + movimento + pedido novo. */
+  async function analyzeRefs(groups, theme, details, cfg) {
+    const cats = Object.keys(groups);
+    if (!cats.length) return {};
+    const model = textModelFor(cfg);
+    const blocks = [{ text: `TEMA do usuário: ${theme || '(sem tema: siga as referências)'}${Object.keys(details || {}).length ? '\nDetalhes do usuário por formato: ' + Object.entries(details).map(([c, v]) => `${CAT_TO_API[c]}: ${v}`).join(' | ') : ''}` }];
+    cats.forEach((cat) => {
+      blocks.push({ text: `\n=== Referências de ${CAT_TO_API[cat]} (${groups[cat].length}) ===` });
+      groups[cat].forEach((g, i) => {
+        blocks.push({ text: `${CAT_TO_API[cat]} ${i + 1}: "${g.name}" — ${g.frames} quadro(s)${g.animated ? ', ANIMADA' : ', estática'}` });
+        blocks.push({ image: g });
+      });
+    });
+    let out = '';
+    if (cfg.provider === 'anthropic') {
+      const mod = await loadSdk();
+      const client = new mod.default({ apiKey: cfg.key, dangerouslyAllowBrowser: true });
+      const content = blocks.map((b) => (b.image ? { type: 'image', source: { type: 'base64', media_type: b.image.mime, data: b.image.data } } : { type: 'text', text: b.text }));
+      const res = await client.messages.create({ model, max_tokens: 3000, system: ANALYZE_SYSTEM, messages: [{ role: 'user', content }] });
+      out = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    } else if (PROVIDERS[cfg.provider].native === 'gemini') {
+      const parts = blocks.map((b) => (b.image ? { inlineData: { mimeType: b.image.mime, data: b.image.data } } : { text: b.text }));
+      const res = await fetch(`${GEMINI_BASE}/models/${encodeURIComponent(geminiModelName(model))}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: ANALYZE_SYSTEM }] }, contents: [{ role: 'user', parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.6 } }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw geminiError(res.status, data, model);
+      const cand = data && data.candidates && data.candidates[0];
+      out = ((cand && cand.content && cand.content.parts) || []).filter((pt) => !pt.thought).map((pt) => pt.text || '').join('');
+    } else {
+      const base = (cfg.baseUrl || PROVIDERS[cfg.provider].base || '').replace(/\/+$/, '');
+      const headers = { 'Content-Type': 'application/json' };
+      if (cfg.key) headers.Authorization = 'Bearer ' + cfg.key;
+      const content = blocks.map((b) => (b.image ? { type: 'image_url', image_url: { url: `data:${b.image.mime};base64,${b.image.data}` } } : { type: 'text', text: b.text }));
+      const res = await fetch(base + '/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model, messages: [{ role: 'system', content: ANALYZE_SYSTEM }, { role: 'user', content }], response_format: { type: 'json_object' } }) });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((data && data.error && (data.error.message || data.error)) || 'HTTP ' + res.status);
+      out = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+    }
+    const j = parseJsonLoose(out);
+    const res = {};
+    (Array.isArray(j.formatos) ? j.formatos : []).forEach((f) => {
+      const cat = API_TO_CAT[f && f.formato] || ({ moldura: 'decorations', efeito: 'effects' })[f && f.formato];
+      if (!cat || !groups[cat]) return;
+      const clip = (v, n = 300) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, n);
+      res[cat] = {
+        visual: clip(f.visual), movimento: clip(f.movimento), pedido: clip(f.pedido),
+        preset: MOTIONS.includes(f.preset) ? f.preset : 'rise',
+        intensidade: Math.min(3, Math.max(1, Math.round(+f.intensidade || 2))),
+        cores: (Array.isArray(f.cores) ? f.cores : []).filter((c) => /^#[0-9a-f]{6}$/i.test(c)).slice(0, 5),
+      };
+    });
+    return res;
+  }
+
   /** Monta o texto do pedido com tema, categorias e referências da biblioteca. */
   function userTextFor(req) {
     if (req.feedback) return req.feedback;
@@ -440,13 +526,13 @@ Responda SOMENTE com JSON: {"tema": "...", "nameplate": "...", "moldura": "...",
     const det = req.cats.filter((c) => req.details && req.details[c]);
     if (det.length) t += '\n\nDETALHES POR FORMATO (siga à risca; valem só para aquele item):\n' + det.map((c) => `- ${CAT_TO_API[c]}: ${req.details[c]}`).join('\n');
     if (req.refs.length) {
-      t += '\n\nREFERÊNCIAS da biblioteca. Crie VARIAÇÕES inspiradas nelas: mantenha a essência (paleta, estilo, tipo de movimento, clima), mas traga algo novo e aplique o tema, se houver.';
+      t += '\n\nREFERÊNCIAS da biblioteca. Cada referência vale SÓ para o item do MESMO formato (referências de nameplate guiam a nameplate, de efeito guiam o efeito…); formatos sem referência seguem só o tema. Crie VARIAÇÕES inspiradas nelas: mantenha a essência (paleta, estilo, tipo de movimento, clima), mas traga algo novo e aplique o tema, se houver. As imagens anexas são TIRAS DE QUADROS: os quadros numerados vão da esquerda para a direita no tempo — compare-os e reproduza o tipo de movimento na sua animação.';
       req.refs.forEach((r, i) => {
         const a = r.item.asset || {};
         t += `\n\nReferência ${i + 1} (${CAT_TO_API[r.cat]}): "${r.item.name}"${r.item.collection ? ' — coleção ' + r.item.collection : ''}. ${r.item.description || ''}${(r.item.tags || []).length ? ' Tags: ' + r.item.tags.join(', ') + '.' : ''}`;
         if (a.type === 'svg') t += `\nSVG do loop da referência:\n${a.svg}`;
         else if (a.type === 'gen') t += `\nSpec da referência (partículas): ${JSON.stringify({ palette: a.palette, base: a.base, ring: a.ring, layers: a.layers, intro: a.intro })}`;
-        else if (a.type === 'image') t += r.hasImage ? '\n(imagem da referência anexada)' : '\n(item oficial do Discord; imagem indisponível)';
+        else if (a.type === 'image') t += r.hasImage ? `\n(tira de ${r.frames || 1} quadro(s) anexada${r.animated ? ', ANIMADA: observe o movimento quadro a quadro' : ''})` : '\n(item oficial do Discord; imagem indisponível)';
         else if (a.className) t += `\n(efeito CSS da coleção ${r.item.collection})`;
       });
     }
@@ -1250,7 +1336,7 @@ ${lines.join('\n\n')}`;
   }
 
   /* ---------- Referências da biblioteca ---------- */
-  const MAX_REFS = 3;
+  const MAX_REFS = 12;
   function refsResolved() {
     return ui.refs.map((r) => ({ cat: r.cat, item: CS.findItem(r.cat, r.id) })).filter((r) => r.item);
   }
@@ -1338,7 +1424,7 @@ ${lines.join('\n\n')}`;
                 <button type="button" data-cat="frames">Frames</button>
               </div>
             </div>
-            <p class="text-[11px] text-dc-faint">Escolha até ${MAX_REFS}. A IA recebe a arte/spec dos itens gerados e a imagem dos itens oficiais (Claude, Gemini e OpenAI enxergam imagens).</p>
+            <p class="text-[11px] text-dc-faint">Escolha até ${MAX_REFS}. Cada referência vale para o item do mesmo formato. As animadas são lidas quadro a quadro (tira de quadros) para a IA enxergar o movimento (Claude, Gemini e OpenAI enxergam imagens).</p>
             <div id="ref-list" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[52vh] overflow-y-auto pr-1"></div>
           </div>
           <div class="flex justify-end gap-2 px-4 py-3 border-t border-black/30">
@@ -1572,20 +1658,37 @@ ${lines.join('\n\n')}`;
     showSkeletons(cats.length);
     const dropSkeletons = () => document.querySelectorAll('#gen-results .gen-skeleton').forEach((n) => n.remove());
     try {
-      // Referências por categoria (só Gemini aceita imagens aqui): as escolhidas + exemplos oficiais
-      const refsByCat = {};
-      if (native === 'gemini') {
-        for (const cat of cats) {
-          const urls = refs.filter((r) => r.cat === cat).map((r) => refImageUrl(r.item)).filter(Boolean);
-          // Sem exemplos oficiais aqui: o modelo de imagem tende a copiá-los lado a lado (colagem)
-          const list = [];
-          for (const u of urls.slice(0, 3)) { try { list.push(await toBase64(u)); } catch (e) { /* segue sem */ } }
-          refsByCat[cat] = list;
+      // Referências: cada uma vale SÓ para o seu formato. As animadas são lidas quadro a quadro,
+      // uma IA de visão descreve visual + movimento por formato, e o modelo de imagem recebe essa
+      // descrição + 1 quadro de referência (mais que isso ele cola as referências lado a lado).
+      const refsByCat = {}, motion = {}, perCat = { ...details };
+      const mine = refs.filter((r) => cats.includes(r.cat));
+      if (mine.length) {
+        setBusy(true, `Lendo ${mine.length} referência(s) quadro a quadro…`);
+        const groups = await refStrips(mine, cats, 12);
+        if (Object.keys(groups).length) {
+          setBusy(true, 'Estudando as referências (visual e movimento)…');
+          let an = {};
+          try { an = await analyzeRefs(groups, prompt, details, cfg); } catch (e) {
+            console.warn('[Análise de referências]', e);
+            CS.toast('Não deu para analisar as referências (' + (e.message || 'erro') + '); usando só os nomes.', 'info');
+          }
+          Object.entries(an).forEach(([cat, a]) => {
+            perCat[cat] = [details[cat], a.pedido, a.visual && `Keep the look of the user's references: ${a.visual}`, a.movimento && `Their motion: ${a.movimento}`].filter(Boolean).join('. ');
+            motion[cat] = { preset: a.preset, intensity: a.intensidade };
+          });
+          if (native === 'gemini') Object.entries(groups).forEach(([cat, list]) => { refsByCat[cat] = [{ mime: 'image/png', data: list[0].first }]; });
         }
+        cats.forEach((cat) => {
+          if (perCat[cat]) return;
+          const names = mine.filter((r) => r.cat === cat).map((r) => r.item.name);
+          if (names.length) perCat[cat] = 'In the spirit of: ' + names.join(', ');
+        });
       }
-      const theme = [prompt, ...refs.map((r) => r.item.name)].filter(Boolean).join(' — ');
-      const list = await window.CosmeticIllustration.generate({ prompt: theme, cats, details }, { ...cfg, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl }, {
+      const theme = prompt || 'tema livre, item premium';
+      const list = await window.CosmeticIllustration.generate({ prompt: theme, cats, details: perCat }, { ...cfg, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl }, {
         refs: refsByCat,
+        motion,
         onProgress: (msg) => setBusy(true, msg + ' (10 a 40 s por item)'),
       });
       list.forEach((it) => {
@@ -1662,15 +1765,21 @@ ${lines.join('\n\n')}`;
       setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está ${mode === 'svg' ? 'desenhando a arte' : 'montando'} do seu kit… ${mode === 'svg' ? 'isso pode levar até 1–2 minutos.' : 'isso leva alguns segundos.'}`);
       showSkeletons(cats.length);
       const req = { prompt, details, cats, mode, refs: refs.map((r) => ({ ...r })), images: [] };
-      // Imagens das referências oficiais (Claude/OpenAI recebem a URL; Gemini, os bytes)
+      // Referências oficiais viram TIRAS DE QUADROS (a IA vê o movimento); as SVG já vão como código
+      if (req.refs.some((r) => r.item.asset && r.item.asset.type === 'image')) setBusy(true, 'Lendo as referências quadro a quadro…');
+      let nImg = 0;
       for (const r of req.refs) {
+        if (!(r.item.asset && r.item.asset.type === 'image') || nImg >= 8) continue;
+        const st = window.CosmeticRefFrames ? await window.CosmeticRefFrames.stripOf(r.item, r.cat, 4) : null;
+        if (st) { req.images.push({ mime: st.mime, data: st.data }); Object.assign(r, { hasImage: true, frames: st.frames, animated: st.animated }); nImg++; continue; }
         const url = refImageUrl(r.item);
         if (!url) continue;
-        if (ai.provider === 'anthropic' || ai.provider === 'openai') { req.images.push({ url }); r.hasImage = true; }
+        if (ai.provider === 'anthropic' || ai.provider === 'openai') { req.images.push({ url }); r.hasImage = true; nImg++; }
         else if (PROVIDERS[ai.provider].native === 'gemini') {
-          try { req.images.push(await toBase64(url)); r.hasImage = true; } catch (e) { /* segue sem a imagem */ }
+          try { req.images.push(await toBase64(url)); r.hasImage = true; nImg++; } catch (e) { /* segue sem a imagem */ }
         }
       }
+      setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está ${mode === 'svg' ? 'desenhando a arte' : 'montando'} do seu kit…`);
       if (mode === 'svg' && ui.styleRefs) {
         req.styleRefs = styleExamples(cats, prompt, cats.length > 2 ? 1 : 2).slice(0, Math.max(0, 4 - req.images.length));
         for (const x of req.styleRefs) {
@@ -1940,5 +2049,5 @@ ${lines.join('\n\n')}`;
   else init();
 
   // Exposto para testes / depuração
-  window.CosmeticGenerator = { parsePrompt, formatPrompt, rewritePrompt, REWRITE_SYSTEM, STYLE, styleGuidePrompt, styleExamples, generateLocal, varyItem, addRef, checkArt, ZONES, OUTPUT_SCHEMA, SYSTEM_PROMPT, SVG_OUTPUT_SCHEMA, SVG_SYSTEM_PROMPT, userTextFor };
+  window.CosmeticGenerator = { analyzeRefs, refStrips, ANALYZE_SYSTEM, parsePrompt, formatPrompt, rewritePrompt, REWRITE_SYSTEM, STYLE, styleGuidePrompt, styleExamples, generateLocal, varyItem, addRef, checkArt, ZONES, OUTPUT_SCHEMA, SYSTEM_PROMPT, SVG_OUTPUT_SCHEMA, SVG_SYSTEM_PROMPT, userTextFor };
 })();
