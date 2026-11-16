@@ -1721,6 +1721,7 @@
     });
     $$('.js-status-label').forEach((n) => { n.textContent = STATUS[state.status].label; });
     $('#profile-banner').style.background = state.banner;
+    $('#profile-card').style.setProperty('--pf-accent', state.banner);
 
     mountCosmetic('nameplate');
     mountCosmetic('decoration');

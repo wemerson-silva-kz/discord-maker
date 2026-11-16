@@ -40,6 +40,8 @@
     custom: { label: 'Outro (compatível com OpenAI)', base: '', model: '', format: 'json_object', keyPh: 'opcional', keyOptional: true, editableBase: true, hint: 'LM Studio, Together, Fireworks, xAI, vLLM… qualquer API com /chat/completions.' },
   };
   const CAT_TO_API = { nameplates: 'nameplate', decorations: 'decoration', effects: 'effect', frames: 'frame' };
+  /** Frame em volta do card: card de 1200 px, 304 por cima, 212 por baixo, 56 dos lados; topo e base fixos, o meio estica. */
+  const FRAME_WRAP = { inner: 1200, top: 304, bottom: 212, side: 56, layers: [{ kind: 'border', order: 'front', anchor: 'center', sliceTop: 304 + 560, sliceBottom: 212 + 420, imgW: 1312 }] };
   const API_TO_CAT = { nameplate: 'nameplates', decoration: 'decorations', effect: 'effects', frame: 'frames' };
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -179,10 +181,11 @@ Gere exatamente um item para cada categoria pedida, na ordem pedida, formando um
       { id: 'name', label: 'nome e @usuário', shape: 'rect', x: 21, y: 199, w: 323, h: 72, avg: 0.35, peak: 0.75 },
       { id: 'content', label: 'texto do perfil (Sobre mim)', shape: 'rect', x: 21, y: 283, w: 408, h: 273, avg: 0.35, peak: 0.7 },
     ] },
-    frames: { w: 1312, h: 716, zones: [
-      { id: 'avatar', label: 'avatar', shape: 'circle', cx: 239, cy: 401, r: 195, avg: 0.1, peak: 0.2 },
-      { id: 'name', label: 'nome e @usuário', shape: 'rect', x: 62, y: 579, w: 940, h: 137, avg: 0.12, peak: 0.25 },
-      { id: 'center', label: 'centro do card', shape: 'rect', x: 120, y: 420, w: 1072, h: 296, avg: 0.15, peak: 0.3 },
+    // Frame em volta do card (como no Discord): canvas 1312×2528, card em (56, 304)–(1256, 2316)
+    frames: { w: 1312, h: 2528, zones: [
+      { id: 'avatar', label: 'avatar', shape: 'circle', cx: 346, cy: 791, r: 225, avg: 0.08, peak: 0.2 },
+      { id: 'name', label: 'nome e @usuário', shape: 'rect', x: 130, y: 1006, w: 1000, h: 250, avg: 0.06, peak: 0.15 },
+      { id: 'center', label: 'conteúdo do card', shape: 'rect', x: 170, y: 1300, w: 972, h: 880, avg: 0.06, peak: 0.15 },
     ] },
     decorations: { w: 288, h: 288, zones: [
       { id: 'avatar', label: 'avatar (círculo central)', shape: 'circle', cx: 144, cy: 144, r: 104, avg: 0.08, peak: 0.2 },
@@ -253,7 +256,7 @@ Composição por formato
 - effect: entrada ≈ ${f1(e.intro)} s (oficiais entre ${f1(e.introLo)} e ${f1(e.introHi)} s) e loop ≈ ${f1(e.loop)} s; no Discord o loop repete com ~${f1(e.loopDelay)} s de pausa, então o loop deve começar e terminar calmo. Use pouca área: os oficiais ocupam só ~${pct(e.coverage)} do canvas, concentrados nos 60% de cima (banner e laterais), base quase vazia. Elementos podem PASSAR sobre o nome e o texto (rajadas, pétalas, faíscas), mas nunca ficar parados sobre o avatar.
 - decoration: o centro é VAZIO; a arte é um anel colado ao avatar, mais denso entre 70% e 90% do raio do canvas, espalhada pelos 4 lados (um ornamento principal em cima ou em um canto e elementos menores equilibrando do outro lado). Cobre o avatar só ~${pct(dc.coverage)} (bordinha). Brilho alto (~${f1(dc.bright)}), sem contorno preto.
 - nameplate: densidade crescente da esquerda para a direita — vazio até x≈150, a ilustração principal nos 40% da direita (até ~${pct(np.right)} preenchido na ponta direita); o lado do nome fica quase limpo (~${pct(np.nameSide)}). Total ~${pct(np.coverage)} do retângulo, ~${Math.round(np.colors)} cores. A paleta do Discord faz o fundo: a arte não precisa de fundo.
-- frame: ornamento concentrado numa faixa no topo (até ~45% da altura) e laterais finas descendo até a base; centro e área do nome 0% cobertos. ~${Math.round(fr.colors)} cores; contorno fino.`;
+- frame: em volta do card — ornamento principal no topo, passando por cima da borda do card (os oficiais sobem ~300 px num card de 1200), peça menor na base e laterais finas; o card fica 0% coberto. ~${Math.round(fr.colors)} cores; contorno fino.`;
   }
 
   /** Exemplos oficiais da mesma categoria, para anexar como referência de estilo. */
@@ -311,7 +314,11 @@ Formatos (use exatamente estes viewBox):
 - nameplate: viewBox="0 0 448 84", FUNDO TRANSPARENTE, como as nameplates oficiais: o Discord pinta por baixo uma PALETA (campo discordPalette), um degradê da cor escura (à esquerda) para a clara (à direita). Escolha a paleta que combina com o tema: ${Object.entries(CS.DATA.discordPalettes || {}).map(([k, v]) => `${k} (${v.label})`).join(', ')}. Desenhe só a ilustração, concentrada à direita (x > 200); o avatar e o nome (texto branco) ficam à esquerda, então deixe essa área vazia ou com detalhes leves.
 - decoration: viewBox="0 0 288 288", fundo transparente. O avatar circular fica no centro (cx 144, cy 144, raio 120) e NÃO pode ser coberto: desenhe em volta, na faixa entre o raio 112 e as bordas (pode invadir levemente a borda do avatar, como uma moldura). Ex.: um dragão enrolado em volta do círculo, chamas saindo das bordas.
 - effect: viewBox="0 0 450 880", fundo transparente, sobreposto ao card de perfil. O conteúdo do perfil fica no meio (x 40–410, y 260–720): deixe essa área livre ou só com elementos translúcidos e de passagem. Use as bordas, o topo (área do banner, y < 230) e a base.
-- frame (profile frame): viewBox="0 0 1312 716", fundo transparente. É a moldura do CARD de perfil inteiro, presa ao topo e na largura do card (no Discord são PNGs de 1312 px). A faixa do topo (y < 400) fica sobre o banner: desenhe ali o ornamento principal (ex.: o dragão deitado sobre o topo do card, telhados do templo, nuvens). Desça pelas laterais (x < 70 e x > 1242) até a base do canvas, com cantos arredondados (raio ~60). O centro (x 70–1242, y 400–716) e a área do avatar e do nome (x 60–620, y 220–600) ficam livres: são o conteúdo do perfil. Pode ter animação sutil em loop (brilho, chamas, nuvens), mas precisa ficar bonito parado também, porque no Discord o frame é estático. introSeconds 0 e introSvg "".
+- frame (profile frame): viewBox="0 0 1312 2528", fundo transparente. Como no Discord, o frame fica EM VOLTA do card de perfil, por fora: o card é um retângulo de cantos arredondados (raio ~40) de x 56 a 1256 e y 304 a 2316. Desenhe:
+  • TOPO (y 0–500): o ornamento principal, apoiado na borda de cima do card e passando para fora dele (ex.: o dragão deitado sobre o card, telhados do templo, chifres, nuvens); pode descer até y ~480, sobre o banner.
+  • BASE (y 2200–2528): um ornamento menor apoiado na borda de baixo, passando para fora.
+  • LATERAIS (x 0–150 e 1162–1312, y 300–2330): bordas finas que ligam o topo à base, contornando o card.
+  Todo o interior do card (x 150–1162, y 500–2230) fica VAZIO: é o conteúdo do perfil. O meio das laterais (y ~860–1900) estica conforme a altura do perfil, então ali use um padrão contínuo e uniforme, sem elementos únicos. Pode ter animação sutil em loop (brilho, chamas, nuvens), mas precisa ficar bonito parado também. introSeconds 0 e introSvg "".
   O efeito tem DUAS FASES, como no Discord: introSvg é a ENTRADA, que toca uma única vez ao abrir o perfil (introSeconds entre 1 e 6, ideal 2 a 4): o momento mais impactante (ex.: o dragão surge e cospe uma rajada de fogo que atravessa o card), terminando suave. svg é o LOOP contínuo e mais calmo que vem depois (ex.: o dragão respirando, brasas subindo, nuvens passando).
 
 ZONAS PROTEGIDAS (obrigatório; o app mede isso automaticamente e devolve a arte para correção se invadir). Nelas não pode haver formas opacas — no máximo partículas pequenas e translúcidas de passagem:
@@ -830,7 +837,7 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
           engine: provider.id,
           engineLabel: provider.label,
           asset: raw.svg
-            ? { type: 'svg', svg: raw.svg, loopSeconds: raw.loopSeconds, introSvg: cat === 'effects' ? raw.introSvg : '', introSeconds: raw.introSeconds, discordPalette: cat === 'nameplates' ? raw.discordPalette : undefined }
+            ? { type: 'svg', svg: raw.svg, loopSeconds: raw.loopSeconds, introSvg: cat === 'effects' ? raw.introSvg : '', introSeconds: raw.introSeconds, discordPalette: cat === 'nameplates' ? raw.discordPalette : undefined, ...(cat === 'frames' && /viewBox=["']\s*0\s+0\s+1312\s+2528/.test(raw.svg) ? { wrap: FRAME_WRAP } : {}) }
             : { palette: raw.palette, base: raw.base, ring: raw.ring, layers: raw.layers, intro: raw.intro },
         },
       });
@@ -937,22 +944,23 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
    * laterais que descem e somem, motivos do tema e brilhos animados.
    */
   function localFrameSvg(palette, theme) {
+    // Em volta do card (1312×2528; card em 56,304–1256,2316): coroa no topo, peça na base, laterais
     const g = Array.from(theme.glyphs || '✦');
     const glyphs = Array.from({ length: 7 }, (_, i) => {
       const x = 130 + i * 175;
-      const y = 70 + (i % 2) * 18;
-      return `<text class="tw" x="${x}" y="${y}" font-size="54" text-anchor="middle" style="animation-delay:-${(i * 0.3).toFixed(1)}s">${g[i % g.length]}</text>`;
+      const y = 150 + (i % 2) * 40;
+      return `<text class="tw" x="${x}" y="${y}" font-size="72" text-anchor="middle" style="animation-delay:-${(i * 0.3).toFixed(1)}s">${g[i % g.length]}</text>`;
     }).join('');
-    const sparks = Array.from({ length: 10 }, (_, i) => {
-      const x = i % 2 ? 30 + rnd(0, 20) : 1262 + rnd(0, 20);
-      const y = 180 + i * 50;
-      return `<circle class="tw" cx="${x.toFixed(0)}" cy="${y}" r="${(rnd(4, 9)).toFixed(1)}" fill="${palette.accent}" style="animation-delay:-${rnd(0, 2).toFixed(2)}s"/>`;
+    const sparks = Array.from({ length: 14 }, (_, i) => {
+      const x = i % 2 ? 22 + rnd(0, 18) : 1272 + rnd(0, 18);
+      const y = 420 + i * 130;
+      return `<circle class="tw" cx="${x.toFixed(0)}" cy="${y}" r="${(rnd(5, 10)).toFixed(1)}" fill="${palette.accent}" style="animation-delay:-${rnd(0, 2).toFixed(2)}s"/>`;
     }).join('');
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1312 716">
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1312 2528">
 <defs>
 <linearGradient id="fb" x1="0" x2="1"><stop offset="0" stop-color="${palette.primary}"/><stop offset=".5" stop-color="${palette.secondary}"/><stop offset="1" stop-color="${palette.primary}"/></linearGradient>
-<linearGradient id="fs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${palette.primary}"/><stop offset=".75" stop-color="${palette.secondary}" stop-opacity=".55"/><stop offset="1" stop-color="${palette.secondary}" stop-opacity="0"/></linearGradient>
-<filter id="gl" x="-10%" y="-10%" width="120%" height="140%"><feGaussianBlur stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<linearGradient id="fs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${palette.primary}"/><stop offset=".5" stop-color="${palette.secondary}"/><stop offset="1" stop-color="${palette.primary}"/></linearGradient>
+<filter id="gl" x="-10%" y="-10%" width="120%" height="140%"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 </defs>
 <style>
 .tw{transform-box:fill-box;transform-origin:center;animation:tw 2s ease-in-out infinite}
@@ -960,10 +968,11 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
 .edge{stroke-dasharray:60 40;animation:run 2s linear infinite}
 @keyframes run{to{stroke-dashoffset:-100}}
 </style>
-<path d="M60 0H1252Q1312 0 1312 60V716H1270V120Q1270 92 1240 96Q980 150 656 140Q332 150 72 96Q42 92 42 120V716H0V60Q0 0 60 0Z" fill="url(#fb)" opacity=".95" filter="url(#gl)"/>
-<rect x="0" y="120" width="42" height="596" fill="url(#fs)"/>
-<rect x="1270" y="120" width="42" height="596" fill="url(#fs)"/>
-<path class="edge" d="M48 716V124Q48 104 72 106Q332 160 656 150Q980 160 1240 106Q1264 104 1264 124V716" fill="none" stroke="${palette.accent}" stroke-width="5" stroke-linecap="round" opacity=".9"/>
+<path d="M90 240Q300 60 656 90Q1012 60 1222 240Q1300 300 1290 380L1240 400Q1150 330 1000 330Q820 360 656 350Q492 360 312 330Q162 330 72 400L22 380Q12 300 90 240Z" fill="url(#fb)" filter="url(#gl)"/>
+<rect x="8" y="330" width="62" height="1990" rx="28" fill="url(#fs)" opacity=".95"/>
+<rect x="1242" y="330" width="62" height="1990" rx="28" fill="url(#fs)" opacity=".95"/>
+<path d="M60 2290Q360 2440 656 2420Q952 2440 1252 2290L1290 2340Q1000 2520 656 2500Q312 2520 22 2340Z" fill="url(#fb)" filter="url(#gl)"/>
+<rect class="edge" x="40" y="290" width="1232" height="2060" rx="60" fill="none" stroke="${palette.accent}" stroke-width="6" opacity=".9"/>
 <g fill="${palette.accent}" filter="url(#gl)">${glyphs}</g>
 ${sparks}
 </svg>`;
@@ -1096,7 +1105,7 @@ ${sparks}
             tags: [...new Set([...themes.map((t) => t.id), 'frame', 'local'])].slice(0, 5),
             prompt,
             engine: 'local',
-            asset: { type: 'svg', svg: localFrameSvg(palette, main), loopSeconds: 2 },
+            asset: { type: 'svg', svg: localFrameSvg(palette, main), loopSeconds: 2, wrap: FRAME_WRAP },
           },
         };
       }

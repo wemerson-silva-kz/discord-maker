@@ -681,3 +681,27 @@ input[type='color'].swatch::-moz-color-swatch { border: none; border-radius: 6px
 }
 .quality-badge.is-ok { color: #57F287; }
 .quality-badge.is-bad { color: #FEE75C; }
+
+
+/* ---------- Popout de perfil no estilo do app (tema do perfil) ---------- */
+.pf-themed {
+  --pf-accent: #5865F2;
+  --pf-bg: color-mix(in srgb, var(--pf-accent) 16%, #111214);
+  border-radius: 20px;
+  background: linear-gradient(180deg, var(--pf-bg) 0%, color-mix(in srgb, var(--pf-accent) 7%, #111214) 55%, #111214 100%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pf-accent) 38%, #1E1F22), 0 10px 36px rgba(0, 0, 0, .55);
+}
+.pf-ring { background: var(--pf-bg); }
+.pf-bubble {
+  position: relative; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-style: italic;
+  color: #DBDEE1; background: color-mix(in srgb, #000 55%, var(--pf-bg)); border: 1px solid rgba(255, 255, 255, .08);
+}
+.pf-bubble::before { content: ""; position: absolute; left: -6px; bottom: 2px; width: 9px; height: 9px; border-radius: 50%; background: inherit; border: 1px solid rgba(255, 255, 255, .08); }
+.pf-badges { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, .1); background: rgba(0, 0, 0, .18); }
+.pf-badges .badge-icon { background: transparent; width: auto; height: auto; }
+.pf-bio { font-size: 15px; line-height: 1.35; color: #DBDEE1; padding-left: 12px; border-left: 3px solid rgba(255, 255, 255, .18); }
+.pf-input {
+  display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 14px; border-radius: 12px;
+  font-size: 15px; color: #8E9297; background: rgba(0, 0, 0, .28); border: 1px solid rgba(255, 255, 255, .08);
+}
+#profile-cosmetics:empty { display: none; }
