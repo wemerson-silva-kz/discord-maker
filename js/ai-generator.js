@@ -1476,7 +1476,7 @@ ${lines.join('\n\n')}`;
       if (native === 'gemini') {
         for (const cat of cats) {
           const urls = refs.filter((r) => r.cat === cat).map((r) => refImageUrl(r.item)).filter(Boolean);
-          if (ui.styleRefs) styleExamples([cat], prompt, 2).forEach((x) => urls.push(x.url));
+          // Sem exemplos oficiais aqui: o modelo de imagem tende a copiá-los lado a lado (colagem)
           const list = [];
           for (const u of urls.slice(0, 3)) { try { list.push(await toBase64(u)); } catch (e) { /* segue sem */ } }
           refsByCat[cat] = list;
