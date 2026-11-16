@@ -576,7 +576,7 @@ ${isparks}</svg>`;
         return {
           cat,
           raw: { ...metaFor(cat, (req.details && req.details[cat]) || theme),
-            ...(cat === 'frames' ? { _wrap: true } : {}), ...(gen.name ? { name: gen.name.slice(0, 28) } : {}), prompt: theme, engine: provider, engineLabel: label, asset: { type: 'svg', ...anim, ...(cat === 'frames' ? { wrap: FRAME_WRAP } : {}) } },
+            ...(gen.name ? { name: gen.name.slice(0, 28) } : {}), prompt: theme, engine: provider, engineLabel: label, asset: { type: 'svg', ...anim, ...(cat === 'frames' ? { wrap: FRAME_WRAP } : {}) } },
           quality: { ok: true, issues: [], summary: '✓ ilustração · zonas protegidas por máscara' },
           palette: art.palette,
         };
