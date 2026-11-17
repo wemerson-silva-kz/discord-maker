@@ -705,3 +705,6 @@ input[type='color'].swatch::-moz-color-swatch { border: none; border-radius: 6px
   font-size: 15px; color: #8E9297; background: rgba(0, 0, 0, .28); border: 1px solid rgba(255, 255, 255, .08);
 }
 #profile-cosmetics:empty { display: none; }
+
+/* Nameplate na lista: a arte fica presa à direita (a linha é mais larga que 448×84) */
+.member-row .np-slot .cosmetic-layer > img { object-position: right center; }

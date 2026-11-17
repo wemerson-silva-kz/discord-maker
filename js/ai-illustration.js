@@ -37,6 +37,8 @@
     effects: 'FORMAT: tall vertical overlay effect for a profile card. The main elements run down the LEFT and RIGHT edges like a living border (e.g. flames, petals, clouds, vines, sparks), from about 18% of the height down to about 85%. A burst of elements across the very top is welcome too (it is shown only in the entrance animation). The middle of the image and the bottom stay empty background, with only a few small floating particles. Do not draw any circle, frame or dark shape behind the avatar area (top-left).',
     frames: 'FORMAT: tall ornamental frame that WRAPS AROUND a tall portrait profile card. Imagine an empty rounded rectangle (the card) occupying the middle of the image: from 4% to 96% of the width and from 12% to 92% of the height — it must stay empty background. The frame hugs the OUTSIDE of that rectangle: a rich main ornament sits on and above the TOP edge (it can overhang the card top slightly), a smaller ornament on and below the BOTTOM edge, and slim decorative borders run down the left and right edges connecting them. Nothing inside the card area except the very edge.',
   };
+  /* Acima disto (fração do canvas coberta) a arte é uma cena cheia, não elementos soltos. */
+  const FULL_LIMIT = { effects: 0.42, decorations: 0.6, nameplates: 0.75, frames: 0.5 };
   /* Frame gerado = uma camada "border" em volta do card: topo e base fixos, o meio estica. */
   const FRAME_WRAP = { inner: 1200, top: 304, bottom: 212, side: 56, layers: [{ kind: 'border', order: 'front', anchor: 'center', sliceTop: 304 + 560, sliceBottom: 212 + 420, imgW: 1312 }] };
   const CAT_WORD = { nameplates: 'nameplate', decorations: 'avatar decoration', effects: 'profile effect', frames: 'profile frame' };
@@ -53,7 +55,8 @@
     return t || String(theme || '').trim();
   }
 
-  function promptFor(cat, theme, provider, hasRefs) {
+  const STRICT = 'IMPORTANT: the previous attempt painted a full scene that filled the whole image. Draw ONLY the isolated decorative elements described above, with NO scenery, NO texture and NO backdrop behind them; most of the image must be plain flat background.';
+  function promptFor(cat, theme, provider, hasRefs, strict) {
     theme = cleanTheme(theme).replace(/[\s.]+$/, '');
     const bg = provider === 'gemini'
       ? 'BACKGROUND: perfectly flat solid pure green (#00FF00) everywhere outside the artwork — including any empty hole in the middle — with no gradient, texture, shadow, vignette or white margin. Do not use any green-screen green inside the artwork itself (if the theme needs green, use jade, emerald or teal tones that are clearly darker or bluer).'
@@ -65,6 +68,7 @@
       STYLE,
       bg,
       'Also reply with one short line of text: NOME: <a creative item name in Brazilian Portuguese, 2 to 4 words>.',
+      strict ? STRICT : '',
       hasRefs ? 'The attached image is only an inspiration for colors and mood. Do NOT copy it and do NOT place it in the result.' : '',
       'The output must be ONE image containing ONE object. No numbers, no captions, no panels, no grid.',
     ].filter(Boolean).join('\n\n');
@@ -82,10 +86,10 @@
     return /^(gpt-image|dall-e)/i.test(m) ? m : DEFAULT_OPENAI_IMAGE;
   }
 
-  async function geminiImage(cat, theme, cfg, refs) {
+  async function geminiImage(cat, theme, cfg, refs, strict) {
     const model = geminiImageModel(cfg.model);
     const url = `${(cfg.baseUrl || GEMINI_BASE).replace(/\/+$/, '')}/models/${encodeURIComponent(model)}:generateContent`;
-    const parts = [{ text: promptFor(cat, theme, 'gemini', refs.length > 0) }, ...refs.map((r) => ({ inlineData: { mimeType: r.mime, data: r.data } }))];
+    const parts = [{ text: promptFor(cat, theme, 'gemini', refs.length > 0, strict) }, ...refs.map((r) => ({ inlineData: { mimeType: r.mime, data: r.data } }))];
     for (const withAspect of [true, false]) {
       const generationConfig = { responseModalities: ['TEXT', 'IMAGE'] };
       if (withAspect) generationConfig.imageConfig = { aspectRatio: ASPECT[cat].gemini };
@@ -126,7 +130,7 @@
     throw new Error('O Gemini não aceitou o pedido.');
   }
 
-  async function openaiImage(cat, theme, cfg) {
+  async function openaiImage(cat, theme, cfg, strict) {
     const model = openaiImageModel(cfg.model);
     const base = (cfg.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
     let res;
@@ -134,7 +138,7 @@
       res = await fetch(base + '/images/generations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + cfg.key },
-        body: JSON.stringify({ model, prompt: promptFor(cat, theme, 'openai', false), size: ASPECT[cat].openai, background: 'transparent', quality: 'high', n: 1, output_format: 'png' }),
+        body: JSON.stringify({ model, prompt: promptFor(cat, theme, 'openai', false, strict), size: ASPECT[cat].openai, background: 'transparent', quality: 'high', n: 1, output_format: 'png' }),
       });
     } catch (e) {
       throw new Error('Não foi possível conectar à OpenAI.');
@@ -334,10 +338,11 @@
       const half = Math.max(cx - bb.x, bb.x + bb.w - cx, cy - bb.y, bb.y + bb.h - cy);
       ctx.drawImage(tmp, cx - half, cy - half, half * 2, half * 2, 0, 0, W, H);
     } else if (cat === 'nameplates') {
-      // faixa central: encaixa a altura ocupada em 84 px e alinha à direita
-      const s = Math.min(H / bb.h, W / bb.w);
+      // faixa: ocupa a altura toda e encosta na ponta direita (como as oficiais, a arte vai até o fim)
+      let s = H / bb.h;
+      if (bb.w * s > W) s = W / bb.w;
       const dw = bb.w * s, dh = bb.h * s;
-      ctx.drawImage(tmp, bb.x, bb.y, bb.w, bb.h, W - dw - 6, (H - dh) / 2, dw, dh);
+      ctx.drawImage(tmp, bb.x, bb.y, bb.w, bb.h, W - dw, (H - dh) / 2, dw, dh);
     } else {
       // effect / frame: preenche o canvas inteiro (cover), centralizado
       const s = Math.max(W / tmp.width, H / tmp.height);
@@ -363,7 +368,10 @@
       lit++;
     }
     hctx.putImageData(hd, 0, 0);
-    return { url: enc(out), hl: lit > (W * H) * 0.002 ? enc(hl) : '', palette, W, H };
+    let solid = 0;
+    for (let i = 3; i < src2.data.length; i += 16) if (src2.data[i] > 128) solid++;
+    const coverage = solid / (src2.data.length / 16);
+    return { url: enc(out), hl: lit > (W * H) * 0.002 ? enc(hl) : '', palette, W, H, coverage };
   }
 
   /* ---------------------------------------------------------------- */
@@ -555,31 +563,45 @@ ${isparks}</svg>`;
     // Uma por vez: modelos de imagem têm cota por minuto baixa (em paralelo, metade voltava 429)
     for (const [i, cat] of req.cats.entries()) results.push(await (async () => {
       try {
-        let gen = null;
-        for (let attempt = 0; ; attempt++) {
-          try {
-            const detail = req.details && req.details[cat] ? cleanTheme(req.details[cat]) : '';
-            const catTheme = detail ? `${detail}. General theme and art style: ${theme}` : theme;
-            gen = provider === 'gemini'
-              ? await geminiImage(cat, catTheme, cfg, (opts.refs && opts.refs[cat]) || [])
-              : await openaiImage(cat, catTheme, cfg);
-            break;
-          } catch (e) {
-            if (!e.retryAfter || attempt >= 2) throw e;
-            for (let t = Math.ceil(e.retryAfter); t > 0; t--) {
-              opts.onProgress && opts.onProgress(`Limite do provedor: tentando de novo em ${t} s… (${done}/${req.cats.length})`);
-              await sleep(1000);
+        const detail = req.details && req.details[cat] ? cleanTheme(req.details[cat]) : '';
+        const catTheme = detail ? `${detail}. General theme and art style: ${theme}` : theme;
+        const paint = async (strict) => {
+          for (let attempt = 0; ; attempt++) {
+            try {
+              return provider === 'gemini'
+                ? await geminiImage(cat, catTheme, cfg, (opts.refs && opts.refs[cat]) || [], strict)
+                : await openaiImage(cat, catTheme, cfg, strict);
+            } catch (e) {
+              if (!e.retryAfter || attempt >= 2) throw e;
+              for (let t = Math.ceil(e.retryAfter); t > 0; t--) {
+                opts.onProgress && opts.onProgress(`Limite do provedor: tentando de novo em ${t} s… (${done}/${req.cats.length})`);
+                await sleep(1000);
+              }
             }
           }
+        };
+        let gen = await paint(false);
+        let art = await processImage(gen, cat);
+        let full = art.coverage > FULL_LIMIT[cat];
+        if (full) {
+          // O modelo pintou uma cena inteira (fundo não sai): pede de novo, só os elementos soltos
+          opts.onProgress && opts.onProgress(`A arte de ${CAT_WORD[cat]} veio com cenário cheio; pedindo de novo só os elementos…`);
+          try {
+            const gen2 = await paint(true);
+            const art2 = await processImage(gen2, cat);
+            if (art2.coverage < art.coverage) { gen = gen2; art = art2; }
+            full = art.coverage > FULL_LIMIT[cat];
+          } catch (e) { console.warn('[Ilustração] nova tentativa falhou', e); }
         }
-        const art = await processImage(gen, cat);
         const anim = buildSvgs(cat, art, 1 + i * 97 + theme.length, (opts.motion && opts.motion[cat]) || {});
         const label = (provider === 'gemini' ? 'Gemini · ' : 'OpenAI · ') + gen.model;
         return {
           cat,
           raw: { ...metaFor(cat, (req.details && req.details[cat]) || theme),
             ...(gen.name ? { name: gen.name.slice(0, 28) } : {}), prompt: theme, engine: provider, engineLabel: label, asset: { type: 'svg', ...anim, ...(cat === 'frames' ? { wrap: FRAME_WRAP } : {}) } },
-          quality: { ok: true, issues: [], summary: '✓ ilustração · zonas protegidas por máscara' },
+          quality: full
+            ? { ok: false, issues: [], summary: `⚠ a IA pintou um cenário cheio (${Math.round(art.coverage * 100)}%): use ✏️ Refazer ou gere de novo` }
+            : { ok: true, issues: [], summary: '✓ ilustração · fundo recortado' },
           palette: art.palette,
         };
       } catch (e) {
