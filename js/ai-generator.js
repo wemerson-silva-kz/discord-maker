@@ -30,8 +30,8 @@
    */
   const PROVIDERS = {
     anthropic: { label: 'Anthropic (Claude)', model: 'claude-opus-5-5', keyPh: 'sk-ant-...', hint: 'Usa o SDK oficial da Anthropic com saída estruturada (JSON Schema).' },
-    openai: { label: 'OpenAI', base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', format: 'json_schema', keyPh: 'sk-...', hint: 'Usa saída estruturada estrita (json_schema).' },
-    gemini: { label: 'Google Gemini', native: 'gemini', base: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash', keyPh: 'AIza...', hint: 'API nativa do Gemini com saída JSON estruturada (responseSchema). Crie a chave grátis em aistudio.google.com; ao colar a chave, os modelos disponíveis aparecem na lista.' },
+    openai: { label: 'OpenAI', base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', imageModel: 'gpt-image-1', format: 'json_schema', keyPh: 'sk-...', hint: 'Usa saída estruturada estrita (json_schema).' },
+    gemini: { label: 'Google Gemini', native: 'gemini', base: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash', imageModel: 'gemini-3.1-flash-image', keyPh: 'AIza...', hint: 'API nativa do Gemini com saída JSON estruturada (responseSchema). Crie a chave grátis em aistudio.google.com; ao colar a chave, os modelos disponíveis aparecem na lista.' },
     openrouter: { label: 'OpenRouter (centenas de modelos)', base: 'https://openrouter.ai/api/v1', model: 'openrouter/auto', format: 'json_object', keyPh: 'sk-or-...', hint: 'Troque o modelo por qualquer um do catálogo do OpenRouter (ex.: um modelo gratuito).' },
     groq: { label: 'Groq', base: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', format: 'json_object', keyPh: 'gsk_...', hint: 'Muito rápido; tem plano gratuito.' },
     deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com/v1', model: 'deepseek-chat', format: 'json_object', keyPh: 'sk-...' },
@@ -770,6 +770,13 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
     return (stable.find((m) => /flash/i.test(m.id)) || stable[0] || models[0] || {}).id;
   }
 
+  /** Modelo de imagem: o "flash-image" estável mais novo; senão qualquer "…-image". */
+  function pickGeminiImageModel(models) {
+    const img = models.filter((m) => /image/i.test(m.id));
+    const stable = img.filter((m) => !/preview|exp|lite/i.test(m.id));
+    return (stable.find((m) => /flash-image$/i.test(m.id)) || stable[0] || img[0] || {}).id;
+  }
+
   async function generateWithClaude(req, apiKey, model) {
     const mod = await loadSdk();
     const Anthropic = mod.default;
@@ -1180,7 +1187,7 @@ ${sparks}
   const REVIEW_KEY = 'cosmetic-studio:gen-review';
   const STYLE_KEY = 'cosmetic-studio:gen-style-refs';
   const REWRITE_KEY = 'cosmetic-studio:gen-rewrite';
-  const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', mode: ['particles', 'raster'].includes(store.get(MODE_STORAGE)) ? store.get(MODE_STORAGE) : 'svg', busy: false, results: [], refs: [],
+  const ui = { engine: store.get(ENGINE_STORAGE) === 'local' ? 'local' : 'ai', mode: ['svg', 'particles', 'raster'].includes(store.get(MODE_STORAGE)) ? store.get(MODE_STORAGE) : 'raster', busy: false, results: [], refs: [],
     review: (() => { try { return localStorage.getItem(REVIEW_KEY) !== '0'; } catch (e) { return true; } })(), quality: new Map(),
     styleRefs: (() => { try { return localStorage.getItem(STYLE_KEY) !== '0'; } catch (e) { return true; } })(),
     autoRewrite: (() => { try { return localStorage.getItem(REWRITE_KEY) !== '0'; } catch (e) { return true; } })() };
@@ -1519,7 +1526,7 @@ ${lines.join('\n\n')}`;
     let cfg = {};
     try { cfg = JSON.parse(store.get(AI_STORAGE) || '{}') || {}; } catch (e) { cfg = {}; }
     return {
-      provider: PROVIDERS[cfg.provider] ? cfg.provider : 'anthropic',
+      provider: PROVIDERS[cfg.provider] ? cfg.provider : 'gemini',
       models: cfg.models || {},
       baseUrls: cfg.baseUrls || {},
       keys: cfg.keys || {},
@@ -1534,11 +1541,17 @@ ${lines.join('\n\n')}`;
     }));
   }
 
+  /** Modelo sugerido: no modo Ilustração, o modelo de IMAGEM do provedor (se tiver). */
+  function defaultModel(provider) {
+    const p = PROVIDERS[provider];
+    return (ui.mode === 'raster' && p.imageModel) || p.model;
+  }
+
   function renderProvider() {
     const p = PROVIDERS[ai.provider];
     $('#gen-provider').value = ai.provider;
-    $('#gen-model').value = ai.models[ai.provider] ?? p.model;
-    $('#gen-model').placeholder = p.model || 'nome-do-modelo';
+    $('#gen-model').value = ai.models[ai.provider] ?? defaultModel(ai.provider);
+    $('#gen-model').placeholder = defaultModel(ai.provider) || 'nome-do-modelo';
     $('#gen-baseurl').value = ai.baseUrls[ai.provider] ?? p.base ?? '';
     $('#gen-baseurl-box').classList.toggle('hidden', !p.editableBase);
     $('#gen-key').value = ai.keys[ai.provider] || '';
@@ -1569,7 +1582,7 @@ ${lines.join('\n\n')}`;
       });
       const current = geminiModelName($('#gen-model').value);
       if (models.length && !models.some((m) => m.id === current) && !ai.models[ai.provider]) {
-        const best = pickGeminiModel(models);
+        const best = (ui.mode === 'raster' && pickGeminiImageModel(models)) || pickGeminiModel(models);
         if (best) {
           $('#gen-model').value = best;
           $('#gen-provider-hint').textContent = `${p.hint} Modelo escolhido automaticamente: ${best} (${models.length} disponíveis).`;
@@ -1769,6 +1782,11 @@ ${lines.join('\n\n')}`;
       if (mode !== 'raster' && /(^|[-/])image|gpt-image|dall-e|imagen/i.test(cfg.model)) {
         mode = 'raster';
         CS.toast(`"${cfg.model}" é um modelo de imagem: usando o modo Ilustração.`, 'info');
+      }
+      // Ilustração (padrão) só existe no Gemini e na OpenAI: nos demais provedores, desenha em SVG
+      if (mode === 'raster' && preset.native !== 'gemini' && ai.provider !== 'openai') {
+        mode = 'svg';
+        CS.toast(`${preset.label.replace(/\s*\(.*\)$/, '')} não gera imagens: usando o estilo Arte (SVG).`, 'info');
       }
       if (mode === 'raster') return generateIllustrations(prompt, cats, refs, cfg, details);
       setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está ${mode === 'svg' ? 'desenhando a arte' : 'montando'} do seu kit… ${mode === 'svg' ? 'isso pode levar até 1–2 minutos.' : 'isso leva alguns segundos.'}`);
@@ -2128,6 +2146,8 @@ ${current}`;
       if (!b) return;
       ui.mode = b.dataset.mode;
       store.set(MODE_STORAGE, ui.mode);
+      // Sem modelo escolhido pelo usuário: o campo acompanha o modo (imagem × texto)
+      if (!ai.models[ai.provider]) renderProvider();
       $$('#gen-mode button').forEach((x) => x.classList.toggle('is-active', x === b));
     });
     renderRefs();
