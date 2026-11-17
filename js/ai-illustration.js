@@ -11,7 +11,7 @@
   'use strict';
 
   const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-  const DEFAULT_GEMINI_IMAGE = 'gemini-2.5-flash-image';
+  const DEFAULT_GEMINI_IMAGE = 'gemini-3.1-flash-image';
   const DEFAULT_OPENAI_IMAGE = 'gpt-image-1';
 
   /* Canvas final de cada formato (igual aos oficiais). */
