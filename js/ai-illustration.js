@@ -34,8 +34,8 @@
   const LAYOUT = {
     decorations: 'FORMAT: square avatar decoration. The artwork is a decorative ring that wraps around an EMPTY CIRCULAR HOLE in the exact center of the image; the hole diameter is about 72% of the image width and must contain only background. Place the main ornament on the top or a top corner of the ring and smaller accents around the rest so it feels balanced. The art hugs the hole edge and stays inside the image borders.',
     nameplates: 'FORMAT: very wide horizontal banner ornament. All artwork must sit inside the central horizontal band (the middle 40% of the image height); everything above and below that band is plain background. The LEFT HALF of the image is completely empty background. The illustration grows in density toward the right end, with the main motif on the far right.',
-    effects: 'FORMAT: tall vertical overlay effect for a profile card. The main elements run down the LEFT and RIGHT edges like a living border (e.g. flames, petals, clouds, vines, sparks), from about 18% of the height down to about 85%. A burst of elements across the very top is welcome too (it is shown only in the entrance animation). The middle of the image and the bottom stay empty background, with only a few small floating particles. Do not draw any circle, frame or dark shape behind the avatar area (top-left).',
-    frames: 'FORMAT: tall ornamental frame that WRAPS AROUND a tall portrait profile card. Imagine an empty rounded rectangle (the card) occupying the middle of the image: from 4% to 96% of the width and from 12% to 92% of the height — it must stay empty background. The frame hugs the OUTSIDE of that rectangle: a rich main ornament sits on and above the TOP edge (it can overhang the card top slightly), a smaller ornament on and below the BOTTOM edge, and slim decorative borders run down the left and right edges connecting them. Nothing inside the card area except the very edge.',
+    effects: 'FORMAT: tall vertical overlay effect for a profile card, like the official Discord profile effects. The scene lives in the TOP HALF: it is densest across the very top (the banner area, top 25% of the height) and spills down to about 55% of the height, getting lighter as it goes down (e.g. garlands, bunting, fireworks, flames, petals, clouds hanging from the top). The bottom 40% of the image is empty background, with at most a few tiny floating particles. Keep the small circle near the top-left corner (centered at about 18% of the width and 16% of the height, the avatar) mostly clear. Do not draw any circle, frame or dark shape behind the avatar area. No thick columns down the sides.',
+    frames: 'FORMAT: tall ornamental frame that WRAPS AROUND a tall portrait profile card, like the official Discord profile frames. Imagine an empty rounded rectangle (the card) occupying the middle of the image: from 4% to 96% of the width and from 12% to 92% of the height — it must stay empty background. The frame sits OUTSIDE that rectangle: a rich main ornament crowns the TOP edge and rises above it (e.g. a mask with eyes, horns, a roof, a creature peeking over the card), a smaller ornament sits on the BOTTOM edge, and a SLIM border (only about 5% of the image width thick) runs down the left and right edges connecting them. No thick columns or pillars down the sides. Nothing inside the card area except the very edge.',
   };
   /* Acima disto (fração do canvas coberta) a arte é uma cena cheia, não elementos soltos. */
   const FULL_LIMIT = { effects: 0.42, decorations: 0.6, nameplates: 0.75, frames: 0.5 };
@@ -278,12 +278,15 @@
       } else if (cat === 'nameplates') {
         k = smooth(140, 215, x); // avatar + nome à esquerda
       } else if (cat === 'effects') {
-        // efeito: nenhuma máscara na arte. A entrada mostra tudo; o loop usa só as laterais (ver buildSvgs).
-        k = 1;
+        // Como os oficiais (guia medido): arte nos ~60% de cima, base quase vazia e avatar
+        // ≈ 8% coberto — a base some num degradê e o avatar fica bem translúcido.
+        k = 1 - smooth(H * 0.52, H * 0.74, y);
+        k = Math.min(k, 0.2 + 0.8 * smooth(52, 84, Math.hypot(x - 82, y - 138)));
       } else if (cat === 'frames') {
         // card em (56, 304)–(1256, 2316): o miolo fica livre; o ornamento pode invadir a borda
-        // (até ~180 px no topo, sobre o banner, ~110 na base e ~90 dos lados)
-        const inX = smooth(56 + 60, 56 + 110, x) * smooth(56 + 60, 56 + 110, W - x);
+        // (até ~180 px no topo, sobre o banner, ~110 na base e só ~30–48 px dos lados, como os
+        // oficiais: no "Deadpool Mask" a borda lateral tem 74 px e entra 30 px no card)
+        const inX = smooth(56 + 26, 56 + 48, x) * smooth(56 + 26, 56 + 48, W - x);
         const inY = smooth(304 + 130, 304 + 200, y) * smooth(212 + 60, 212 + 120, H - y);
         k = 1 - inX * inY;
         // avatar (card: centro 290,487 raio ~235)
@@ -388,8 +391,8 @@
       let x, y;
       if (cat === 'decorations') { const a = R() * Math.PI * 2, r = 112 + R() * 26; x = 144 + Math.cos(a) * r; y = 144 + Math.sin(a) * r; }
       else if (cat === 'nameplates') { x = 230 + R() * 210; y = 10 + R() * 64; }
-      else if (cat === 'frames') { const z = R(); if (z < 0.45) { x = 40 + R() * (W - 80); y = 20 + R() * 420; } else if (z < 0.65) { x = 40 + R() * (W - 80); y = H - 300 + R() * 260; } else { x = R() < 0.5 ? 10 + R() * 120 : W - 130 + R() * 120; y = 300 + R() * (H - 600); } }
-      else { const side = R(); x = side < 0.35 ? 10 + R() * 60 : side < 0.7 ? W - 70 + R() * 60 : 30 + R() * (W - 60); y = side < 0.7 ? 40 + R() * (H - 140) : 20 + R() * 190; }
+      else if (cat === 'frames') { const z = R(); if (z < 0.45) { x = 40 + R() * (W - 80); y = 20 + R() * 420; } else if (z < 0.65) { x = 40 + R() * (W - 80); y = H - 300 + R() * 260; } else { x = R() < 0.5 ? 14 + R() * 80 : W - 94 + R() * 80; y = 300 + R() * (H - 600); } }
+      else { x = 20 + R() * (W - 40); y = 15 + Math.pow(R(), 1.4) * H * 0.55; } // efeito: topo, mais denso em cima
       if (cat === 'effects' && Math.hypot(x - 82, y - 138) < 80) continue;
       pts.push([x, y]);
     }
@@ -467,27 +470,22 @@ mask{mask-type:alpha}
     }
 
     /* ---- EFEITO ----
-       Loop: versão leve — só topo (banner) e laterais finas, levemente translúcida, com ondulação,
-       brasas e poucos brilhos. O meio do card fica livre.
+       Loop: versão leve da mesma cena, só no TOPO (banner e começo do card), translúcida, com
+       ondulação, brasas e poucos brilhos — como os loops oficiais. O resto do card fica livre.
        Entrada: o momento de impacto — clarão, onda de choque, a arte inteira entra com zoom e foco,
        faísca explodindo do centro, faixa de luz, e no fim o miolo some e sobra o visual do loop. */
-    // Loop leve: só as LATERAIS, do fim do banner até perto da base. O banner (topo) e o meio ficam livres;
-    // o que aparece sobre o banner é só da entrada.
-    const BANNER = 160, SIDE = 92;
-    const edge = `<mask id="lm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}">
-<linearGradient id="gt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".72" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-<linearGradient id="gl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff"/><stop offset=".6" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-<linearGradient id="gr" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="#fff"/><stop offset=".6" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-<linearGradient id="gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".75" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-<g mask="url(#lb)"><rect x="0" y="0" width="${SIDE}" height="${H}" fill="url(#gl)"/><rect x="${W - SIDE}" y="0" width="${SIDE}" height="${H}" fill="url(#gr)"/></g></mask>
-<linearGradient id="gv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="${f(BANNER / H)}" stop-color="#fff" stop-opacity="0"/><stop offset="${f((BANNER + 70) / H)}" stop-color="#fff"/><stop offset=".78" stop-color="#fff"/><stop offset=".95" stop-color="#fff" stop-opacity="0"/></linearGradient>
-<mask id="lb" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${H}" fill="url(#gv)"/></mask>`;
-    const onSide = ([x, y]) => y > BANNER + 30 && y < H * 0.85 && (x < SIDE - 10 || x > W - SIDE + 10);
+    // Loop leve: só o TOPO (banner e começo do card), sumindo para baixo e com o avatar livre.
+    const TOP = Math.round(H * 0.22), FADE = Math.round(H * 0.4);
+    const edge = `<linearGradient id="gv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="${f(TOP / H)}" stop-color="#fff"/><stop offset="${f(FADE / H)}" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<radialGradient id="ga"><stop offset=".55" stop-color="#000"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+<mask id="lm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${H}" fill="url(#gv)"/><circle cx="82" cy="138" r="92" fill="url(#ga)"/></mask>`;
+    const onSide = ([x, y]) => y < FADE && Math.hypot(x - 82, y - 138) > 90;
     const fewSparks = sparkles.split('</path>').length > 1 ? pts.filter(onSide).slice(0, 8).map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * 0.8)}" fill="${palette[i % palette.length]}"/>`).join('') : '';
     const fewMotes = sparklePoints(cat, W, H, 16, R).filter(onSide).slice(0, 8).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f(1.6 + R() * 2)}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
     const loopDefs = defs.replace('</defs>', clips + fullDef + edge + '</defs>');
     const loop = `${head}<style>${css2}
-.lite{opacity:.88}</style>${loopDefs}<g class="lite" mask="url(#lm)"><g class="art"><use class="glow" href="#art"/>${body}${licks}</g></g>${fewMotes}${fewSparks}</svg>`;
+.lite{opacity:.5}
+.lhl{mix-blend-mode:screen;animation:flick 1s steps(1) infinite}</style>${loopDefs}<g class="lite" mask="url(#lm)"><g class="art"><use class="glow" href="#art"/>${body}${licks}</g></g>${hl ? '<g mask="url(#lm)"><use class="lhl" href="#hl"/></g>' : ''}${fewMotes}${fewSparks}</svg>`;
 
     const cx = W / 2, cy = 300;
     const T = 3.6; // duração da entrada
