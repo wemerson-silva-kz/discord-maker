@@ -382,8 +382,11 @@
       layer.appendChild(img);
       const later = (fn, ms) => layer._timers.push(setTimeout(() => { if (layer._gen === gen) fn(); }, ms));
       const show = () => {
-        // Camada única: carrega na 1ª vez (num replay, URL nova para recomeçar do 1º quadro)
+        // Camada única: carrega na 1ª vez (num replay, URL nova para recomeçar do 1º quadro).
+        // Nas voltas seguintes recomeça do 1º quadro, como o Discord: muitos APNGs de loop
+        // tocam só 1× (num_plays = 1) e, sem isso, ficariam parados no último quadro.
         if (!img.getAttribute('src')) img.src = replay ? L.src + (L.src.includes('?') ? '&' : '?') + 'r=' + replay : L.src;
+        else restartImg(img);
         img.style.opacity = '1';
         visible.add(L);
         setPhase();
@@ -424,7 +427,31 @@
       if (layer._gen !== gen) return;
     }
     layer.dataset.phase = 'loop';
-    img.src = a.loop || a.intro;
+    const loopSrc = a.loop || a.intro;
+    img.src = loopSrc;
+    // Alguns APNGs de loop do Discord tocam só 1× (num_plays = 1): o app do Discord os reinicia
+    // a cada ciclo; aqui também, senão a animação trava no último quadro.
+    let li = a.meta && (a.loop ? a.meta.loop : a.meta.intro);
+    if (!li || !li.duration) {
+      try { li = await loadApng(canFetch(loopSrc) ? loopSrc : mediaProxyUrl(loopSrc)); } catch (e) { li = null; }
+      if (layer._gen !== gen) return;
+    }
+    if (!li || !li.duration || li.plays === 0) return;
+    const cycle = Math.max(500, li.duration * Math.max(1, li.plays || 1) * 1000);
+    const tick = () => {
+      if (layer._gen !== gen) return;
+      restartImg(img);
+      layer._timers.push(setTimeout(tick, cycle));
+    };
+    layer._timers.push(setTimeout(tick, cycle));
+  }
+
+  /** Recomeça um PNG/GIF/WebP animado do 1º quadro, sem baixar de novo (mesma URL, do cache). */
+  function restartImg(img) {
+    const src = img.getAttribute('src');
+    if (!src) return;
+    img.src = '';
+    img.src = src;
   }
 
   /* ---------------------------------------------------------------- */
