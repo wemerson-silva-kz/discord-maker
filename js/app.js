@@ -53,6 +53,7 @@
     name: 'Viajante',
     avatar: 0,
     customAvatar: null,
+    customBanner: null,
     status: 'online',
     banner: '#5865F2',
     nameplate: null,
@@ -1132,6 +1133,7 @@
     const av = parseInt(s.avatar, 10);
     if (av >= 0 && av < DEFAULT_AVATARS.length) out.avatar = av;
     if (typeof s.customAvatar === 'string' && s.customAvatar.startsWith('data:image/')) out.customAvatar = s.customAvatar;
+    if (typeof s.customBanner === 'string' && s.customBanner.startsWith('data:image/')) out.customBanner = s.customBanner;
     if (STATUS[s.status]) out.status = s.status;
     if (isHex(s.banner)) out.banner = s.banner;
     for (const key of SLOT_KEYS) {
@@ -1153,8 +1155,10 @@
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (e) {
-      // Sem espaço (avatar grande) ou storage bloqueado: tenta sem o avatar personalizado
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, customAvatar: null })); } catch (_) { /* ignora */ }
+      // Sem espaço (banner/avatar grandes) ou storage bloqueado: tenta sem o banner e depois sem o avatar
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, customBanner: null })); } catch (_) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, customBanner: null, customAvatar: null })); } catch (__) { /* ignora */ }
+      }
     }
   }
 
@@ -1215,6 +1219,8 @@
     return slug || 'viajante';
   };
   const avatarSrc = () => state.customAvatar || DEFAULT_AVATARS[state.avatar].src;
+  /** Banner: imagem/GIF enviada (cobre, centralizada) por cima da cor. */
+  const bannerCss = () => (state.customBanner ? `url("${state.customBanner}") center / cover no-repeat, ${state.banner}` : state.banner);
   const equippedCount = () => SLOT_KEYS.filter((k) => state[k]).length;
 
   /* ---------------------------------------------------------------- */
@@ -1407,6 +1413,7 @@
         ${variant === 'gen' ? `
         <div class="flex flex-wrap gap-1.5 pt-1 border-t border-white/5 mt-1">
           <button type="button" class="btn btn-sm btn-ghost !px-2 gen-save" data-id="${escapeHtml(item.id)}">${item._saved ? '★ Salvo' : '☆ Salvar'}</button>
+          <button type="button" class="btn btn-sm btn-ghost !px-2 gen-redo" data-id="${escapeHtml(item.id)}" title="Diga o que mudar e a IA refaz este item">✏️ Refazer</button>
           <button type="button" class="btn btn-sm btn-ghost !px-2 gen-vary" data-id="${escapeHtml(item.id)}">🎲 Variar</button>
           <button type="button" class="btn btn-sm btn-ghost !px-2 gen-ref" data-id="${escapeHtml(item.id)}" title="Usar como referência para a IA criar variações">🧬 Referência</button>
           <button type="button" class="btn btn-sm btn-ghost !px-2 gen-json" data-id="${escapeHtml(item.id)}">{ } JSON</button>
@@ -1709,7 +1716,7 @@
     const src = avatarSrc();
     $$('.js-user-name', root).forEach((n) => { if (n.textContent !== name) n.textContent = name; });
     $$('.js-user-avatar', root).forEach((img) => { if (img.getAttribute('src') !== src) img.src = src; });
-    $$('.js-user-banner', root).forEach((b) => { b.style.background = state.banner; });
+    $$('.js-user-banner', root).forEach((b) => { b.style.background = bannerCss(); });
   }
 
   function renderPreview() {
@@ -1720,7 +1727,7 @@
       n.classList.add('status-' + state.status);
     });
     $$('.js-status-label').forEach((n) => { n.textContent = STATUS[state.status].label; });
-    $('#profile-banner').style.background = state.banner;
+    $('#profile-banner').style.background = bannerCss();
     $('#profile-card').style.setProperty('--pf-accent', state.banner);
 
     mountCosmetic('nameplate');
@@ -1836,6 +1843,12 @@
 
     const preset = BANNER_PRESETS.find((c) => c.toLowerCase() === state.banner.toLowerCase());
     $$('#banner-picks [data-banner]').forEach((b) => b.classList.toggle('is-active', b.dataset.banner === preset));
+    const bImg = $('#banner-image-preview');
+    if (bImg) {
+      bImg.classList.toggle('hidden', !state.customBanner);
+      if (state.customBanner) bImg.style.backgroundImage = `url("${state.customBanner}")`;
+      $('#banner-remove').classList.toggle('hidden', !state.customBanner);
+    }
     const colorInput = $('#input-banner');
     colorInput.value = state.banner;
     colorInput.classList.toggle('is-active', !preset);
@@ -1906,7 +1919,7 @@
     }
     try { history.replaceState(null, '', '#' + hash); } catch (e) { /* ignora */ }
     toast(ok ? 'Link da combinação copiado para a área de transferência!' : 'Não foi possível copiar — o link está na barra de endereço.', ok ? 'success' : 'danger');
-    if (state.customAvatar) setTimeout(() => toast('Fotos enviadas não vão no link — quem abrir verá um avatar padrão.', 'info'), 450);
+    if (state.customAvatar || state.customBanner) setTimeout(() => toast('Fotos e banners enviados não vão no link — quem abrir verá o avatar padrão e a cor do banner.', 'info'), 450);
     if (linkSkipped.length) setTimeout(() => toast(`Artes de IA não cabem no link (${linkSkipped.join(', ')}): use “⬇ APNG” para compartilhar.`, 'info'), 900);
   }
 
@@ -1917,6 +1930,43 @@
     flash.classList.add('is-flashing');
     const date = new Date().toISOString().slice(0, 10);
     setTimeout(() => toast(`Print salvo como perfil-${handle()}-${date}.png (simulado)`, 'camera'), 250);
+  }
+
+  /**
+   * Banner enviado: imagens paradas são cortadas em 17:6 (680×240, como o Discord recomenda);
+   * GIF/WebP animado fica como está (o corte seria só do 1º quadro) e é exibido com "cover".
+   */
+  function handleBannerUpload(file) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return toast('Escolha uma imagem (PNG, JPG, WEBP) ou um GIF.', 'danger');
+    if (file.size > 10 * 1024 * 1024) return toast('Banner muito grande — o limite do Discord é 10 MB.', 'danger');
+    const reader = new FileReader();
+    reader.onload = () => {
+      const animated = file.type === 'image/gif' || file.type === 'image/webp' || file.type === 'image/apng';
+      if (animated) {
+        state.customBanner = reader.result;
+        commit();
+        toast(file.size > 3 * 1024 * 1024 ? 'Banner animado aplicado! (grande demais para ficar salvo depois de recarregar)' : 'Banner animado aplicado!', 'success');
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        const W = 680, H = 240;
+        const c = document.createElement('canvas');
+        c.width = W; c.height = H;
+        const s = Math.min(img.width / W, img.height / H);
+        const sw = W * s, sh = H * s;
+        c.getContext('2d').drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, W, H);
+        let url = c.toDataURL('image/webp', 0.9);
+        if (!url.startsWith('data:image/webp')) url = c.toDataURL('image/jpeg', 0.9);
+        state.customBanner = url;
+        commit();
+        toast('Banner atualizado (cortado em 680×240, proporção 17:6).', 'success');
+      };
+      img.onerror = () => toast('Não foi possível ler essa imagem.', 'danger');
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
   }
 
   function handleUpload(file) {
@@ -2075,6 +2125,15 @@
       handleUpload(e.target.files[0]);
       e.target.value = '';
     });
+    $('#input-banner-file').addEventListener('change', (e) => {
+      handleBannerUpload(e.target.files[0]);
+      e.target.value = '';
+    });
+    $('#banner-remove').addEventListener('click', () => {
+      state.customBanner = null;
+      commit();
+      toast('Imagem do banner removida.', 'info');
+    });
 
     $('#status-picks').addEventListener('click', (e) => {
       const b = e.target.closest('[data-status]');
@@ -2119,7 +2178,7 @@
     window.addEventListener('hashchange', () => {
       const h = fromHash();
       if (!h) return;
-      state = sanitizeState({ ...state, ...stripUndefined(h), customAvatar: null });
+      state = sanitizeState({ ...state, ...stripUndefined(h), customAvatar: null, customBanner: null });
       commit();
       toast('Combinação carregada do link!', 'success');
     });

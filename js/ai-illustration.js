@@ -595,5 +595,97 @@ ${isparks}</svg>`;
     return ok;
   }
 
-  window.CosmeticIllustration = { cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
+  /* ---------------------------------------------------------------- */
+  /* REFAZER: edita uma ilustração já gerada com um pedido em texto    */
+  /* ---------------------------------------------------------------- */
+  /** A arte (camada #art) embutida no SVG de um item do modo Ilustração. */
+  function artOf(svg) {
+    const m = String(svg || '').match(/<image[^>]*id="art"[^>]*href="(data:image\/[a-z]+;base64,[^"]+)"/) || String(svg || '').match(/href="(data:image\/[a-z]+;base64,[^"]+)"/);
+    return m ? m[1] : '';
+  }
+  /** Arte sobre fundo verde chapado (o modelo devolve no mesmo esquema e o recorte continua funcionando). */
+  async function onGreen(dataUrl) {
+    const img = await loadImage(dataUrl);
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#00FF00';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0);
+    return c.toDataURL('image/png').split(',')[1];
+  }
+  async function editGemini(cat, b64, instruction, cfg) {
+    const model = geminiImageModel(cfg.model);
+    const url = `${GEMINI_BASE}/models/${encodeURIComponent(model)}:generateContent`;
+    const text = [
+      `This image is a Discord ${CAT_WORD[cat]} on a flat green background. EDIT it following this request: ${instruction}.`,
+      'Change only what the request asks for. Keep the same format, framing, composition, proportions, art style and everything else.',
+      LAYOUT[cat],
+      'Keep the background perfectly flat pure green (#00FF00), no text, one single object.',
+    ].join('\n\n');
+    for (const withAspect of [true, false]) {
+      const generationConfig = { responseModalities: ['TEXT', 'IMAGE'] };
+      if (withAspect) generationConfig.imageConfig = { aspectRatio: ASPECT[cat].gemini };
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text }, { inlineData: { mimeType: 'image/png', data: b64 } }] }], generationConfig }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const msg = (data && data.error && data.error.message) || '';
+        if (withAspect && res.status === 400 && /image_?config|aspect/i.test(msg)) continue;
+        throw new Error('Gemini: ' + (msg || 'HTTP ' + res.status));
+      }
+      const cand = data && data.candidates && data.candidates[0];
+      const img = ((cand && cand.content && cand.content.parts) || []).find((p) => p.inlineData && /^image\//.test(p.inlineData.mimeType || ''));
+      if (!img) throw new Error('O Gemini não devolveu a imagem editada.');
+      return { mime: img.inlineData.mimeType, data: img.inlineData.data, model };
+    }
+    throw new Error('O Gemini não aceitou o pedido.');
+  }
+  async function editOpenAI(cat, dataUrl, instruction, cfg) {
+    const model = openaiImageModel(cfg.model);
+    const base = (cfg.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+    const blob = await (await fetch(dataUrl)).blob();
+    const png = await new Promise((resolve) => {
+      createImageBitmap(blob).then((bmp) => {
+        const c = document.createElement('canvas');
+        c.width = bmp.width; c.height = bmp.height;
+        c.getContext('2d').drawImage(bmp, 0, 0);
+        c.toBlob(resolve, 'image/png');
+      });
+    });
+    const fd = new FormData();
+    fd.append('model', model);
+    fd.append('image', png, 'art.png');
+    fd.append('prompt', `Edit this Discord ${CAT_WORD[cat]}: ${instruction}. Change only what is asked; keep format, composition and style. Transparent background, no text.`);
+    fd.append('size', ASPECT[cat].openai);
+    fd.append('background', 'transparent');
+    const res = await fetch(base + '/images/edits', { method: 'POST', headers: { Authorization: 'Bearer ' + cfg.key }, body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error('OpenAI: ' + ((data && data.error && data.error.message) || 'HTTP ' + res.status));
+    const b64 = data && data.data && data.data[0] && data.data[0].b64_json;
+    if (!b64) throw new Error('A OpenAI não devolveu a imagem editada.');
+    return { mime: 'image/png', data: b64, model };
+  }
+  /**
+   * Refaz uma ilustração: edita a arte com o pedido e remonta recorte, máscaras e animação.
+   * @returns {Promise<{asset:object, palette:string[], label:string}>}
+   */
+  async function remake(cat, item, instruction, cfg, motion = {}) {
+    const art = artOf(item.asset && item.asset.svg);
+    if (!art) throw new Error('Não achei a ilustração deste item.');
+    const provider = cfg.provider === 'openai' ? 'openai' : 'gemini';
+    const gen = provider === 'gemini' ? await editGemini(cat, await onGreen(art), instruction, cfg) : await editOpenAI(cat, art, instruction, cfg);
+    const out = await processImage(gen, cat);
+    const anim = buildSvgs(cat, out, 7 + instruction.length, motion);
+    return {
+      asset: { type: 'svg', ...anim, ...(cat === 'frames' ? { wrap: FRAME_WRAP } : {}) },
+      palette: out.palette,
+      label: (provider === 'gemini' ? 'Gemini · ' : 'OpenAI · ') + gen.model,
+    };
+  }
+
+  window.CosmeticIllustration = { remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
 })();

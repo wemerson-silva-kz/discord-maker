@@ -1896,6 +1896,13 @@ ${lines.join('\n\n')}`;
       CS.setSaved(cat, item.id, !item._saved);
       btn.textContent = item._saved ? '★ Salvo' : '☆ Salvar';
       CS.toast(item._saved ? `“${item.name}” salva na coleção Criações IA.` : `“${item.name}” removida da coleção.`, item._saved ? 'success' : 'info');
+    } else if (btn.classList.contains('gen-redo')) {
+      toggleRedo(card, cat, item);
+    } else if (btn.classList.contains('gen-redo-go')) {
+      const input = card.querySelector('.gen-redo-input');
+      const text = (input && input.value.trim()) || '';
+      if (!text) { input && input.focus(); return CS.toast('Diga o que mudar (ex.: "deixa o fogo azul e tira as nuvens").', 'info'); }
+      redoItem(cat, item, text, card);
     } else if (btn.classList.contains('gen-vary')) {
       const added = addResults([{ cat, raw: varyItem(item) }]);
       CS.toast('Variação criada!', 'success');
@@ -1908,6 +1915,91 @@ ${lines.join('\n\n')}`;
       $('#gen-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else if (btn.classList.contains('btn-apng')) {
       window.CosmeticExport && window.CosmeticExport.open(cat, item.id);
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* ✏️ Refazer: o usuário diz o que mudar e a IA refaz aquele item     */
+  /* ---------------------------------------------------------------- */
+  function toggleRedo(card, cat, item) {
+    const open = card.querySelector('.gen-redo-box');
+    if (open) { open.remove(); return; }
+    const box = document.createElement('div');
+    box.className = 'gen-redo-box mt-2 flex flex-col gap-2';
+    box.innerHTML = `
+      <textarea class="gen-redo-input dc-input h-auto py-2 text-sm min-h-[64px] resize-y" maxlength="600" placeholder="O que mudar? Ex.: deixa as chamas azuis, tira o dragão da esquerda, mais brilho nas runas"></textarea>
+      <div class="flex items-center gap-2">
+        <button type="button" class="btn btn-sm btn-primary gen-redo-go">✏️ Refazer este item</button>
+        <span class="text-[11px] text-dc-faint">A versão nova aparece ao lado; a atual fica.</span>
+      </div>`;
+    const actions = card.querySelector('.gen-vary') && card.querySelector('.gen-vary').parentElement;
+    (actions || card).insertAdjacentElement('afterend', box);
+    const ta = box.querySelector('textarea');
+    ta.focus();
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) box.querySelector('.gen-redo-go').click(); });
+  }
+
+  /** Configuração do provedor atual (ou null, com aviso). */
+  function aiConfig() {
+    const preset = PROVIDERS[ai.provider];
+    const cfg = { provider: ai.provider, key: $('#gen-key').value.trim(), model: $('#gen-model').value.trim() || preset.model, baseUrl: $('#gen-baseurl').value.trim() || preset.base };
+    if (!cfg.key && !preset.keyOptional) { $('#gen-key').focus(); CS.toast(`Para refazer, cole sua chave da ${preset.label}.`, 'danger'); return null; }
+    return cfg;
+  }
+  const callFor = (cfg) => (rq) => (cfg.provider === 'anthropic'
+    ? generateWithClaude(rq, cfg.key, cfg.model)
+    : PROVIDERS[cfg.provider].native === 'gemini' ? generateWithGemini(rq, cfg) : generateWithOpenAICompat(rq, cfg));
+
+  async function redoItem(cat, item, instruction, card) {
+    if (ui.busy) return;
+    if (ui.engine !== 'ai') return CS.toast('Refazer usa a IA: troque o motor para "IA (sua chave)".', 'info');
+    const cfg = aiConfig();
+    if (!cfg) return;
+    const a = item.asset || {};
+    const isIllustration = a.type === 'svg' && /<image[\s>]/.test(a.svg || '');
+    const name = (item.name || 'Item').replace(/\s*✎\d*$/, '');
+    setBusy(true, `Refazendo “${name}”: ${instruction.slice(0, 60)}${instruction.length > 60 ? '…' : ''}`);
+    card.classList.add('is-redoing');
+    try {
+      let raw, quality;
+      if (isIllustration) {
+        const native = PROVIDERS[cfg.provider].native === 'gemini' ? 'gemini' : cfg.provider;
+        if (native !== 'gemini' && native !== 'openai') throw new Error('Ilustrações são refeitas com o Gemini (modelo "…-image") ou a OpenAI (gpt-image).');
+        const r = await window.CosmeticIllustration.remake(cat, item, instruction, { ...cfg, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl });
+        if (cat === 'nameplates' && r.palette && r.palette[0]) r.asset.discordPalette = nearestDiscordPalette(r.palette[0]);
+        raw = { name: name + ' ✎', description: instruction.slice(0, 150), rarity: item.rarity, tags: item.tags, prompt: [item.prompt, instruction].filter(Boolean).join(' — ').slice(0, 2000), engine: native, engineLabel: r.label, asset: r.asset };
+        quality = { ok: true, issues: [], summary: '✓ refeito · zonas protegidas' };
+      } else {
+        if (/(^|[-/])image|gpt-image|dall-e|imagen/i.test(cfg.model)) cfg.model = textModelFor(cfg);
+        const mode = a.type === 'svg' ? 'svg' : 'particles';
+        const current = a.type === 'svg'
+          ? `SVG atual (loop):\n${a.svg}${a.introSvg ? `\nSVG atual (entrada, ${a.introSeconds}s):\n${a.introSvg}` : ''}`
+          : `Spec atual: ${JSON.stringify({ palette: a.palette, base: a.base, ring: a.ring, layers: a.layers, intro: a.intro })}`;
+        const feedback = `REFAZER. O usuário quer mudar este ${CAT_TO_API[cat]} "${name}". Pedido: ${instruction}
+
+Mude SÓ o que o pedido diz; mantenha formato, tamanho, composição, estilo, paleta e animação no resto. Devolva o mesmo formato JSON com exatamente 1 item da categoria ${CAT_TO_API[cat]}.
+
+${current}`;
+        const req = { prompt: item.prompt || name, details: {}, cats: [cat], mode, refs: [], images: [], feedback };
+        let list = await callFor(cfg)(req);
+        if (mode === 'svg' && ui.review && window.CosmeticExport && window.CosmeticExport.sampleSvg) list = await reviewLoop(list, req, callFor(cfg));
+        const got = list.find((x) => x.cat === cat) || list[0];
+        if (!got) throw new Error('A IA não devolveu o item refeito.');
+        raw = { ...got.raw, name: name + ' ✎', description: got.raw.description || instruction.slice(0, 150) };
+        quality = got.quality;
+      }
+      const added = addResults([{ cat, raw }]);
+      if (added[0] && quality) ui.quality.set(added[0].id, quality);
+      renderResults();
+      CS.toast('Versão refeita pronta!', 'success');
+      const el = added[0] && $(`#gen-results [data-id="${added[0].id}"]`);
+      el && el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+      console.error('[Refazer]', err);
+      CS.toast(err.message || 'Não deu para refazer.', 'danger');
+    } finally {
+      card.classList.remove('is-redoing');
+      setBusy(false);
     }
   }
 
