@@ -34,7 +34,7 @@
   const LAYOUT = {
     decorations: 'FORMAT: square avatar decoration. The artwork is a decorative ring that wraps around an EMPTY CIRCULAR HOLE in the exact center of the image; the hole diameter is about 72% of the image width and must contain only background. Place the main ornament on the top or a top corner of the ring and smaller accents around the rest so it feels balanced. The art hugs the hole edge and stays inside the image borders.',
     nameplates: 'FORMAT: very wide horizontal banner ornament. All artwork must sit inside the central horizontal band (the middle 40% of the image height); everything above and below that band is plain background. The LEFT HALF of the image is completely empty background. The illustration grows in density toward the right end, with the main motif on the far right.',
-    effects: 'FORMAT: tall vertical overlay effect for a profile card. Decorative elements run along the top quarter and down the left and right edges like a living border (e.g. flames, petals, clouds, vines, sparks). The middle of the image and the bottom third stay mostly empty background, with only a few small floating particles.',
+    effects: 'FORMAT: tall vertical overlay effect for a profile card. The main elements run down the LEFT and RIGHT edges like a living border (e.g. flames, petals, clouds, vines, sparks), from about 18% of the height down to about 85%. A burst of elements across the very top is welcome too (it is shown only in the entrance animation). The middle of the image and the bottom stay empty background, with only a few small floating particles. Do not draw any circle, frame or dark shape behind the avatar area (top-left).',
     frames: 'FORMAT: tall ornamental frame that WRAPS AROUND a tall portrait profile card. Imagine an empty rounded rectangle (the card) occupying the middle of the image: from 4% to 96% of the width and from 12% to 92% of the height — it must stay empty background. The frame hugs the OUTSIDE of that rectangle: a rich main ornament sits on and above the TOP edge (it can overhang the card top slightly), a smaller ornament on and below the BOTTOM edge, and slim decorative borders run down the left and right edges connecting them. Nothing inside the card area except the very edge.',
   };
   /* Frame gerado = uma camada "border" em volta do card: topo e base fixos, o meio estica. */
@@ -274,10 +274,8 @@
       } else if (cat === 'nameplates') {
         k = smooth(140, 215, x); // avatar + nome à esquerda
       } else if (cat === 'effects') {
-        const r = Math.hypot(x - 82, y - 138);
-        k = smooth(58, 80, r);
-        // texto do perfil: no máximo semitransparente
-        if (x > 21 && x < 429 && y > 199 && y < 556) k = Math.min(k, 0.55 + 0.45 * smooth(0, 60, Math.min(x - 21, 429 - x)));
+        // efeito: nenhuma máscara na arte. A entrada mostra tudo; o loop usa só as laterais (ver buildSvgs).
+        k = 1;
       } else if (cat === 'frames') {
         // card em (56, 304)–(1256, 2316): o miolo fica livre; o ornamento pode invadir a borda
         // (até ~180 px no topo, sobre o banner, ~110 na base e ~90 dos lados)
@@ -465,16 +463,20 @@ mask{mask-type:alpha}
        brasas e poucos brilhos. O meio do card fica livre.
        Entrada: o momento de impacto — clarão, onda de choque, a arte inteira entra com zoom e foco,
        faísca explodindo do centro, faixa de luz, e no fim o miolo some e sobra o visual do loop. */
+    // Loop leve: só as LATERAIS, do fim do banner até perto da base. O banner (topo) e o meio ficam livres;
+    // o que aparece sobre o banner é só da entrada.
+    const BANNER = 160, SIDE = 92;
     const edge = `<mask id="lm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}">
 <linearGradient id="gt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".72" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
 <linearGradient id="gl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff"/><stop offset=".6" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
 <linearGradient id="gr" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="#fff"/><stop offset=".6" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
 <linearGradient id="gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".75" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-<rect x="0" y="0" width="${W}" height="250" fill="url(#gt)"/>
-<g mask="url(#lb)"><rect x="0" y="0" width="70" height="${H}" fill="url(#gl)"/><rect x="${W - 70}" y="0" width="70" height="${H}" fill="url(#gr)"/></g></mask>
-<mask id="lb" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${Math.round(H * 0.8)}" fill="url(#gb)"/></mask>`;
-    const fewSparks = sparkles.split('</path>').length > 1 ? pts.filter(([x, y]) => y < 240 || x < 75 || x > W - 75).slice(0, 8).map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * 0.8)}" fill="${palette[i % palette.length]}"/>`).join('') : '';
-    const fewMotes = sparklePoints(cat, W, H, 8, R).filter(([x, y]) => y < 240 || x < 75 || x > W - 75).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f(1.6 + R() * 2)}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
+<g mask="url(#lb)"><rect x="0" y="0" width="${SIDE}" height="${H}" fill="url(#gl)"/><rect x="${W - SIDE}" y="0" width="${SIDE}" height="${H}" fill="url(#gr)"/></g></mask>
+<linearGradient id="gv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="${f(BANNER / H)}" stop-color="#fff" stop-opacity="0"/><stop offset="${f((BANNER + 70) / H)}" stop-color="#fff"/><stop offset=".78" stop-color="#fff"/><stop offset=".95" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<mask id="lb" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${H}" fill="url(#gv)"/></mask>`;
+    const onSide = ([x, y]) => y > BANNER + 30 && y < H * 0.85 && (x < SIDE - 10 || x > W - SIDE + 10);
+    const fewSparks = sparkles.split('</path>').length > 1 ? pts.filter(onSide).slice(0, 8).map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * 0.8)}" fill="${palette[i % palette.length]}"/>`).join('') : '';
+    const fewMotes = sparklePoints(cat, W, H, 16, R).filter(onSide).slice(0, 8).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f(1.6 + R() * 2)}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
     const loopDefs = defs.replace('</defs>', clips + fullDef + edge + '</defs>');
     const loop = `${head}<style>${css2}
 .lite{opacity:.88}</style>${loopDefs}<g class="lite" mask="url(#lm)"><g class="art"><use class="glow" href="#art"/>${body}${licks}</g></g>${fewMotes}${fewSparks}</svg>`;
@@ -593,5 +595,97 @@ ${isparks}</svg>`;
     return ok;
   }
 
-  window.CosmeticIllustration = { cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
+  /* ---------------------------------------------------------------- */
+  /* REFAZER: edita uma ilustração já gerada com um pedido em texto    */
+  /* ---------------------------------------------------------------- */
+  /** A arte (camada #art) embutida no SVG de um item do modo Ilustração. */
+  function artOf(svg) {
+    const m = String(svg || '').match(/<image[^>]*id="art"[^>]*href="(data:image\/[a-z]+;base64,[^"]+)"/) || String(svg || '').match(/href="(data:image\/[a-z]+;base64,[^"]+)"/);
+    return m ? m[1] : '';
+  }
+  /** Arte sobre fundo verde chapado (o modelo devolve no mesmo esquema e o recorte continua funcionando). */
+  async function onGreen(dataUrl) {
+    const img = await loadImage(dataUrl);
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#00FF00';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0);
+    return c.toDataURL('image/png').split(',')[1];
+  }
+  async function editGemini(cat, b64, instruction, cfg) {
+    const model = geminiImageModel(cfg.model);
+    const url = `${GEMINI_BASE}/models/${encodeURIComponent(model)}:generateContent`;
+    const text = [
+      `This image is a Discord ${CAT_WORD[cat]} on a flat green background. EDIT it following this request: ${instruction}.`,
+      'Change only what the request asks for. Keep the same format, framing, composition, proportions, art style and everything else.',
+      LAYOUT[cat],
+      'Keep the background perfectly flat pure green (#00FF00), no text, one single object.',
+    ].join('\n\n');
+    for (const withAspect of [true, false]) {
+      const generationConfig = { responseModalities: ['TEXT', 'IMAGE'] };
+      if (withAspect) generationConfig.imageConfig = { aspectRatio: ASPECT[cat].gemini };
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text }, { inlineData: { mimeType: 'image/png', data: b64 } }] }], generationConfig }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const msg = (data && data.error && data.error.message) || '';
+        if (withAspect && res.status === 400 && /image_?config|aspect/i.test(msg)) continue;
+        throw new Error('Gemini: ' + (msg || 'HTTP ' + res.status));
+      }
+      const cand = data && data.candidates && data.candidates[0];
+      const img = ((cand && cand.content && cand.content.parts) || []).find((p) => p.inlineData && /^image\//.test(p.inlineData.mimeType || ''));
+      if (!img) throw new Error('O Gemini não devolveu a imagem editada.');
+      return { mime: img.inlineData.mimeType, data: img.inlineData.data, model };
+    }
+    throw new Error('O Gemini não aceitou o pedido.');
+  }
+  async function editOpenAI(cat, dataUrl, instruction, cfg) {
+    const model = openaiImageModel(cfg.model);
+    const base = (cfg.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+    const blob = await (await fetch(dataUrl)).blob();
+    const png = await new Promise((resolve) => {
+      createImageBitmap(blob).then((bmp) => {
+        const c = document.createElement('canvas');
+        c.width = bmp.width; c.height = bmp.height;
+        c.getContext('2d').drawImage(bmp, 0, 0);
+        c.toBlob(resolve, 'image/png');
+      });
+    });
+    const fd = new FormData();
+    fd.append('model', model);
+    fd.append('image', png, 'art.png');
+    fd.append('prompt', `Edit this Discord ${CAT_WORD[cat]}: ${instruction}. Change only what is asked; keep format, composition and style. Transparent background, no text.`);
+    fd.append('size', ASPECT[cat].openai);
+    fd.append('background', 'transparent');
+    const res = await fetch(base + '/images/edits', { method: 'POST', headers: { Authorization: 'Bearer ' + cfg.key }, body: fd });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error('OpenAI: ' + ((data && data.error && data.error.message) || 'HTTP ' + res.status));
+    const b64 = data && data.data && data.data[0] && data.data[0].b64_json;
+    if (!b64) throw new Error('A OpenAI não devolveu a imagem editada.');
+    return { mime: 'image/png', data: b64, model };
+  }
+  /**
+   * Refaz uma ilustração: edita a arte com o pedido e remonta recorte, máscaras e animação.
+   * @returns {Promise<{asset:object, palette:string[], label:string}>}
+   */
+  async function remake(cat, item, instruction, cfg, motion = {}) {
+    const art = artOf(item.asset && item.asset.svg);
+    if (!art) throw new Error('Não achei a ilustração deste item.');
+    const provider = cfg.provider === 'openai' ? 'openai' : 'gemini';
+    const gen = provider === 'gemini' ? await editGemini(cat, await onGreen(art), instruction, cfg) : await editOpenAI(cat, art, instruction, cfg);
+    const out = await processImage(gen, cat);
+    const anim = buildSvgs(cat, out, 7 + instruction.length, motion);
+    return {
+      asset: { type: 'svg', ...anim, ...(cat === 'frames' ? { wrap: FRAME_WRAP } : {}) },
+      palette: out.palette,
+      label: (provider === 'gemini' ? 'Gemini · ' : 'OpenAI · ') + gen.model,
+    };
+  }
+
+  window.CosmeticIllustration = { remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
 })();

@@ -301,10 +301,19 @@
                 <div class="seg seg-grid" id="status-picks" role="radiogroup" aria-label="Status"></div>
               </div>
               <div>
-                <span class="field-label">Cor do banner</span>
+                <span class="field-label">Banner</span>
                 <div class="flex items-center gap-2 flex-wrap" id="banner-picks">
                   <input type="color" id="input-banner" class="swatch" title="Cor personalizada" aria-label="Cor personalizada do banner" />
                 </div>
+                <div class="flex items-center gap-2 mt-2">
+                  <label class="btn btn-sm btn-secondary cursor-pointer" title="Imagem (cortada em 680×240) ou GIF animado, até 10 MB">
+                    <input id="input-banner-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="sr-only" />
+                    🖼 Enviar imagem ou GIF
+                  </label>
+                  <span id="banner-image-preview" class="hidden h-8 w-[68px] rounded-md bg-center bg-cover ring-1 ring-white/15" title="Banner atual"></span>
+                  <button type="button" id="banner-remove" class="hidden text-xs text-dc-muted hover:text-dc-red">Remover</button>
+                </div>
+                <p class="text-[11px] text-dc-faint mt-1">Tamanho do Discord: 680×240 (17:6). GIF anima no banner.</p>
               </div>
             </div>
           </div>
