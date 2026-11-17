@@ -34,7 +34,7 @@
   const LAYOUT = {
     decorations: 'FORMAT: square avatar decoration. The artwork is a decorative ring that wraps around an EMPTY CIRCULAR HOLE in the exact center of the image; the hole diameter is about 72% of the image width and must contain only background. Place the main ornament on the top or a top corner of the ring and smaller accents around the rest so it feels balanced. The art hugs the hole edge and stays inside the image borders.',
     nameplates: 'FORMAT: very wide horizontal banner ornament. All artwork must sit inside the central horizontal band (the middle 40% of the image height); everything above and below that band is plain background. The LEFT HALF of the image is completely empty background. The illustration grows in density toward the right end, with the main motif on the far right.',
-    effects: 'FORMAT: tall vertical overlay effect for a profile card. Decorative elements run along the top quarter and down the left and right edges like a living border (e.g. flames, petals, clouds, vines, sparks). The middle of the image and the bottom third stay mostly empty background, with only a few small floating particles.',
+    effects: 'FORMAT: tall vertical overlay effect for a profile card. The main elements run down the LEFT and RIGHT edges like a living border (e.g. flames, petals, clouds, vines, sparks), from about 18% of the height down to about 85%. A burst of elements across the very top is welcome too (it is shown only in the entrance animation). The middle of the image and the bottom stay empty background, with only a few small floating particles. Do not draw any circle, frame or dark shape behind the avatar area (top-left).',
     frames: 'FORMAT: tall ornamental frame that WRAPS AROUND a tall portrait profile card. Imagine an empty rounded rectangle (the card) occupying the middle of the image: from 4% to 96% of the width and from 12% to 92% of the height — it must stay empty background. The frame hugs the OUTSIDE of that rectangle: a rich main ornament sits on and above the TOP edge (it can overhang the card top slightly), a smaller ornament on and below the BOTTOM edge, and slim decorative borders run down the left and right edges connecting them. Nothing inside the card area except the very edge.',
   };
   /* Frame gerado = uma camada "border" em volta do card: topo e base fixos, o meio estica. */
@@ -274,10 +274,8 @@
       } else if (cat === 'nameplates') {
         k = smooth(140, 215, x); // avatar + nome à esquerda
       } else if (cat === 'effects') {
-        const r = Math.hypot(x - 82, y - 138);
-        k = smooth(58, 80, r);
-        // texto do perfil: no máximo semitransparente
-        if (x > 21 && x < 429 && y > 199 && y < 556) k = Math.min(k, 0.55 + 0.45 * smooth(0, 60, Math.min(x - 21, 429 - x)));
+        // efeito: nenhuma máscara na arte. A entrada mostra tudo; o loop usa só as laterais (ver buildSvgs).
+        k = 1;
       } else if (cat === 'frames') {
         // card em (56, 304)–(1256, 2316): o miolo fica livre; o ornamento pode invadir a borda
         // (até ~180 px no topo, sobre o banner, ~110 na base e ~90 dos lados)
@@ -465,16 +463,20 @@ mask{mask-type:alpha}
        brasas e poucos brilhos. O meio do card fica livre.
        Entrada: o momento de impacto — clarão, onda de choque, a arte inteira entra com zoom e foco,
        faísca explodindo do centro, faixa de luz, e no fim o miolo some e sobra o visual do loop. */
+    // Loop leve: só as LATERAIS, do fim do banner até perto da base. O banner (topo) e o meio ficam livres;
+    // o que aparece sobre o banner é só da entrada.
+    const BANNER = 160, SIDE = 92;
     const edge = `<mask id="lm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}">
 <linearGradient id="gt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".72" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
 <linearGradient id="gl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff"/><stop offset=".6" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
 <linearGradient id="gr" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="#fff"/><stop offset=".6" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
 <linearGradient id="gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".75" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-<rect x="0" y="0" width="${W}" height="250" fill="url(#gt)"/>
-<g mask="url(#lb)"><rect x="0" y="0" width="70" height="${H}" fill="url(#gl)"/><rect x="${W - 70}" y="0" width="70" height="${H}" fill="url(#gr)"/></g></mask>
-<mask id="lb" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${Math.round(H * 0.8)}" fill="url(#gb)"/></mask>`;
-    const fewSparks = sparkles.split('</path>').length > 1 ? pts.filter(([x, y]) => y < 240 || x < 75 || x > W - 75).slice(0, 8).map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * 0.8)}" fill="${palette[i % palette.length]}"/>`).join('') : '';
-    const fewMotes = sparklePoints(cat, W, H, 8, R).filter(([x, y]) => y < 240 || x < 75 || x > W - 75).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f(1.6 + R() * 2)}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
+<g mask="url(#lb)"><rect x="0" y="0" width="${SIDE}" height="${H}" fill="url(#gl)"/><rect x="${W - SIDE}" y="0" width="${SIDE}" height="${H}" fill="url(#gr)"/></g></mask>
+<linearGradient id="gv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="${f(BANNER / H)}" stop-color="#fff" stop-opacity="0"/><stop offset="${f((BANNER + 70) / H)}" stop-color="#fff"/><stop offset=".78" stop-color="#fff"/><stop offset=".95" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<mask id="lb" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${H}" fill="url(#gv)"/></mask>`;
+    const onSide = ([x, y]) => y > BANNER + 30 && y < H * 0.85 && (x < SIDE - 10 || x > W - SIDE + 10);
+    const fewSparks = sparkles.split('</path>').length > 1 ? pts.filter(onSide).slice(0, 8).map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * 0.8)}" fill="${palette[i % palette.length]}"/>`).join('') : '';
+    const fewMotes = sparklePoints(cat, W, H, 16, R).filter(onSide).slice(0, 8).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f(1.6 + R() * 2)}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
     const loopDefs = defs.replace('</defs>', clips + fullDef + edge + '</defs>');
     const loop = `${head}<style>${css2}
 .lite{opacity:.88}</style>${loopDefs}<g class="lite" mask="url(#lm)"><g class="art"><use class="glow" href="#art"/>${body}${licks}</g></g>${fewMotes}${fewSparks}</svg>`;
