@@ -500,6 +500,50 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
     if (ai) ai.checked = ui.fxAi;
   }
 
+  /* ---------- Forma de cada formato (escolhida pelo usuário) ---------- */
+  const SHAPES_STORAGE = 'cosmetic-studio:gen-shapes';
+  const CAT_NAMES = { nameplates: 'Nameplate', decorations: 'Moldura', effects: 'Efeito (loop)', frames: 'Profile Frame' };
+  async function renderShapes() {
+    const box = $('#gen-shapes');
+    const I = window.CosmeticIllustration;
+    if (!box || !I || !I.shapeOptions) return;
+    if (!ui.shapes) { try { ui.shapes = JSON.parse(store.get(SHAPES_STORAGE) || '{}') || {}; } catch (e) { ui.shapes = {}; } }
+    const opts = await I.shapeOptions();
+    box.innerHTML = '';
+    Object.entries(CAT_NAMES).forEach(([cat, title]) => {
+      const row = document.createElement('div');
+      const h = document.createElement('div');
+      h.className = 'text-[11px] font-semibold text-dc-muted mb-1';
+      h.textContent = title;
+      const list = document.createElement('div');
+      list.className = 'flex flex-wrap gap-1.5';
+      const cur = ui.shapes[cat] ?? opts[cat][0].v;
+      opts[cat].forEach((o) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'shape-opt' + (String(o.v) === String(cur) ? ' is-active' : '');
+        b.title = o.label;
+        if (o.v !== 'auto') {
+          const im = document.createElement('img');
+          im.alt = '';
+          im.src = I.shapePreview(cat, o.v, 56);
+          b.appendChild(im);
+        }
+        const sp = document.createElement('span');
+        sp.textContent = o.label;
+        b.appendChild(sp);
+        b.addEventListener('click', () => {
+          ui.shapes[cat] = o.v;
+          store.set(SHAPES_STORAGE, JSON.stringify(ui.shapes));
+          list.querySelectorAll('.shape-opt').forEach((x) => x.classList.toggle('is-active', x === b));
+        });
+        list.appendChild(b);
+      });
+      row.append(h, list);
+      box.appendChild(row);
+    });
+  }
+
   /* ---------- Mídia colada (Pinterest, imagem, GIF, vídeo) ---------- */
   async function loadMedia(getter) {
     if (!window.CosmeticMediaRef) return CS.toast('Módulo de mídia não carregou. Atualize a página.', 'danger');
@@ -1827,7 +1871,7 @@ ${lines.join('\n\n')}`;
       const hi = await window.CosmeticMediaRef.artFrames(ui.media);
       const motion = {};
       cats.forEach((cat) => { motion[cat] = { fx: fxFor(prompt || '') }; });
-      const list = await window.CosmeticIllustration.fromMedia(cats, { ...hi, name: ui.media.name, kind: ui.media.kind }, motion);
+      const list = await window.CosmeticIllustration.fromMedia(cats, { ...hi, name: ui.media.name, kind: ui.media.kind }, motion, ui.shapes || {});
       list.forEach((it) => {
         if (it.cat === 'nameplates' && it.palette && it.palette[0]) it.raw.asset.discordPalette = nearestDiscordPalette(it.palette[0]);
       });
@@ -1887,6 +1931,7 @@ ${lines.join('\n\n')}`;
       const list = await window.CosmeticIllustration.generate({ prompt: theme, cats, details: perCat }, { ...cfg, model: cfg.imageModel, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl }, {
         refs: refsByCat,
         fromMedia: !!ui.media,
+        shapes: ui.shapes || {},
         motion,
         onProgress: (msg) => setBusy(true, msg + ' (10 a 40 s por item)'),
       });
@@ -1958,6 +2003,8 @@ ${lines.join('\n\n')}`;
         }
       }
       ({ theme: prompt, details } = parsePrompt(prompt));
+      // campos próprios de cada formato têm prioridade sobre as linhas do prompt
+      ['nameplates', 'decorations', 'effects', 'frames'].forEach((c) => { const el = document.getElementById('gen-pp-' + c); const v = el && el.value.trim(); if (v) details[c] = v; });
       let mode = cats.includes('frames') && ui.mode === 'particles' ? 'svg' : ui.mode;
       if (mode !== ui.mode) CS.toast('Profile frames são desenhados no estilo Arte (SVG).', 'info');
       // Ilustração precisa de um modelo de IMAGEM; sem ele, desenha em SVG
@@ -2288,6 +2335,13 @@ ${current}`;
     $('#gen-form').addEventListener('submit', onGenerate);
     $('#gen-refs-add').addEventListener('click', openPicker);
     renderFx();
+    renderShapes();
+    ['nameplates', 'decorations', 'effects', 'frames'].forEach((c) => {
+      const el = document.getElementById('gen-pp-' + c); if (!el) return;
+      const k = 'cosmetic-studio:gen-pp-' + c;
+      el.value = store.get(k) || '';
+      el.addEventListener('input', () => store.set(k, el.value));
+    });
     const fxAi = $('#gen-fx-ai');
     if (fxAi) fxAi.addEventListener('change', () => { ui.fxAi = fxAi.checked; store.set(FX_AI_STORAGE, ui.fxAi ? '1' : '0'); });
     const mUrl = $('#gen-media-url');

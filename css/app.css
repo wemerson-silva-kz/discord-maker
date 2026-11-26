@@ -708,3 +708,9 @@ input[type='color'].swatch::-moz-color-swatch { border: none; border-radius: 6px
 
 /* Nameplate na lista: a arte fica presa à direita (a linha é mais larga que 448×84) */
 .member-row .np-slot .cosmetic-layer > img { object-position: right center; }
+
+/* Seletor de forma (gerador) */
+.shape-opt { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.18); color: #b5bac1; font-size: 10px; line-height: 1.1; max-width: 92px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; }
+.shape-opt img { height: 56px; width: auto; border-radius: 4px; image-rendering: auto; }
+.shape-opt:hover { border-color: rgba(255,255,255,.25); }
+.shape-opt.is-active { border-color: #5865F2; background: rgba(88,101,242,.18); color: #fff; }

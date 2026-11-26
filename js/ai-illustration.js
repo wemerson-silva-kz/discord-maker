@@ -518,24 +518,38 @@
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const x2 = c.getContext('2d', { willReadFrequently: true });
     x2.fillStyle = '#fff'; x2.fillRect(0, 0, W, H);
-    if (cat === 'effects' && STUDY && STUDY[variant || 'intro']) {
-      // Onde os efeitos oficiais têm arte (mapa médio medido quadro a quadro): o resto fica livre.
-      const map = STUDY[variant || 'intro'];
-      let mx = 0; map.forEach((row) => row.forEach((v) => { mx = Math.max(mx, v); }));
+    const EFX = {
+      'loop:topo': (x, y) => 1 - smooth(130, 280, y),
+      'loop:laterais': (x, y) => Math.max(1 - smooth(45, 120, x), smooth(330, 405, x)) * (1 - smooth(560, 760, y)),
+      'loop:base': (x, y) => smooth(560, 740, y),
+      'loop:cantos': (x, y) => Math.max(...[[0, 0], [450, 0], [0, 880], [450, 880]].map(([cx, cy]) => 1 - smooth(70, 190, Math.hypot(x - cx, y - cy)))),
+      'loop:cheio': () => 0.55,
+    };
+    if (cat === 'effects' && (EFX[variant] || (STUDY && STUDY[variant || 'intro']))) {
+      // Onde os efeitos oficiais têm arte (mapa médio medido quadro a quadro) ou a forma escolhida.
+      const map = EFX[variant] ? null : STUDY[variant || 'intro'];
+      let mx = 0; if (map) map.forEach((row) => row.forEach((v) => { mx = Math.max(mx, v); }));
       const img = x2.getImageData(0, 0, W, H), d = img.data;
       const nE = wobble(41, 1);
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-        const v = sampleMap(map, x, y) / (mx || 1);
-        let k = smooth(0.22 + 0.06 * nE((x + y) / 60), 0.75, v);
+        const v = map ? sampleMap(map, x, y) / (mx || 1) : EFX[variant](x, y);
+        let k = map ? smooth(0.22 + 0.06 * nE((x + y) / 60), 0.75, v) : Math.min(1, v * (0.9 + 0.2 * nE((x + y) / 60)));
         k = Math.min(k, 0.15 + 0.85 * smooth(56, 88, Math.hypot(x - 82, y - 138))); // avatar quase livre
         d[(y * W + x) * 4 + 3] = Math.round(255 * k);
       }
       x2.putImageData(img, 0, 0);
       return c;
     }
+    if (cat === 'nameplates' && variant === 'inteira') {
+      // arte na faixa toda; só um véu suave atrás do avatar e do nome para continuar legível
+      const img = x2.getImageData(0, 0, W, H), d = img.data;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) d[(y * W + x) * 4 + 3] = Math.round(255 * (0.45 + 0.55 * smooth(40, 230, x)));
+      x2.putImageData(img, 0, 0);
+      return c;
+    }
     if (cat !== 'decorations' && cat !== 'frames') { protectZones(x2, cat, W, H); return c; }
     const img = x2.getImageData(0, 0, W, H), d = img.data;
-    const shape = cat === 'decorations' && STUDY && STUDY.shapes.length ? STUDY.shapes[(variant || 0) % STUDY.shapes.length] : null;
+    const shape = cat === 'decorations' && STUDY && STUDY.shapes.length && typeof variant === 'number' ? STUDY.shapes[variant % STUDY.shapes.length] : null;
     if (shape) {
       // Forma medida nas molduras oficiais: massa, alcance e borda interna por ângulo.
       const mm = Math.max(...shape.massa_36) || 1;
@@ -582,9 +596,12 @@
           // miolo do card vazio
           const inside = smooth(inL - 5, inL + 5, x) * (1 - smooth(inR - 5, inR + 5, x)) * smooth(inT - 8, inT + 8, y) * (1 - smooth(inB - 8, inB + 8, y));
           k *= 1 - inside;
-          // laterais: só perto da coroa e da base
+          // laterais conforme o estilo: escorrendo (padrão), nenhuma, completas; "coroa" tira a base
           const band = smooth(inT - 10, inT + 30, y) * (1 - smooth(inB - 30, inB + 10, y));
-          k *= 1 - band * (1 - sideOn);
+          const fs = variant || 'coroa-laterais';
+          const side = fs === 'borda' ? 1 : fs === 'coroa-base' ? 0 : fs === 'coroa' ? 1 - smooth(T + 300, T + 600, y) : sideOn;
+          k *= 1 - band * (1 - side);
+          if (fs === 'coroa') k *= 1 - smooth(inB - 400, inB - 100, y);
           d[(y * W + x) * 4 + 3] = Math.round(255 * k);
         }
       }
@@ -592,6 +609,65 @@
     x2.putImageData(img, 0, 0);
     return c;
   }
+  /** Rótulo automático de uma forma de moldura, pela distribuição de massa medida. */
+  function shapeLabel(t) {
+    const m = t.massa_36, mx = Math.max(...m) || 1;
+    const on = m.filter((v) => v / mx > 0.35).length / 36;
+    const part = (a, b) => m.slice(a, b).reduce((s0, v) => s0 + v, 0);
+    const top = part(0, 5) + part(31, 36), bot = part(13, 23), right = part(5, 13), left = part(23, 31);
+    const tot = top + bot + right + left || 1;
+    const reach = Math.max(...t.alcance_36);
+    if (on > 0.8) return reach > 150 ? { k: 'anel-orelhas', label: 'Anel com orelhas' } : { k: 'anel', label: 'Anel cheio' };
+    if (top / tot > 0.4) return reach > 150 ? { k: 'orelhas', label: 'Orelhas / chifres' } : { k: 'topo', label: 'Ornamento no topo' };
+    if (bot / tot > 0.38) return { k: 'base', label: 'Peso embaixo' };
+    if (Math.abs(left - right) / tot > 0.15) return { k: 'lateral', label: 'Lua de lado' };
+    if (on < 0.45) return { k: 'soltos', label: 'Elementos soltos' };
+    return { k: 'arco', label: 'Arcos laterais' };
+  }
+  /** Formas que o usuário pode escolher em cada formato. */
+  async function shapeOptions() {
+    await loadStudy();
+    return {
+      decorations: [{ v: 'auto', label: '3 sorteadas' }, ...(STUDY.shapes || []).map((t, i) => ({ v: i, label: shapeLabel(t).label }))],
+      effects: [{ v: 'loop', label: 'Como os oficiais' }, { v: 'loop:topo', label: 'Só no topo' }, { v: 'loop:laterais', label: 'Laterais' }, { v: 'loop:cantos', label: 'Cantos' }, { v: 'loop:base', label: 'Base' }, { v: 'loop:cheio', label: 'Cena inteira, leve' }],
+      frames: [{ v: 'coroa-laterais', label: 'Coroa + laterais escorrendo' }, { v: 'coroa-base', label: 'Coroa + base' }, { v: 'borda', label: 'Borda completa' }, { v: 'coroa', label: 'Só coroa' }],
+      nameplates: [{ v: 'direita', label: 'Arte à direita' }, { v: 'inteira', label: 'Faixa inteira' }],
+    };
+  }
+  /** Prévia pequena da forma: card/avatar em azul e a área da arte em branco. */
+  function shapePreview(cat, v, h = 64) {
+    const m = maskOf(cat, cat === 'effects' && v === 'loop' ? 'loop' : v === 'auto' ? undefined : v);
+    const { w: W, h: H } = CANVAS[cat];
+    const s = h / H, w = Math.max(1, Math.round(W * s));
+    const c = document.createElement('canvas'); c.width = cat === 'nameplates' ? 160 : w; c.height = cat === 'nameplates' ? 30 : h;
+    const x = c.getContext('2d');
+    const sx = c.width / W, sy = c.height / H;
+    x.fillStyle = '#1e1f22'; x.fillRect(0, 0, c.width, c.height);
+    x.fillStyle = '#5865F2';
+    if (cat === 'decorations') { x.beginPath(); x.arc(144 * sx, 144 * sy, 120 * sx, 0, 7); x.fill(); }
+    else if (cat === 'frames') { x.fillRect(56 * sx, 304 * sy, 1200 * sx, 2012 * sy); }
+    else if (cat === 'effects') { x.globalAlpha = 0.5; x.fillRect(0, 0, c.width, 120 * sy); x.globalAlpha = 1; x.beginPath(); x.arc(82 * sx, 138 * sy, 66 * sx, 0, 7); x.fill(); }
+    else { x.beginPath(); x.arc(20, 15, 10, 0, 7); x.fill(); }
+    const t = document.createElement('canvas'); t.width = c.width; t.height = c.height;
+    const tx = t.getContext('2d'); tx.drawImage(m, 0, 0, c.width, c.height);
+    tx.globalCompositeOperation = 'source-in'; tx.fillStyle = 'rgba(255,255,255,.9)'; tx.fillRect(0, 0, c.width, c.height);
+    x.drawImage(t, 0, 0);
+    return c.toDataURL('image/png');
+  }
+  /** Frase para o modelo de imagem seguir a forma escolhida. */
+  function shapeHint(cat, v) {
+    if (v === undefined || v === null || v === 'auto') return '';
+    if (cat === 'decorations') {
+      const t = STUDY && STUDY.shapes && STUDY.shapes[v];
+      const k = t ? shapeLabel(t).k : '';
+      return ({ anel: 'SHAPE: a full ring all around the avatar.', 'anel-orelhas': 'SHAPE: a ring around the avatar with ears or horns poking out past the circle at the top corners.', orelhas: 'SHAPE: only ears or horns on the top; the rest of the circle is empty.', topo: 'SHAPE: only one ornament sitting on top of the avatar (like a hat, hair, crown or creature); the sides and bottom are empty.', base: 'SHAPE: the art is mostly at the bottom of the avatar (like flames, plants or a creature below); the top is mostly empty.', lateral: 'SHAPE: a crescent on one side of the avatar; the other side is empty.', soltos: 'SHAPE: a few separate small elements scattered around the avatar edge, with gaps between them.', arco: 'SHAPE: two arcs or wings on the left and right of the avatar; top and bottom mostly empty.' })[k] || '';
+    }
+    if (cat === 'frames') return ({ 'coroa-base': 'SHAPE: no side borders at all: only the crown on top and a base ornament at the bottom.', borda: 'SHAPE: a complete slim border on all four sides plus the crown on top and a base.', coroa: 'SHAPE: only the crown on top; nothing on the sides or bottom.', 'coroa-laterais': 'SHAPE: crown on top and base at the bottom, with elements spilling partway down the sides from the top and up from the bottom; the middle of the sides is empty.' })[v] || '';
+    if (cat === 'effects') return ({ 'loop:topo': 'SHAPE: keep the art in the top 30% of the image only.', 'loop:laterais': 'SHAPE: keep the art along the left and right edges only.', 'loop:base': 'SHAPE: keep the art in the bottom part only.', 'loop:cantos': 'SHAPE: put the art in the four corners only.', 'loop:cheio': 'SHAPE: a light scene over the whole image.' })[v] || '';
+    if (cat === 'nameplates') return v === 'inteira' ? 'SHAPE: the art may span the whole width, lighter and calmer on the left.' : '';
+    return '';
+  }
+
   const maskCache = {};
   const maskOf = (cat, v) => { const key = cat + ':' + (v ?? ''); return (maskCache[key] = maskCache[key] || mediaMask(cat, v)); };
   function applyMask(ctx, cat, v) {
@@ -806,7 +882,7 @@ ${isparks}</svg>`;
     const n = urls.length, T = Math.max(1.5, seconds), d = T / n;
     const pct = (t) => f((t / T) * 100);
     const head = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">`;
-    const defs = `<defs>${urls.map((u, i) => `<image id="q${i}" href="${u}" x="0" y="0" width="${W}" height="${H}"/>`).join('')}<image id="zm" href="${zoneMask(cat, cat === 'effects' ? 'loop' : variant)}" x="0" y="0" width="${W}" height="${H}"/><mask id="pm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><use href="#zm"/></mask></defs>`;
+    const defs = `<defs>${urls.map((u, i) => `<image id="q${i}" href="${u}" x="0" y="0" width="${W}" height="${H}"/>`).join('')}<image id="zm" href="${zoneMask(cat, variant ?? (cat === 'effects' ? 'loop' : undefined))}" x="0" y="0" width="${W}" height="${H}"/><mask id="pm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><use href="#zm"/></mask></defs>`;
     // quadro i entra em fusão no fim do quadro anterior e fica até o fim; por cima de tudo, o 1º volta (emenda)
     const kf = [];
     const layers = ['<use href="#q0"/>'];
@@ -829,7 +905,7 @@ ${isparks}</svg>`;
       ikf.push(`@keyframes e${i}{0%,${ipct(a)}%{opacity:0}${ipct(b)}%,100%{opacity:1}}.e${i}{animation:e${i} ${f(TI)}s linear 1 both}`);
       ilayers.push(`<use class="e${i}" href="#i${i}"/>`);
     }
-    const idefs = `<defs>${iu.map((u, i) => `<image id="i${i}" href="${u}" x="0" y="0" width="${W}" height="${H}"/>`).join('')}${urls.map((u, i) => `<image id="q${i}" href="${u}" x="0" y="0" width="${W}" height="${H}"/>`).join('')}<image id="zi" href="${zoneMask(cat, 'intro')}" x="0" y="0" width="${W}" height="${H}"/><image id="zm" href="${zoneMask(cat, 'loop')}" x="0" y="0" width="${W}" height="${H}"/><mask id="mi" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><use href="#zi"/></mask><mask id="pm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><use href="#zm"/></mask></defs>`;
+    const idefs = `<defs>${iu.map((u, i) => `<image id="i${i}" href="${u}" x="0" y="0" width="${W}" height="${H}"/>`).join('')}${urls.map((u, i) => `<image id="q${i}" href="${u}" x="0" y="0" width="${W}" height="${H}"/>`).join('')}<image id="zi" href="${zoneMask(cat, 'intro')}" x="0" y="0" width="${W}" height="${H}"/><image id="zm" href="${zoneMask(cat, variant ?? 'loop')}" x="0" y="0" width="${W}" height="${H}"/><mask id="mi" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><use href="#zi"/></mask><mask id="pm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><use href="#zm"/></mask></defs>`;
     const intro = `${head}<style>mask{mask-type:alpha}${ikf.join('')}
 .in{transform-box:view-box;transform-origin:50% 30%;animation:zin 1.2s cubic-bezier(.16,1,.3,1) both,iout ${f(XF)}s ease-in ${f(TI - XF)}s both}
 .to{opacity:0;animation:ion ${f(XF)}s ease-out ${f(TI - XF)}s both}
@@ -841,17 +917,20 @@ ${isparks}</svg>`;
    * Gera os formatos direto da mídia do usuário (sem IA).
    * @param {{frames:HTMLCanvasElement[], seconds?:number, name?:string}} media
    */
-  async function fromMedia(cats, media, motion = {}) {
+  async function fromMedia(cats, media, motion = {}, shapes = {}) {
     await loadStudy();
     const out = [];
-    // Molduras: uma por forma medida (as mais comuns primeiro), para escolher
+    // Formas escolhidas na tela; molduras em "3 sorteadas" saem em três formas medidas
     const nShapes = Math.min(3, (STUDY.shapes || []).length);
     const jobs = [];
     cats.forEach((cat) => {
-      if (cat === 'decorations' && nShapes) {
+      const sv = shapes[cat];
+      if (cat === 'decorations' && typeof sv === 'number') jobs.push({ cat, variant: sv });
+      else if (cat === 'decorations' && nShapes) {
         const off = Math.floor(Math.random() * STUDY.shapes.length);
         for (let k = 0; k < nShapes; k++) jobs.push({ cat, variant: (off + k) % STUDY.shapes.length });
-      } else jobs.push({ cat });
+      } else if (cat === 'effects') jobs.push({ cat, variant: sv || 'loop' });
+      else jobs.push({ cat, variant: sv });
     });
     const focus = focusOf(media.frames[Math.floor(media.frames.length / 2)]);
     const enc = (c, q) => { const u = c.toDataURL('image/webp', q); return /^data:image\/webp/.test(u) ? u : c.toDataURL('image/jpeg', q); };
@@ -882,7 +961,7 @@ ${isparks}</svg>`;
         if (cat === 'effects' && STUDY.loop) {
           // imagem parada: entrada com o mapa da entrada; loop leve com o mapa do loop
           const artI = await processImage(null, cat, { canvas: media.frames[0], focus, variant: 'intro' });
-          const artL = await processImage(null, cat, { canvas: media.frames[0], focus, variant: 'loop' });
+          const artL = await processImage(null, cat, { canvas: media.frames[0], focus, variant: variant || 'loop' });
           const a1 = buildSvgs(cat, artI, 11, motion[cat] || {}), a2 = buildSvgs(cat, artL, 11, motion[cat] || {});
           asset = { type: 'svg', ...a1, svg: a2.svg, loopSeconds: a2.loopSeconds };
           palette = artI.palette;
@@ -897,7 +976,7 @@ ${isparks}</svg>`;
       out.push({
         cat,
         palette,
-        raw: { ...metaFor(cat, base || 'Sua mídia'), ...(variant !== undefined && cat === 'decorations' ? { name: (metaFor(cat, base || 'Sua mídia').name.slice(0, 20) + ' · forma ' + (variant + 1)) } : {}), prompt: base, engine: 'media', engineLabel: 'Sua mídia · ' + (media.kind || ''), asset },
+        raw: { ...metaFor(cat, base || 'Sua mídia'), ...(typeof variant === 'number' && cat === 'decorations' ? { name: (metaFor(cat, base || 'Sua mídia').name.slice(0, 14) + ' · ' + shapeLabel(STUDY.shapes[variant]).label).slice(0, 28) } : {}), prompt: base, engine: 'media', engineLabel: 'Sua mídia · ' + (media.kind || ''), asset },
         quality: { ok: true, issues: [], summary: '✓ sua mídia · zonas protegidas' },
       });
     }
@@ -928,6 +1007,7 @@ ${isparks}</svg>`;
    * @returns {Promise<Array<{cat:string, raw:object, quality:object}>>}
    */
   async function generate(req, cfg, opts = {}) {
+    await loadStudy();
     const provider = imageApi(cfg);
     const theme = cleanTheme(req.prompt) || 'tema livre, item premium';
     let done = 0;
@@ -939,7 +1019,8 @@ ${isparks}</svg>`;
     for (const [i, cat] of req.cats.entries()) results.push(await (async () => {
       try {
         const detail = req.details && req.details[cat] ? cleanTheme(req.details[cat]) : '';
-        const catTheme = detail ? `${detail}. General theme and art style: ${theme}` : theme;
+        const hint = shapeHint(cat, opts.shapes && opts.shapes[cat]);
+        const catTheme = (detail ? `${detail}. General theme and art style: ${theme}` : theme) + (hint ? `. ${hint}` : '');
         const paint = async (strict) => {
           for (let attempt = 0; ; attempt++) {
             try {
@@ -1094,5 +1175,5 @@ ${isparks}</svg>`;
     };
   }
 
-  window.CosmeticIllustration = { fromMedia, imageApi, FX_DEFAULT, FX_LABELS, fxFromText, remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
+  window.CosmeticIllustration = { shapeOptions, shapePreview, fromMedia, imageApi, FX_DEFAULT, FX_LABELS, fxFromText, remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
 })();

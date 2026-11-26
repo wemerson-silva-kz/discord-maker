@@ -172,6 +172,23 @@
                 </div>
 
                 <div class="rounded-xl bg-dc-dark/60 border border-white/5 p-3">
+                  <span class="field-label !mb-1">✏️ Prompt de cada parte (opcional)</span>
+                  <p class="text-[11px] text-dc-faint mb-2">O que escrever aqui vale só para aquele formato e tem prioridade sobre o prompt geral.</p>
+                  <div class="space-y-2">
+                    <label class="block"><span class="text-[11px] font-semibold text-dc-muted">Nameplate</span><textarea id="gen-pp-nameplates" rows="2" maxlength="600" class="dc-input h-auto py-1.5 text-xs resize-y" placeholder="Ex.: ondas e a lua à direita"></textarea></label>
+                    <label class="block"><span class="text-[11px] font-semibold text-dc-muted">Moldura</span><textarea id="gen-pp-decorations" rows="2" maxlength="600" class="dc-input h-auto py-1.5 text-xs resize-y" placeholder="Ex.: só as nuvens no topo, sem cobrir o rosto"></textarea></label>
+                    <label class="block"><span class="text-[11px] font-semibold text-dc-muted">Efeito de perfil</span><textarea id="gen-pp-effects" rows="2" maxlength="600" class="dc-input h-auto py-1.5 text-xs resize-y" placeholder="Ex.: barco entra velejando; no loop só estrelas no céu"></textarea></label>
+                    <label class="block"><span class="text-[11px] font-semibold text-dc-muted">Profile Frame</span><textarea id="gen-pp-frames" rows="2" maxlength="600" class="dc-input h-auto py-1.5 text-xs resize-y" placeholder="Ex.: coroa de nuvens e base de ondas"></textarea></label>
+                  </div>
+                </div>
+
+                <div class="rounded-xl bg-dc-dark/60 border border-white/5 p-3">
+                  <span class="field-label !mb-1">🧩 Forma de cada formato</span>
+                  <p class="text-[11px] text-dc-faint mb-2">Branco = onde a arte aparece; azul = avatar/card. As molduras vêm de 8 tipos medidos em 707 molduras oficiais. Vale para a mídia como arte e para a IA de imagem.</p>
+                  <div id="gen-shapes" class="space-y-2.5"></div>
+                </div>
+
+                <div class="rounded-xl bg-dc-dark/60 border border-white/5 p-3">
                   <span class="field-label !mb-1">🌀 Movimento da animação (Ilustração)</span>
                   <div id="gen-fx" class="flex flex-wrap gap-2"></div>
                   <label class="flex items-start gap-2 mt-2 text-xs text-dc-muted cursor-pointer select-none">
