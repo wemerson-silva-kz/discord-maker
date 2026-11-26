@@ -953,6 +953,67 @@ ${isparks}</svg>`;
     const svg = `<g class="${id}a">${img}</g><g class="${id}b">${img.replace('<image ', '<image ')}</g>`;
     return { css, svg };
   }
+  /* ---- Partículas por cima do loop (folhas ao vento, pétalas, neve…) ----
+   * Como no vídeo de referência: profundidade em 3 planos — poucas grandes e desfocadas na
+   * frente (rápidas), várias médias e muitas pequenas ao fundo (lentas). Cores da mídia. */
+  const PARTS = {
+    folhas: { label: '🍃 Folhas ao vento', wind: 'vento', path: 'M0-10C6-6 7 4 0 10C-7 4-6-6 0-10Z', vein: 'M0-9L0 9', hue: 'g' },
+    petalas: { label: '🌸 Pétalas', wind: 'vento', path: 'M0-8C5-8 7-2 0 8C-7-2-5-8 0-8Z', hue: 'p' },
+    neve: { label: '❄️ Neve', wind: 'cair', circle: 1, hue: 'w' },
+    brilhos: { label: '✨ Brilhos', wind: 'subir', path: 'M0-9L2-2 9 0 2 2 0 9-2 2-9 0-2-2Z', hue: 'l' },
+    brasas: { label: '🔥 Brasas', wind: 'subir', circle: 1, hue: 'f' },
+    bolhas: { label: '🫧 Bolhas', wind: 'subir', ring: 1, hue: 'w' },
+  };
+  const PART_WINDS = { vento: '↙ Vento', cair: '↓ Caindo', subir: '↑ Subindo' };
+  function partColors(kind, palette) {
+    const pal = (palette || []).filter(Boolean);
+    const fixed = { g: ['#7BC043', '#A8D86E', '#4E8F2A'], p: ['#FFC1D9', '#FF9EC4', '#FFE3EE'], w: ['#FFFFFF', '#E6F0FF'], l: ['#FFF6C8', '#FFFFFF', '#FFE08A'], f: ['#FFB347', '#FF7A2F', '#FFD27A'] }[PARTS[kind].hue];
+    return pal.length && (kind === 'folhas' || kind === 'petalas') ? [...fixed.slice(0, 2), pal[0]] : fixed;
+  }
+  /** Camada SVG de partículas. opts: { kind, wind, amount (0.5–2) } */
+  function particleLayer(W, H, opts = {}, palette, seed = 7) {
+    const P = PARTS[opts.kind];
+    if (!P) return { css: '', svg: '' };
+    const wind = opts.wind || P.wind;
+    let st = seed * 9301 + 49297;
+    const rnd = () => ((st = (st * 9301 + 49297) % 233280) / 233280);
+    const cols = partColors(opts.kind, palette);
+    const n = Math.round(16 * Math.max(0.3, Math.min(2.5, opts.amount || 1)));
+    const css = [], els = [];
+    const shape = (c) => P.circle ? `<circle r="4" fill="${c}"/>` : P.ring ? `<circle r="6" fill="none" stroke="${c}" stroke-width="1.4" opacity=".8"/><circle cx="-2" cy="-2" r="1.5" fill="#fff" opacity=".8"/>` : `<path d="${P.path}" fill="${c}"/>${P.vein ? `<path d="${P.vein}" stroke="rgba(0,0,0,.25)" stroke-width=".8" fill="none"/>` : ''}`;
+    for (let i = 0; i < n; i++) {
+      // plano: 0 = fundo (pequeno, lento), 1 = meio, 2 = frente (grande, rápido, desfocado; raro)
+      const z = rnd() < 0.1 ? 2 : rnd() < 0.45 ? 1 : 0;
+      const sc = [0.8, 1.5, 5][z] * (0.8 + 0.4 * rnd());
+      const dur = [9, 6.5, 3.2][z] * (0.8 + 0.5 * rnd()), del = -rnd() * dur;
+      const op = [0.75, 0.95, 0.85][z];
+      let x0, y0, x1, y1;
+      if (wind === 'vento') { x0 = W + 40 + rnd() * 80; y0 = -60 + rnd() * H * 0.8; x1 = -80 - rnd() * 60; y1 = y0 + H * (0.25 + 0.35 * rnd()); }
+      else if (wind === 'cair') { x0 = rnd() * W; y0 = -30; x1 = x0 + (rnd() - 0.5) * 120; y1 = H + 30; }
+      else { x0 = rnd() * W; y0 = H + 30; x1 = x0 + (rnd() - 0.5) * 100; y1 = -30; }
+      const mx = (x0 + x1) / 2 + (rnd() - 0.5) * 140, my = (y0 + y1) / 2 + (rnd() - 0.5) * 120;
+      const spin = (rnd() < 0.5 ? -1 : 1) * (180 + rnd() * 540);
+      const fade = wind === 'subir' ? '0%{opacity:0}15%{opacity:1}80%{opacity:1}100%{opacity:0}' : '0%,100%{opacity:1}';
+      css.push(`@keyframes pm${i}{0%{transform:translate(${f(x0)}px,${f(y0)}px)}50%{transform:translate(${f(mx)}px,${f(my)}px)}100%{transform:translate(${f(x1)}px,${f(y1)}px)}}@keyframes pr${i}{from{transform:rotate(0) scale(${f(sc)},${f(sc)})}50%{transform:rotate(${f(spin / 2)}deg) scale(${f(sc)},${f(sc * (P.circle || P.ring ? 1 : 0.35))})}to{transform:rotate(${f(spin)}deg) scale(${f(sc)},${f(sc)})}}@keyframes pf${i}{${fade}}
+.pm${i}{animation:pm${i} ${f(dur)}s ${f(del)}s linear infinite,pf${i} ${f(dur)}s ${f(del)}s linear infinite}.pr${i}{animation:pr${i} ${f(dur * 0.6)}s ${f(del)}s ease-in-out infinite}`);
+      const c = cols[Math.floor(rnd() * cols.length)];
+      els.push(`<g class="pm${i}" opacity="${op}"${z === 2 ? ' filter="url(#pbl)"' : z === 0 ? ' filter="url(#pbs)"' : ''}><g class="pr${i}">${shape(c)}</g></g>`);
+    }
+    const glow = opts.kind === 'brilhos' || opts.kind === 'brasas' ? ' style="mix-blend-mode:screen"' : '';
+    return {
+      css: css.join(''),
+      svg: `<defs><filter id="pbl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.6"/></filter><filter id="pbs" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation=".5"/></filter></defs><g${glow}>${els.join('')}</g>`,
+    };
+  }
+  /** Põe a camada de partículas por cima de um SVG pronto. */
+  function withParticles(svg, cat, opts, palette, seed) {
+    if (!svg || !opts || !PARTS[opts.kind]) return svg;
+    const { w: W, h: H } = CANVAS[cat];
+    const L = particleLayer(W, H, opts, palette, seed);
+    if (!svg.includes('</style>')) svg = svg.replace(/(<svg[^>]*>)/, '$1<style></style>');
+    return svg.replace('</style>', L.css + '</style>').replace(/<\/svg>\s*$/, L.svg + '</svg>');
+  }
+
   function flipbookSvgs(cat, frames, seconds, variant, introFrames, introSeconds) {
     const { w: W, h: H } = CANVAS[cat];
     const T = Math.max(1, seconds);
@@ -1018,6 +1079,10 @@ ${isparks}</svg>`;
         const c0 = document.createElement('canvas'); c0.width = W; c0.height = H;
         coverInto(c0.getContext('2d', { willReadFrequently: true }), pick[0], cat, focus);
         palette = paletteOf(c0.getContext('2d', { willReadFrequently: true }), W, H);
+        if (cat === 'effects' && shapes.particles) {
+          asset.svg = withParticles(asset.svg, cat, shapes.particles, palette, 7);
+          if (asset.introSvg) asset.introSvg = withParticles(asset.introSvg, cat, shapes.particles, palette, 7);
+        }
       } else {
         if (cat === 'effects' && STUDY.loop) {
           // imagem parada: entrada com o mapa da entrada; loop leve com o mapa do loop
@@ -1026,6 +1091,7 @@ ${isparks}</svg>`;
           const a1 = buildSvgs(cat, artI, 11, motion[cat] || {}), a2 = buildSvgs(cat, artL, 11, motion[cat] || {});
           asset = { type: 'svg', ...a1, svg: a2.svg, loopSeconds: a2.loopSeconds };
           palette = artI.palette;
+          if (shapes.particles) { asset.svg = withParticles(asset.svg, cat, shapes.particles, palette, 7); asset.introSvg = withParticles(asset.introSvg, cat, shapes.particles, palette, 7); }
         } else {
           const art = await processImage(null, cat, { canvas: media.frames[0], focus, variant });
           asset = { type: 'svg', ...buildSvgs(cat, art, 11, motion[cat] || {}) };
@@ -1236,5 +1302,5 @@ ${isparks}</svg>`;
     };
   }
 
-  window.CosmeticIllustration = { shapeOptions, shapePreview, fromMedia, imageApi, FX_DEFAULT, FX_LABELS, fxFromText, remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
+  window.CosmeticIllustration = { PARTS, PART_WINDS, particleLayer, withParticles, shapeOptions, shapePreview, fromMedia, imageApi, FX_DEFAULT, FX_LABELS, fxFromText, remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
 })();

@@ -755,3 +755,6 @@ input[type='color'].swatch::-moz-color-swatch { border: none; border-radius: 6px
 .gen-go { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; margin: 0 -16px -16px; background: linear-gradient(to top, var(--dc-side) 70%, transparent); }
 @media (min-width: 640px) { .gen-go { margin: 0 -20px -20px; padding: 14px 20px; } }
 .gen-go #gen-submit { flex: none; }
+
+.gen-chip.is-active { border-color: #5865F2; background: rgba(88,101,242,.22); color: #fff; }
+.part-prev svg { width: 120px; height: 235px; border-radius: 10px; border: 1px solid rgba(255,255,255,.08); display: block; }

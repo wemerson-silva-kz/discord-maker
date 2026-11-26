@@ -537,6 +537,37 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
     });
   }
 
+  /* ---------- Partículas no loop do efeito ---------- */
+  const PART_STORAGE = 'cosmetic-studio:gen-particles';
+  function renderParticles() {
+    const box = $('#gen-particles'), I = window.CosmeticIllustration;
+    if (!box || !I || !I.PARTS) return;
+    try { ui.particles = JSON.parse(store.get(PART_STORAGE) || 'null') || { kind: '', wind: '', amount: 1 }; } catch (e) { ui.particles = { kind: '', wind: '', amount: 1 }; }
+    const save = () => store.set(PART_STORAGE, JSON.stringify(ui.particles));
+    const chip = (label, on, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'gen-chip' + (on ? ' is-active' : ''); b.textContent = label; b.addEventListener('click', fn); return b; };
+    const draw = () => {
+      box.innerHTML = '';
+      const kinds = document.createElement('div'); kinds.className = 'flex flex-wrap gap-1.5';
+      kinds.appendChild(chip('Nenhuma', !ui.particles.kind, () => { ui.particles.kind = ''; save(); draw(); }));
+      Object.entries(I.PARTS).forEach(([k, p]) => kinds.appendChild(chip(p.label, ui.particles.kind === k, () => { ui.particles.kind = k; ui.particles.wind = ''; save(); draw(); })));
+      box.appendChild(kinds);
+      if (!ui.particles.kind) return;
+      const row = document.createElement('div'); row.className = 'flex flex-wrap items-center gap-1.5 mt-2';
+      const cur = ui.particles.wind || I.PARTS[ui.particles.kind].wind;
+      Object.entries(I.PART_WINDS).forEach(([w, l]) => row.appendChild(chip(l, cur === w, () => { ui.particles.wind = w; save(); draw(); })));
+      const amt = document.createElement('label'); amt.className = 'flex items-center gap-2 text-[11px] text-dc-muted ml-2';
+      amt.innerHTML = 'Quantidade <input type="range" min="0.4" max="2.5" step="0.1" class="accent-[#5865F2] w-28">';
+      const rg = amt.querySelector('input'); rg.value = ui.particles.amount || 1;
+      rg.addEventListener('input', () => { ui.particles.amount = +rg.value; save(); prev(); });
+      row.appendChild(amt);
+      box.appendChild(row);
+      const pv = document.createElement('div'); pv.className = 'part-prev mt-2'; box.appendChild(pv);
+      const prev = () => { const L = I.particleLayer(450, 880, { ...ui.particles }, null, 7); pv.innerHTML = `<svg viewBox="0 0 450 880" xmlns="http://www.w3.org/2000/svg"><style>${L.css}</style><rect width="450" height="880" fill="#2b2d31"/><rect width="450" height="160" fill="#5865F2" opacity=".35"/><circle cx="82" cy="160" r="60" fill="#5865F2"/>${L.svg}</svg>`; };
+      prev();
+    };
+    draw();
+  }
+
   /* ---------- Mídia colada (Pinterest, imagem, GIF, vídeo) ---------- */
   async function loadMedia(getter) {
     if (!window.CosmeticMediaRef) return CS.toast('Módulo de mídia não carregou. Atualize a página.', 'danger');
@@ -1864,7 +1895,7 @@ ${lines.join('\n\n')}`;
       const hi = await window.CosmeticMediaRef.artFrames(ui.media);
       const motion = {};
       cats.forEach((cat) => { motion[cat] = { fx: fxFor(prompt || '') }; });
-      const list = await window.CosmeticIllustration.fromMedia(cats, { ...hi, name: ui.media.name, kind: ui.media.kind }, motion, ui.shapes || {});
+      const list = await window.CosmeticIllustration.fromMedia(cats, { ...hi, name: ui.media.name, kind: ui.media.kind }, motion, { ...(ui.shapes || {}), particles: ui.particles && ui.particles.kind ? ui.particles : null });
       list.forEach((it) => {
         if (it.cat === 'nameplates' && it.palette && it.palette[0]) it.raw.asset.discordPalette = nearestDiscordPalette(it.palette[0]);
       });
@@ -2329,6 +2360,7 @@ ${current}`;
     $('#gen-refs-add').addEventListener('click', openPicker);
     renderFx();
     renderShapes();
+    renderParticles();
     // abas de formato (a caixinha marca se gera; o clique no resto abre o painel)
     $$('#gen-cats .fmt-tab').forEach((tab) => {
       const open = () => {
