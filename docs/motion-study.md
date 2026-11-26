@@ -21,3 +21,14 @@ Padrões que valem para todos:
 3. **O personagem fica quase parado.** Quem dá vida é o que passa em volta. Por isso o loop guarda só partes da cena e soma camadas de elementos.
 
 **Na tela:** a IA de visão recebe até 8 quadros da mídia e responde em JSON quais desses elementos aparecem, com direção, região, quantidade e cor. Ela também diz qual transição usar. O que você escolhe na tela tem prioridade sobre a resposta da IA.
+
+## Moldura feita de objetos
+
+As molduras oficiais são poucos objetos grandes colados à borda do avatar, e não um anel. Por isso o modo padrão agora segue estes passos:
+
+1. **Acha os objetos em destaque** da mídia. Mede a distância de cor até o fundo (as bordas da imagem), separa com limiar de Otsu e fica com as maiores regiões. Com a IA ligada, ela mesma aponta as caixas dos objetos.
+2. **Recorta cada objeto sem fundo**, usando a distância de cor até o fundo dentro da caixa.
+3. **Encaixa os objetos nos cantos e no topo ou na base**, que são os lugares com espaço fora do avatar, seguindo os ângulos de maior massa da forma escolhida. A borda interna do objeto entra cerca de 28 px no avatar.
+4. **Anima com os quadros reais** quando a mídia é vídeo, ou com um balanço leve quando é imagem.
+
+O modo "Anel recortado" continua disponível.

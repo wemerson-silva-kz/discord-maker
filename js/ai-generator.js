@@ -603,6 +603,14 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
       };
       draw();
     });
+    const dm = document.getElementById('gen-deco-mode');
+    if (dm) {
+      const drawM = () => {
+        dm.innerHTML = '';
+        [['objetos', '✂️ Objetos recortados da mídia'], ['anel', '⭕ Anel recortado (forma)']].forEach(([v, lb]) => dm.appendChild(chip(lb, (ui.elements.decoMode || 'objetos') === v, () => { ui.elements.decoMode = v; saveElements(); drawM(); })));
+      };
+      drawM();
+    }
     const tb = document.getElementById('gen-transition');
     if (tb) {
       const drawT = () => {
@@ -621,7 +629,8 @@ Elementos possíveis (use só estes nomes): folhas, petalas, penas, corvos (qual
 Compare os quadros: o que se MOVE entre eles? Direção: vento (atravessa de lado), cair, subir. Região onde aparece: topo, baixo, lados, tudo. Quantidade 0.3 a 2.5 (1 = normal). Cor dominante em hex.
 Transição da entrada: flash (estouro de luz), corte (troca seca de cena), dissolver, nenhuma.
 Responda SÓ JSON: {"efeito":[{"elemento":"corvos","direcao":"vento","regiao":"topo","quantidade":1.2,"cor":"#111111"}],"moldura":[{"elemento":"brasas","direcao":"subir","quantidade":1,"cor":"#ffaa33"}],"transicao":"flash","resumo":"frase curta do que você viu"}
-No máximo 3 elementos por formato, só os que realmente aparecem. Para a moldura, escolha 1–2 que fiquem bonitos em volta do avatar.`;
+No máximo 3 elementos por formato, só os que realmente aparecem. Para a moldura, escolha 1–2 que fiquem bonitos em volta do avatar.
+Também aponte os OBJETOS principais (personagem, bicho, flor, arma, criatura) que ficariam bonitos recortados em volta do avatar: "objetos":[{"nome":"corvo","caixa":[x0,y0,x1,y1]}], caixa em frações 0–1 da imagem (quadro do meio), justa no objeto, no máximo 3, o mais importante primeiro.`;
   async function visionJson(system, blocks, cfg) {
     const model = textModelFor(cfg);
     let out = '';
@@ -668,7 +677,10 @@ No máximo 3 elementos por formato, só os que realmente aparecem. Para a moldur
       if (!I.PARTS[kind]) return null;
       return { kind, wind: ['vento', 'cair', 'subir'].includes(e.direcao) ? e.direcao : '', region: ['topo', 'baixo', 'lados', 'tudo'].includes(e.regiao) ? e.regiao : 'tudo', amount: Math.max(0.3, Math.min(2.5, +e.quantidade || 1)), color: /^#[0-9a-f]{6}$/i.test(e.cor || '') ? e.cor : '' };
     }).filter(Boolean).slice(0, 3);
-    return { effects: norm(j.efeito), decorations: norm(j.moldura).slice(0, 2), transition: ['flash', 'corte', 'dissolver', 'nenhuma'].includes(j.transicao) ? j.transicao : '', summary: String(j.resumo || '').slice(0, 160) };
+    const boxes = (Array.isArray(j.objetos) ? j.objetos : []).map((o) => o && Array.isArray(o.caixa) && o.caixa.length === 4 ? o.caixa.map(Number) : null)
+      .filter((b) => b && b.every((v) => v >= 0 && v <= 1) && b[2] - b[0] > 0.04 && b[3] - b[1] > 0.04)
+      .slice(0, 3).map(([x0, y0, x1, y1]) => ({ x0, y0, x1, y1 }));
+    return { boxes, effects: norm(j.efeito), decorations: norm(j.moldura).slice(0, 2), transition: ['flash', 'corte', 'dissolver', 'nenhuma'].includes(j.transicao) ? j.transicao : '', summary: String(j.resumo || '').slice(0, 160) };
   }
 
   /* ---------- Mídia colada (Pinterest, imagem, GIF, vídeo) ---------- */
@@ -2001,6 +2013,7 @@ ${lines.join('\n\n')}`;
       loadElements();
       const elements = { effects: ui.elements.effects.slice(), decorations: ui.elements.decorations.slice() };
       let transition = ui.elements.transition !== 'nenhuma' ? ui.elements.transition : '';
+      let boxes = null;
       // A IA assiste os quadros e identifica os elementos que se movem (corvos, folhas, brasas…)
       const cfg = ui.engine === 'ai' ? aiConfig() : null;
       if (ui.elements.ai && cfg && (cfg.key || cfg.provider === 'ollama') && (cats.includes('effects') || cats.includes('decorations'))) {
@@ -2010,6 +2023,7 @@ ${lines.join('\n\n')}`;
           if (!elements.effects.length) elements.effects = id.effects;
           if (!elements.decorations.length) elements.decorations = id.decorations;
           if (!transition && id.transition && id.transition !== 'nenhuma') transition = id.transition;
+          if (id.boxes.length) boxes = id.boxes;
           const names = [...new Set([...id.effects, ...id.decorations].map((l) => window.CosmeticIllustration.PARTS[l.kind].label))];
           if (names.length || id.summary) CS.toast(`IA identificou: ${names.join(', ') || 'nada que se repita'}${id.summary ? ' — ' + id.summary : ''}`, 'info');
           setBusy(true, 'Recortando a sua mídia em cada formato…');
@@ -2018,7 +2032,7 @@ ${lines.join('\n\n')}`;
           CS.toast('A IA não conseguiu identificar os elementos (' + (err.message || 'erro') + '). Usando o que você escolheu.', 'info');
         }
       }
-      const list = await window.CosmeticIllustration.fromMedia(cats, { ...hi, name: ui.media.name, kind: ui.media.kind }, motion, { ...(ui.shapes || {}), elements, transition });
+      const list = await window.CosmeticIllustration.fromMedia(cats, { ...hi, name: ui.media.name, kind: ui.media.kind }, motion, { ...(ui.shapes || {}), elements, transition, boxes, decoMode: ui.elements.decoMode || 'objetos' });
       list.forEach((it) => {
         if (it.cat === 'nameplates' && it.palette && it.palette[0]) it.raw.asset.discordPalette = nearestDiscordPalette(it.palette[0]);
       });

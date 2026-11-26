@@ -1152,6 +1152,135 @@ ${isparks}</svg>`;
 @keyframes iout{to{opacity:0}}@keyframes ion{to{opacity:1}}</style><g clip-path="url(#cv)"><g class="in">${I.svg}</g><g class="to">${L2.svg}</g></g></svg>`;
     return { svg: loop, loopSeconds: f(T), introSvg: intro, introSeconds: f(TI) };
   }
+  /* ---- Moldura feita de OBJETOS da mídia (como as oficiais: poucos objetos grandes colados à borda) ----
+   * 1) acha os objetos em destaque (ou usa as caixas que a IA de visão apontou);
+   * 2) recorta cada um com fundo transparente (distância de cor ao fundo local da caixa);
+   * 3) posiciona nos ângulos onde a forma medida tem mais massa, encostando na borda do avatar;
+   * 4) anima com os quadros reais (vídeo) ou com um balanço leve (imagem). */
+  function findObjects(src, maxN = 3) {
+    const S = 128, k = S / Math.max(src.width, src.height);
+    const w = Math.max(8, Math.round(src.width * k)), h = Math.max(8, Math.round(src.height * k));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, w, h);
+    const d = x.getImageData(0, 0, w, h).data;
+    // fundo = cores da borda (várias amostras); destaque = longe de todas elas
+    const bord = [];
+    for (let i = 0; i < w; i += 3) { bord.push(i * 4, ((h - 1) * w + i) * 4); }
+    for (let j = 0; j < h; j += 3) { bord.push((j * w) * 4, (j * w + w - 1) * 4); }
+    const bc = bord.map((o) => [d[o], d[o + 1], d[o + 2]]);
+    const sal = new Float32Array(w * h);
+    let mx = 0;
+    for (let p = 0; p < w * h; p++) {
+      const r = d[p * 4], g = d[p * 4 + 1], b = d[p * 4 + 2];
+      let best = 1e9;
+      for (let q = 0; q < bc.length; q += 2) { const e = (r - bc[q][0]) ** 2 + (g - bc[q][1]) ** 2 + (b - bc[q][2]) ** 2; if (e < best) best = e; }
+      const sat = Math.max(r, g, b) - Math.min(r, g, b);
+      const cx = (p % w) / w - 0.5, cy = Math.floor(p / w) / h - 0.5;
+      sal[p] = Math.sqrt(best) * (0.75 + sat / 600) * (1 - 0.6 * (cx * cx + cy * cy));
+      if (sal[p] > mx) mx = sal[p];
+    }
+    // limiar de Otsu
+    const hist = new Array(64).fill(0);
+    for (let p = 0; p < w * h; p++) hist[Math.min(63, Math.floor((sal[p] / (mx || 1)) * 64))]++;
+    let sum = 0, sumB = 0, wB = 0, best = 0, th = 32; const tot = w * h;
+    hist.forEach((v, i) => { sum += i * v; });
+    for (let i = 0; i < 64; i++) { wB += hist[i]; if (!wB || wB === tot) continue; sumB += i * hist[i]; const mB = sumB / wB, mF = (sum - sumB) / (tot - wB); const v = wB * (tot - wB) * (mB - mF) ** 2; if (v > best) { best = v; th = i; } }
+    const on = new Uint8Array(w * h);
+    for (let p = 0; p < w * h; p++) on[p] = sal[p] / (mx || 1) * 64 > th ? 1 : 0;
+    // componentes conectados
+    const lab = new Int32Array(w * h).fill(-1), comps = [];
+    for (let p = 0; p < w * h; p++) {
+      if (!on[p] || lab[p] >= 0) continue;
+      const id = comps.length, st = [p]; lab[p] = id;
+      let n = 0, x0 = w, y0 = h, x1 = 0, y1 = 0;
+      while (st.length) {
+        const q = st.pop(), qx = q % w, qy = (q - qx) / w; n++;
+        if (qx < x0) x0 = qx; if (qx > x1) x1 = qx; if (qy < y0) y0 = qy; if (qy > y1) y1 = qy;
+        for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = qx + ax, ny = qy + ay; if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue; const nq = ny * w + nx; if (on[nq] && lab[nq] < 0) { lab[nq] = id; st.push(nq); } }
+      }
+      comps.push({ n, x0, y0, x1, y1 });
+    }
+    return comps
+      .filter((cp) => cp.n > w * h * 0.006 && cp.n < w * h * 0.7)
+      .sort((a, b) => b.n - a.n).slice(0, maxN)
+      .map((cp) => { const pad = 2; return { x0: Math.max(0, cp.x0 - pad) / w, y0: Math.max(0, cp.y0 - pad) / h, x1: Math.min(w, cp.x1 + pad + 1) / w, y1: Math.min(h, cp.y1 + pad + 1) / h, area: cp.n / (w * h) }; });
+  }
+  /** Recorta a caixa (0–1) de um quadro com fundo transparente, lado maior = size px. */
+  function cutObject(src, box, size = 160, bgRef = null) {
+    const sx = box.x0 * src.width, sy = box.y0 * src.height, sw = Math.max(2, (box.x1 - box.x0) * src.width), sh = Math.max(2, (box.y1 - box.y0) * src.height);
+    const k = size / Math.max(sw, sh), w = Math.max(2, Math.round(sw * k)), h = Math.max(2, Math.round(sh * k));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+    const img = x.getImageData(0, 0, w, h), d = img.data;
+    const ref = bgRef || (() => {
+      // fundo local = mediana da borda da caixa
+      const rs = [], gs = [], bs = [];
+      for (let i = 0; i < w; i++) for (const j of [0, h - 1]) { const o = (j * w + i) * 4; rs.push(d[o]); gs.push(d[o + 1]); bs.push(d[o + 2]); }
+      for (let j = 0; j < h; j++) for (const i of [0, w - 1]) { const o = (j * w + i) * 4; rs.push(d[o]); gs.push(d[o + 1]); bs.push(d[o + 2]); }
+      const med = (a) => a.sort((p, q) => p - q)[a.length >> 1];
+      return [med(rs), med(gs), med(bs)];
+    })();
+    for (let p = 0; p < w * h; p++) {
+      const o = p * 4, e = Math.sqrt((d[o] - ref[0]) ** 2 + (d[o + 1] - ref[1]) ** 2 + (d[o + 2] - ref[2]) ** 2);
+      const px = p % w, py = (p - px) / w;
+      const edge = Math.min(px, py, w - 1 - px, h - 1 - py) / Math.max(1, Math.min(w, h) * 0.08);
+      d[o + 3] = Math.round(255 * smooth(38, 80, e) * Math.min(1, edge));
+    }
+    x.putImageData(img, 0, 0);
+    return { canvas: c, w, h, ref };
+  }
+  /** Moldura montada com os objetos recortados. Devolve { svg } ou null se não achou nada bom. */
+  function decorationFromObjects(frames, variant, boxes, seed = 3) {
+    const shape = STUDY && STUDY.shapes && STUDY.shapes.length ? STUDY.shapes[(typeof variant === 'number' ? variant : 0) % STUDY.shapes.length] : null;
+    const found = (boxes && boxes.length ? boxes : findObjects(frames[Math.floor(frames.length / 2)], 3)).slice(0, 3);
+    if (!found.length) return null;
+    // ângulos com mais massa na forma medida (0° = topo, horário); separados ≥ 70°
+    const m = shape ? shape.massa_36 : [1, 0.6, 0.3, 0.2, 0.2, 0.3, 0.4, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.3, 0.4, 0.5, 0.4, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.3, 0.4, 0.3, 0.2, 0.2, 0.3, 0.4, 0.5, 0.7];
+    const order = m.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]);
+    const angs = [];
+    // só há espaço fora do avatar nos cantos (≈ 80 px) e um pouco no topo/base: encaixa nesses pontos
+    const SLOTS = [315, 45, 225, 135, 0, 180];
+    const snap = (a) => SLOTS.reduce((b, c) => (Math.min(Math.abs(a - c), 360 - Math.abs(a - c)) < Math.min(Math.abs(a - b), 360 - Math.abs(a - b)) ? c : b), SLOTS[0]);
+    for (const [, i] of order) { const a = snap(i * 10 + 5); if (!angs.includes(a)) angs.push(a); if (angs.length >= found.length) break; }
+    const nF = Math.min(frames.length, 16), step = Math.max(1, Math.floor(frames.length / nF));
+    const use = frames.filter((_, i) => i % step === 0).slice(0, nF);
+    const T = Math.max(1.5, use.length / 8);
+    let css = '', body = '', defs = '';
+    found.forEach((bx, k) => {
+      const big = k === 0;
+      const size = big ? 140 : 96;
+      const first = cutObject(use[0], bx, size);
+      const cuts = use.map((fr, i) => (i === 0 ? first : cutObject(fr, bx, size, first.ref)));
+      const { w, h } = first;
+      const a = (angs[k] ?? (k * 120)) * Math.PI / 180;
+      // centro do objeto: fora do avatar (r 120), só a ponta encosta (~10–20 px para dentro)
+      // borda interna do objeto ~16 px dentro do avatar; o objeto inteiro cabe no canvas 288
+      const half = (Math.abs(Math.sin(a)) * w + Math.abs(Math.cos(a)) * h) / 2;
+      const rr = 92 + half;
+      const cx = Math.max(w / 2, Math.min(288 - w / 2, 144 + Math.sin(a) * rr)), cy = Math.max(h / 2, Math.min(288 - h / 2, 144 - Math.cos(a) * rr));
+      const rot = ((angs[k] ?? 0) > 90 && (angs[k] ?? 0) < 270) ? 0 : 0;
+      const id = 'ob' + k;
+      if (cuts.length > 1) {
+        const sh = { n: cuts.length, cols: Math.min(cuts.length, Math.floor(4000 / w)), W: w, H: h };
+        sh.rows = Math.ceil(sh.n / sh.cols);
+        const sc = document.createElement('canvas'); sc.width = w * sh.cols; sc.height = h * sh.rows;
+        const sx = sc.getContext('2d'); cuts.forEach((cu, i) => sx.drawImage(cu.canvas, (i % sh.cols) * w, Math.floor(i / sh.cols) * h));
+        sh.url = sc.toDataURL('image/webp', 0.85); if (!/^data:image\/webp/.test(sh.url)) sh.url = sc.toDataURL('image/png');
+        const L = sheetLayer(sh, T, id, false);
+        css += L.css;
+        defs += `<clipPath id="${id}c"><rect width="${w}" height="${h}"/></clipPath>`;
+        body += `<g transform="translate(${f(cx - w / 2)} ${f(cy - h / 2)}) rotate(${rot} ${f(w / 2)} ${f(h / 2)})"><g clip-path="url(#${id}c)">${L.svg}</g></g>`;
+      } else {
+        const sway = 2 + (k % 2) * 2, dur = 3 + k * 0.7;
+        css += `@keyframes ${id}s{0%,100%{transform:translateY(0) rotate(${-sway / 2}deg)}50%{transform:translateY(-3px) rotate(${sway / 2}deg)}}.${id}s{transform-box:fill-box;transform-origin:50% 100%;animation:${id}s ${f(dur)}s ease-in-out infinite}`;
+        body += `<g class="${id}s"><image href="${first.canvas.toDataURL('image/png')}" x="${f(cx - w / 2)}" y="${f(cy - h / 2)}" width="${w}" height="${h}"/></g>`;
+      }
+    });
+    // sombra de contato fina na borda do avatar, para os objetos "sentarem" nela
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 288 288"><style>${css}</style><defs>${defs}<filter id="obs" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".45"/></filter></defs><g filter="url(#obs)">${body}</g></svg>`;
+    return { svg, loopSeconds: f(T), count: found.length };
+  }
+
   /**
    * Gera os formatos direto da mídia do usuário (sem IA).
    * @param {{frames:HTMLCanvasElement[], seconds?:number, name?:string}} media
@@ -1176,7 +1305,16 @@ ${isparks}</svg>`;
     for (const { cat, variant } of jobs) {
       const { w: W, h: H } = CANVAS[cat];
       let asset, palette;
-      if (media.frames.length > 1) {
+      let objDeco = null;
+      if (cat === 'decorations' && shapes.decoMode !== 'anel') {
+        try { objDeco = decorationFromObjects(media.frames, variant, shapes.boxes); } catch (e) { console.warn('[Moldura de objetos]', e); }
+      }
+      if (objDeco) {
+        asset = { type: 'svg', svg: objDeco.svg, loopSeconds: objDeco.loopSeconds };
+        const c0 = document.createElement('canvas'); c0.width = W; c0.height = H;
+        coverInto(c0.getContext('2d', { willReadFrequently: true }), media.frames[0], cat, focus);
+        palette = paletteOf(c0.getContext('2d', { willReadFrequently: true }), W, H);
+      } else if (media.frames.length > 1) {
         const max = { nameplates: 36, decorations: 36, effects: 60, frames: 8 }[cat];
         const step = Math.max(1, Math.ceil(media.frames.length / max));
         const pick = media.frames.filter((_, i) => i % step === 0);
@@ -1421,5 +1559,5 @@ ${isparks}</svg>`;
     };
   }
 
-  window.CosmeticIllustration = { PARTS, PART_WINDS, PART_REGIONS, particleLayer, withParticles, withIntroFx, layersOf, shapeOptions, shapePreview, fromMedia, imageApi, FX_DEFAULT, FX_LABELS, fxFromText, remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
+  window.CosmeticIllustration = { findObjects, cutObject, decorationFromObjects, PARTS, PART_WINDS, PART_REGIONS, particleLayer, withParticles, withIntroFx, layersOf, shapeOptions, shapePreview, fromMedia, imageApi, FX_DEFAULT, FX_LABELS, fxFromText, remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
 })();
