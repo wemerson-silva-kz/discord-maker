@@ -357,12 +357,11 @@
         const r = Math.hypot(x - 144, y - 144);
         k = smooth(104, 116, r); // avatar (r=120) livre; a arte só encosta na borda
       } else if (cat === 'nameplates') {
-        k = smooth(140, 215, x); // avatar + nome à esquerda
+        k = 1; // sem máscara do avatar: a arte ocupa a faixa toda
       } else if (cat === 'effects') {
         // Como os oficiais (guia medido): arte nos ~60% de cima, base quase vazia e avatar
         // ≈ 8% coberto — a base some num degradê e o avatar fica bem translúcido.
         k = 1 - smooth(H * 0.52, H * 0.74, y);
-        k = Math.min(k, 0.2 + 0.8 * smooth(52, 84, Math.hypot(x - 82, y - 138)));
       } else if (cat === 'frames') {
         // card em (56, 304)–(1256, 2316): o miolo fica livre; o ornamento pode invadir a borda
         // (até ~180 px no topo, sobre o banner, ~110 na base e só ~30–48 px dos lados, como os
@@ -535,7 +534,6 @@
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         const v = map ? sampleMap(map, x, y) / (mx || 1) : EFX[variant](x, y);
         let k = map ? smooth(0.22 + 0.06 * nE((x + y) / 60), 0.75, v) : Math.min(1, v * (0.9 + 0.2 * nE((x + y) / 60)));
-        k = Math.min(k, 0.15 + 0.85 * smooth(56, 88, Math.hypot(x - 82, y - 138))); // avatar quase livre
         d[(y * W + x) * 4 + 3] = Math.round(255 * k);
       }
       x2.putImageData(img, 0, 0);
@@ -558,7 +556,7 @@
     if (cat === 'nameplates' && variant === 'inteira') {
       // arte na faixa toda; só um véu suave atrás do avatar e do nome para continuar legível
       const img = x2.getImageData(0, 0, W, H), d = img.data;
-      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) d[(y * W + x) * 4 + 3] = Math.round(255 * (0.45 + 0.55 * smooth(40, 230, x)));
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) d[(y * W + x) * 4 + 3] = 255;
       x2.putImageData(img, 0, 0);
       return c;
     }

@@ -102,8 +102,8 @@ O alcance chega aos cantos do canvas (~170 px do centro), já que orelhas e chif
 
 ## Mais formas (`tools/study_more_shapes.py`)
 
-As 707 molduras foram reagrupadas em **16 tipos** (15 com 6 ou mais itens). Os mapas de loop dos 60 efeitos foram agrupados em **8 tipos**, e os que têm 2 ou mais efeitos aparecem no seletor como "Oficial: …". Os dois ficam em `catalog/media-study.json`, que o seletor de **Forma** lê.
+As 707 molduras foram reagrupadas em **28 grupos** (23 com 8 ou mais itens viram formas no seletor). Os mapas de loop dos 60 efeitos foram agrupados em **10 tipos**, e os que têm 2 ou mais efeitos aparecem no seletor como "Oficial: …". Os dois ficam em `catalog/media-study.json`, que o seletor de **Forma** lê.
 
 ```bash
-python tools/study_more_shapes.py --cache <pasta-temporária> --k 16 --ke 8
+python tools/study_more_shapes.py --cache <pasta-temporária> --k 28 --ke 10
 ```

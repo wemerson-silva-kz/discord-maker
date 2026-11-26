@@ -504,24 +504,19 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
   const SHAPES_STORAGE = 'cosmetic-studio:gen-shapes';
   const CAT_NAMES = { nameplates: 'Nameplate', decorations: 'Moldura', effects: 'Efeito (loop)', frames: 'Profile Frame' };
   async function renderShapes() {
-    const box = $('#gen-shapes');
     const I = window.CosmeticIllustration;
-    if (!box || !I || !I.shapeOptions) return;
+    if (!I || !I.shapeOptions) return;
     if (!ui.shapes) { try { ui.shapes = JSON.parse(store.get(SHAPES_STORAGE) || '{}') || {}; } catch (e) { ui.shapes = {}; } }
     const opts = await I.shapeOptions();
-    box.innerHTML = '';
-    Object.entries(CAT_NAMES).forEach(([cat, title]) => {
-      const row = document.createElement('div');
-      const h = document.createElement('div');
-      h.className = 'text-[11px] font-semibold text-dc-muted mb-1';
-      h.textContent = title;
-      const list = document.createElement('div');
-      list.className = 'flex flex-wrap gap-1.5';
+    Object.keys(CAT_NAMES).forEach((cat) => {
+      const list = document.getElementById('gen-shapes-' + cat);
+      if (!list) return;
+      list.innerHTML = '';
       const cur = ui.shapes[cat] ?? opts[cat][0].v;
       opts[cat].forEach((o) => {
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = 'shape-opt' + (String(o.v) === String(cur) ? ' is-active' : '');
+        b.className = 'shape-opt' + (o.v === 'auto' ? ' is-auto' : '') + (String(o.v) === String(cur) ? ' is-active' : '');
         b.title = o.label;
         if (o.v !== 'auto') {
           const im = document.createElement('img');
@@ -539,8 +534,6 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
         });
         list.appendChild(b);
       });
-      row.append(h, list);
-      box.appendChild(row);
     });
   }
 
@@ -2336,6 +2329,28 @@ ${current}`;
     $('#gen-refs-add').addEventListener('click', openPicker);
     renderFx();
     renderShapes();
+    // abas de formato (a caixinha marca se gera; o clique no resto abre o painel)
+    $$('#gen-cats .fmt-tab').forEach((tab) => {
+      const open = () => {
+        $$('#gen-cats .fmt-tab').forEach((x) => x.classList.toggle('is-active', x === tab));
+        $$('.fmt-panel').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== tab.dataset.tab));
+      };
+      tab.addEventListener('click', (e) => { if (e.target.tagName !== 'INPUT') open(); });
+      tab.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+    });
+    // abas da ideia: texto / mídia / biblioteca
+    $$('.gen-src-tabs [data-src]').forEach((btn) => btn.addEventListener('click', () => {
+      $$('.gen-src-tabs [data-src]').forEach((x) => x.classList.toggle('is-active', x === btn));
+      $$('[data-src-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.srcPanel !== btn.dataset.src));
+    }));
+    const dots = () => {
+      const m = $('#gen-media-dot'), r = $('#gen-refs-dot');
+      if (m) m.classList.toggle('hidden', !ui.media);
+      if (r) r.classList.toggle('hidden', !$$('#gen-refs > *').length);
+    };
+    setInterval(dots, 800);
+    // sem chave salva: abre a etapa do provedor
+    if (!$('#gen-key').value) $('#gen-ai-fold').open = true;
     ['nameplates', 'decorations', 'effects', 'frames'].forEach((c) => {
       const el = document.getElementById('gen-pp-' + c); if (!el) return;
       const k = 'cosmetic-studio:gen-pp-' + c;
