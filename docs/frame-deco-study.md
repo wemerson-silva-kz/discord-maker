@@ -69,3 +69,33 @@ Para refazer o estudo:
 pip install pillow numpy
 python tools/study_frames_decorations.py --cache <pasta-temporária> --frames 40 --decos 60
 ```
+
+## Profile effect: entrada × loop
+
+Medido com `tools/study_effects_shapes.py` em **60 efeitos oficiais**. Para cada um, a ferramenta lê a camada de entrada e a de loop, com até 40 quadros de cada.
+
+| Medida | Entrada | Loop |
+|---|---|---|
+| Duração | 4,0 s | 4,2 s, com **pausa de 3 s** entre as repetições |
+| Canvas coberto (média dos quadros) | 23% (pico 44%) | **7,6%** (pico 13%) |
+| Avatar coberto | 18% | 7% |
+| Nome coberto | 36% | **4%** |
+| Texto coberto | 31% | **3%** |
+| Banner coberto | 32% | 23% |
+
+A entrada é o momento de impacto: a cena passa pelo perfil todo. O **loop deixa só partes da cena**, quase sempre no banner e em faixas finas nas laterais, e o resto do card fica livre. Os mapas médios de ocupação (grade 16×9) estão em `catalog/media-study.json`. O gerador usa esses mapas como máscara da entrada e do loop quando a mídia do usuário vira efeito: o começo do vídeo toca na entrada, e a segunda metade fica no loop, só nas áreas do mapa do loop.
+
+## Avatar decoration: tipos de forma
+
+As **707 molduras** da loja foram agrupadas (k-means) pelo perfil angular de massa e de alcance. Saíram 8 tipos, em ordem de frequência:
+
+1. Anel cheio, às vezes com orelhas (171)
+2. Anel irregular ou de chamas (158)
+3. Só um ornamento no topo, como chapéu, cabelo ou orelhas (98)
+4. Elementos soltos espalhados (91)
+5. Orelhas ou chifres saindo do quadrado (61)
+6. Lua crescente ou arco de um lado (50)
+7. Asas ou arcos laterais (40)
+8. Peso na base, como fogo, túmulos ou plantas (38)
+
+O alcance chega aos cantos do canvas (~170 px do centro), já que orelhas e chifres passam do círculo. Quando a mídia vira moldura, o gerador sorteia 3 desses tipos e faz uma moldura de cada forma. O avatar fica livre, porque a arte só começa no raio 112.
