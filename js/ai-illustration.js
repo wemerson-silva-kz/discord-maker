@@ -484,8 +484,8 @@
     if (STUDY) return STUDY;
     try {
       const j = await (await fetch('catalog/media-study.json')).json();
-      STUDY = { loop: j.efeitos.loop_mapa_16x9, intro: j.efeitos.entrada_mapa_16x9, shapes: (j.molduras_formas.tipos || []).filter((t) => t.n >= 8) };
-    } catch (e) { STUDY = { loop: null, intro: null, shapes: [] }; }
+      STUDY = { loop: j.efeitos.loop_mapa_16x9, intro: j.efeitos.entrada_mapa_16x9, shapes: (j.molduras_formas.tipos || []).filter((t) => t.n >= 8), etypes: j.efeitos.loop_tipos || [] };
+    } catch (e) { STUDY = { loop: null, intro: null, shapes: [], etypes: [] }; }
     return STUDY;
   }
   /** Mapa 16×9 (linhas × colunas) → valor suave em (x, y) do canvas 450×880. */
@@ -525,9 +525,10 @@
       'loop:cantos': (x, y) => Math.max(...[[0, 0], [450, 0], [0, 880], [450, 880]].map(([cx, cy]) => 1 - smooth(70, 190, Math.hypot(x - cx, y - cy)))),
       'loop:cheio': () => 0.55,
     };
-    if (cat === 'effects' && (EFX[variant] || (STUDY && STUDY[variant || 'intro']))) {
+    const etMap = typeof variant === 'string' && variant.startsWith('tipo:') && STUDY && STUDY.etypes ? (STUDY.etypes[+variant.slice(5)] || {}).mapa_16x9 : null;
+    if (cat === 'effects' && (etMap || EFX[variant] || (STUDY && STUDY[variant || 'intro']))) {
       // Onde os efeitos oficiais têm arte (mapa médio medido quadro a quadro) ou a forma escolhida.
-      const map = EFX[variant] ? null : STUDY[variant || 'intro'];
+      const map = etMap || (EFX[variant] ? null : STUDY[variant || 'intro']);
       let mx = 0; if (map) map.forEach((row) => row.forEach((v) => { mx = Math.max(mx, v); }));
       const img = x2.getImageData(0, 0, W, H), d = img.data;
       const nE = wobble(41, 1);
@@ -536,6 +537,20 @@
         let k = map ? smooth(0.22 + 0.06 * nE((x + y) / 60), 0.75, v) : Math.min(1, v * (0.9 + 0.2 * nE((x + y) / 60)));
         k = Math.min(k, 0.15 + 0.85 * smooth(56, 88, Math.hypot(x - 82, y - 138))); // avatar quase livre
         d[(y * W + x) * 4 + 3] = Math.round(255 * k);
+      }
+      x2.putImageData(img, 0, 0);
+      return c;
+    }
+    const NP = {
+      esquerda: (x) => 1 - smooth(60, 160, x),
+      centro: (x) => smooth(80, 200, x) * (1 - smooth(W - 200, W - 80, x)),
+      pontas: (x) => Math.max(1 - smooth(30, 90, x), smooth(W - 150, W - 60, x)),
+    };
+    if (cat === 'nameplates' && (NP[variant] || variant === 'bordas')) {
+      const img = x2.getImageData(0, 0, W, H), d = img.data;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const v = variant === 'bordas' ? Math.max(1 - smooth(H * 0.12, H * 0.32, y), smooth(H * 0.68, H * 0.88, y)) : NP[variant](x);
+        d[(y * W + x) * 4 + 3] = Math.round(255 * Math.max(0, Math.min(1, v)));
       }
       x2.putImageData(img, 0, 0);
       return c;
@@ -602,6 +617,10 @@
           const side = fs === 'borda' ? 1 : fs === 'coroa-base' ? 0 : fs === 'coroa' ? 1 - smooth(T + 300, T + 600, y) : sideOn;
           k *= 1 - band * (1 - side);
           if (fs === 'coroa') k *= 1 - smooth(inB - 400, inB - 100, y);
+          if (fs === 'base') k *= smooth(inB - 520, inB - 200, y);
+          if (fs === 'cantos') k *= 1 - smooth(520, 760, Math.hypot(Math.min(x, W - x), Math.min(y, H - y)));
+          if (fs === 'lado') k *= 1 - smooth(W * 0.45, W * 0.7, x) * band;
+          if (fs === 'coroa-alta') { k *= 1 - smooth(inT + 60, inT + 260, y) * (1 - smooth(inB - 120, inB, y)); }
           d[(y * W + x) * 4 + 3] = Math.round(255 * k);
         }
       }
@@ -624,14 +643,31 @@
     if (on < 0.45) return { k: 'soltos', label: 'Elementos soltos' };
     return { k: 'arco', label: 'Arcos laterais' };
   }
+  /** Rótulos repetidos ganham número (Anel cheio 1, Anel cheio 2…). */
+  function numbered(list) {
+    const c = {}, k = {};
+    list.forEach((o) => { c[o.label] = (c[o.label] || 0) + 1; });
+    return list.map((o) => (c[o.label] > 1 ? { ...o, label: o.label + ' ' + (k[o.label] = (k[o.label] || 0) + 1) } : o));
+  }
+  /** Rótulo de um tipo de loop medido, pela região onde ele tem mais arte. */
+  function effLabel(m) {
+    let top = 0, mid = 0, bot = 0, side = 0, tot = 0;
+    m.forEach((row, y) => row.forEach((v, x) => { tot += v; if (y < 4) top += v; else if (y > 11) bot += v; else mid += v; if (x < 2 || x > 6) side += v; }));
+    tot = tot || 1;
+    if (top / tot > 0.45) return 'Oficial: banner';
+    if (bot / tot > 0.4) return 'Oficial: embaixo';
+    if (side / tot > 0.6) return 'Oficial: laterais';
+    if (mid / tot > 0.55) return 'Oficial: meio';
+    return 'Oficial: espalhado';
+  }
   /** Formas que o usuário pode escolher em cada formato. */
   async function shapeOptions() {
     await loadStudy();
     return {
-      decorations: [{ v: 'auto', label: '3 sorteadas' }, ...(STUDY.shapes || []).map((t, i) => ({ v: i, label: shapeLabel(t).label }))],
-      effects: [{ v: 'loop', label: 'Como os oficiais' }, { v: 'loop:topo', label: 'Só no topo' }, { v: 'loop:laterais', label: 'Laterais' }, { v: 'loop:cantos', label: 'Cantos' }, { v: 'loop:base', label: 'Base' }, { v: 'loop:cheio', label: 'Cena inteira, leve' }],
-      frames: [{ v: 'coroa-laterais', label: 'Coroa + laterais escorrendo' }, { v: 'coroa-base', label: 'Coroa + base' }, { v: 'borda', label: 'Borda completa' }, { v: 'coroa', label: 'Só coroa' }],
-      nameplates: [{ v: 'direita', label: 'Arte à direita' }, { v: 'inteira', label: 'Faixa inteira' }],
+      decorations: [{ v: 'auto', label: '3 sorteadas' }, ...numbered((STUDY.shapes || []).map((t, i) => ({ v: i, label: shapeLabel(t).label })))],
+      effects: [{ v: 'loop', label: 'Como os oficiais' }, ...numbered((STUDY.etypes || []).map((t, i) => ({ v: 'tipo:' + i, label: effLabel(t.mapa_16x9) }))), { v: 'loop:topo', label: 'Só no topo' }, { v: 'loop:laterais', label: 'Laterais' }, { v: 'loop:cantos', label: 'Cantos' }, { v: 'loop:base', label: 'Base' }, { v: 'loop:cheio', label: 'Cena inteira, leve' }],
+      frames: [{ v: 'coroa-laterais', label: 'Coroa + laterais escorrendo' }, { v: 'coroa-base', label: 'Coroa + base' }, { v: 'borda', label: 'Borda completa' }, { v: 'coroa', label: 'Só coroa' }, { v: 'coroa-alta', label: 'Coroa grande + base fina' }, { v: 'base', label: 'Só base' }, { v: 'cantos', label: 'Cantos' }, { v: 'lado', label: 'Escorrendo de um lado' }],
+      nameplates: [{ v: 'direita', label: 'Arte à direita' }, { v: 'inteira', label: 'Faixa inteira' }, { v: 'esquerda', label: 'Atrás do avatar' }, { v: 'centro', label: 'Centro' }, { v: 'bordas', label: 'Bordas (cima/baixo)' }, { v: 'pontas', label: 'Duas pontas' }],
     };
   }
   /** Prévia pequena da forma: card/avatar em azul e a área da arte em branco. */
@@ -662,9 +698,10 @@
       const k = t ? shapeLabel(t).k : '';
       return ({ anel: 'SHAPE: a full ring all around the avatar.', 'anel-orelhas': 'SHAPE: a ring around the avatar with ears or horns poking out past the circle at the top corners.', orelhas: 'SHAPE: only ears or horns on the top; the rest of the circle is empty.', topo: 'SHAPE: only one ornament sitting on top of the avatar (like a hat, hair, crown or creature); the sides and bottom are empty.', base: 'SHAPE: the art is mostly at the bottom of the avatar (like flames, plants or a creature below); the top is mostly empty.', lateral: 'SHAPE: a crescent on one side of the avatar; the other side is empty.', soltos: 'SHAPE: a few separate small elements scattered around the avatar edge, with gaps between them.', arco: 'SHAPE: two arcs or wings on the left and right of the avatar; top and bottom mostly empty.' })[k] || '';
     }
-    if (cat === 'frames') return ({ 'coroa-base': 'SHAPE: no side borders at all: only the crown on top and a base ornament at the bottom.', borda: 'SHAPE: a complete slim border on all four sides plus the crown on top and a base.', coroa: 'SHAPE: only the crown on top; nothing on the sides or bottom.', 'coroa-laterais': 'SHAPE: crown on top and base at the bottom, with elements spilling partway down the sides from the top and up from the bottom; the middle of the sides is empty.' })[v] || '';
+    if (cat === 'frames') return ({ 'coroa-base': 'SHAPE: no side borders at all: only the crown on top and a base ornament at the bottom.', borda: 'SHAPE: a complete slim border on all four sides plus the crown on top and a base.', coroa: 'SHAPE: only the crown on top; nothing on the sides or bottom.', 'coroa-alta': 'SHAPE: a tall, big crown on top and only a thin base at the bottom; no sides.', base: 'SHAPE: only a base ornament at the bottom; nothing on top or sides.', cantos: 'SHAPE: ornaments only on the four corners of the card.', lado: 'SHAPE: crown and base, with the art spilling down only the left side.', 'coroa-laterais': 'SHAPE: crown on top and base at the bottom, with elements spilling partway down the sides from the top and up from the bottom; the middle of the sides is empty.' })[v] || '';
     if (cat === 'effects') return ({ 'loop:topo': 'SHAPE: keep the art in the top 30% of the image only.', 'loop:laterais': 'SHAPE: keep the art along the left and right edges only.', 'loop:base': 'SHAPE: keep the art in the bottom part only.', 'loop:cantos': 'SHAPE: put the art in the four corners only.', 'loop:cheio': 'SHAPE: a light scene over the whole image.' })[v] || '';
-    if (cat === 'nameplates') return v === 'inteira' ? 'SHAPE: the art may span the whole width, lighter and calmer on the left.' : '';
+    if (cat === 'effects' && String(v).startsWith('tipo:')) return 'SHAPE: ' + ({ 'Oficial: banner': 'keep the art mostly in the top banner area', 'Oficial: embaixo': 'keep the art mostly in the bottom part', 'Oficial: laterais': 'keep the art along the left and right edges', 'Oficial: meio': 'a light layer around the middle, leaving the name readable', 'Oficial: espalhado': 'small elements scattered sparsely' })[effLabel(((STUDY.etypes || [])[+String(v).slice(5)] || {}).mapa_16x9 || [[0]])] + '.';
+    if (cat === 'nameplates') return ({ inteira: 'SHAPE: the art may span the whole width, lighter and calmer on the left.', esquerda: 'SHAPE: the art sits on the left, behind the avatar.', centro: 'SHAPE: the art sits in the center.', bordas: 'SHAPE: the art runs along the top and bottom edges only.', pontas: 'SHAPE: art at both ends, the middle empty.' })[v] || '';
     return '';
   }
 
@@ -877,40 +914,66 @@ ${isparks}</svg>`;
     return maskOf(cat, v).toDataURL('image/png');
   }
   /** Vários quadros → SVG que troca de quadro com fusão suave e emenda sem pulo. */
-  function flipbookSvgs(cat, urls, seconds, variant, introUrls, introSeconds) {
+  /**
+   * Folha de sprites: todos os quadros (já com a máscara) numa imagem só, em grade.
+   * Tocar = mover a folha quadro a quadro; uma 2ª cópia, um quadro à frente, entra em
+   * fusão durante cada quadro. Só 2 imagens desenhadas por vez (fluido, sem travar).
+   */
+  function spriteSheet(cat, canvases, variant) {
     const { w: W, h: H } = CANVAS[cat];
-    const n = urls.length, T = Math.max(1.5, seconds), d = T / n;
-    const pct = (t) => f((t / T) * 100);
-    const head = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">`;
-    const defs = `<defs>${urls.map((u, i) => `<image id="q${i}" href="${u}" x="0" y="0" width="${W}" height="${H}"/>`).join('')}<image id="zm" href="${zoneMask(cat, variant ?? (cat === 'effects' ? 'loop' : undefined))}" x="0" y="0" width="${W}" height="${H}"/><mask id="pm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><use href="#zm"/></mask></defs>`;
-    // quadro i entra em fusão no fim do quadro anterior e fica até o fim; por cima de tudo, o 1º volta (emenda)
-    const kf = [];
-    const layers = ['<use href="#q0"/>'];
-    for (let i = 1; i <= n; i++) {
-      const a = (i - 0.5) * d, b = i * d - 0.001;
-      kf.push(`@keyframes p${i}{0%,${pct(a)}%{opacity:0}${pct(b)}%,100%{opacity:1}}.p${i}{animation:p${i} ${f(T)}s linear infinite}`);
-      layers.push(`<use class="p${i}" href="#q${i % n}"/>`);
+    const n = canvases.length, cols = Math.max(1, Math.min(n, Math.floor(16000 / W), Math.ceil(Math.sqrt(n * H / W))));
+    const rows = Math.ceil(n / cols);
+    const sh = document.createElement('canvas'); sh.width = W * cols; sh.height = H * rows;
+    const sx = sh.getContext('2d');
+    const t = document.createElement('canvas'); t.width = W; t.height = H;
+    const tx = t.getContext('2d');
+    canvases.forEach((c, i) => {
+      tx.clearRect(0, 0, W, H); tx.drawImage(c, 0, 0);
+      applyMask(tx, cat, variant);
+      sx.drawImage(t, (i % cols) * W, Math.floor(i / cols) * H);
+    });
+    let url = sh.toDataURL('image/webp', cat === 'frames' ? 0.75 : 0.82);
+    if (!/^data:image\/webp/.test(url)) url = sh.toDataURL('image/png');
+    return { url, n, cols, rows, W, H };
+  }
+  const p3 = (v) => Math.round(v * 1000) / 1000;
+  /** Camada CSS/SVG que toca uma folha. once = toca uma vez e para no último quadro. */
+  function sheetLayer(sh, T, id, once, delay = 0) {
+    const { n, cols, rows, W, H } = sh;
+    const pos = (i) => `translate(${-(i % cols) * W}px,${-Math.floor(i / cols) * H}px)`;
+    const kA = [], kB = [];
+    for (let i = 0; i < n; i++) {
+      const pc = p3((i / n) * 100);
+      kA.push(`${pc}%{transform:${pos(i)}}`);
+      kB.push(`${pc}%{transform:${pos(once ? Math.min(n - 1, i + 1) : (i + 1) % n)}}`);
     }
-    const body = `<g mask="url(#pm)">${layers.join('')}</g>`;
-    const loop = `${head}<style>mask{mask-type:alpha}${kf.join('')}</style>${defs}${body}</svg>`;
+    kA.push(`100%{transform:${pos(once ? n - 1 : 0)}}`); kB.push(`100%{transform:${pos(once ? n - 1 : 1 % n)}}`);
+    const it = once ? '1' : 'infinite', fill = once ? 'both' : 'none', d = p3(T / n);
+    const css = `@keyframes ${id}a{${kA.join('')}}@keyframes ${id}b{${kB.join('')}}@keyframes ${id}f{from{opacity:0}to{opacity:1}}
+.${id}a{animation:${id}a ${p3(T)}s step-end ${delay}s ${it} ${fill}}.${id}b{animation:${id}b ${p3(T)}s step-end ${delay}s ${it} ${fill},${id}f ${d}s linear ${delay}s ${once ? n - 1 : 'infinite'} ${fill}}`;
+    const img = `<image href="${sh.url}" x="0" y="0" width="${W * cols}" height="${H * rows}"/>`;
+    const svg = `<g class="${id}a">${img}</g><g class="${id}b">${img.replace('<image ', '<image ')}</g>`;
+    return { css, svg };
+  }
+  function flipbookSvgs(cat, frames, seconds, variant, introFrames, introSeconds) {
+    const { w: W, h: H } = CANVAS[cat];
+    const T = Math.max(1, seconds);
+    const head = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><defs><clipPath id="cv"><rect width="${W}" height="${H}"/></clipPath></defs>`;
+    const lv = cat === 'effects' ? (variant ?? 'loop') : variant;
+    const L = sheetLayer(spriteSheet(cat, frames, lv), T, 'l', false);
+    const loop = `${head}<style>${L.css}</style><g clip-path="url(#cv)">${L.svg}</g></svg>`;
     if (cat !== 'effects') return { svg: loop, loopSeconds: f(T) };
-    // ENTRADA (como os oficiais): os quadros do começo tocam uma vez com a cena cheia (mapa da
-    // entrada) e, no fim, a cena se funde no loop, onde só ficam as partes do mapa do loop.
-    const iu = introUrls && introUrls.length ? introUrls : urls;
-    const ni = iu.length, TI = Math.min(6, Math.max(2.5, introSeconds || ni * 0.35)), di = TI / ni, XF = Math.min(1, TI * 0.25);
-    const ipct = (t) => f((t / TI) * 100);
-    const ikf = [], ilayers = ['<use href="#i0"/>'];
-    for (let i = 1; i < ni; i++) {
-      const a = (i - 0.5) * di, b = i * di - 0.001;
-      ikf.push(`@keyframes e${i}{0%,${ipct(a)}%{opacity:0}${ipct(b)}%,100%{opacity:1}}.e${i}{animation:e${i} ${f(TI)}s linear 1 both}`);
-      ilayers.push(`<use class="e${i}" href="#i${i}"/>`);
-    }
-    const idefs = `<defs>${iu.map((u, i) => `<image id="i${i}" href="${u}" x="0" y="0" width="${W}" height="${H}"/>`).join('')}${urls.map((u, i) => `<image id="q${i}" href="${u}" x="0" y="0" width="${W}" height="${H}"/>`).join('')}<image id="zi" href="${zoneMask(cat, 'intro')}" x="0" y="0" width="${W}" height="${H}"/><image id="zm" href="${zoneMask(cat, variant ?? 'loop')}" x="0" y="0" width="${W}" height="${H}"/><mask id="mi" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><use href="#zi"/></mask><mask id="pm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><use href="#zm"/></mask></defs>`;
-    const intro = `${head}<style>mask{mask-type:alpha}${ikf.join('')}
-.in{transform-box:view-box;transform-origin:50% 30%;animation:zin 1.2s cubic-bezier(.16,1,.3,1) both,iout ${f(XF)}s ease-in ${f(TI - XF)}s both}
+    // ENTRADA: os quadros do começo tocam uma vez com a cena cheia (mapa da entrada) e,
+    // no fim, a cena se funde no loop, onde só ficam as partes do mapa do loop.
+    const iF = introFrames && introFrames.length ? introFrames : frames;
+    const TI = Math.min(6, Math.max(2, introSeconds || iF.length / 12)), XF = Math.min(0.8, TI * 0.2);
+    const I = sheetLayer(spriteSheet(cat, iF, 'intro'), TI, 'i', true);
+    const L2 = sheetLayer(spriteSheet(cat, frames.slice(0, 1), lv), 1, 'k', true);
+    const intro = `${head}<style>${I.css}${L2.css}
+.in{animation:zin .9s cubic-bezier(.16,1,.3,1) both,iout ${f(XF)}s ease-in ${f(TI - XF)}s both}
 .to{opacity:0;animation:ion ${f(XF)}s ease-out ${f(TI - XF)}s both}
-@keyframes zin{0%{opacity:0;transform:scale(1.08);filter:blur(6px) brightness(1.6)}70%{opacity:1;filter:none}100%{opacity:1;transform:none}}
-@keyframes iout{to{opacity:0}}@keyframes ion{to{opacity:1}}</style>${idefs}<g class="in" mask="url(#mi)">${ilayers.join('')}</g><g class="to" mask="url(#pm)"><use href="#q0"/></g></svg>`;
+@keyframes zin{0%{opacity:0}100%{opacity:1}}
+@keyframes iout{to{opacity:0}}@keyframes ion{to{opacity:1}}</style><g clip-path="url(#cv)"><g class="in">${I.svg}</g><g class="to">${L2.svg}</g></g></svg>`;
     return { svg: loop, loopSeconds: f(T), introSvg: intro, introSeconds: f(TI) };
   }
   /**
@@ -938,21 +1001,21 @@ ${isparks}</svg>`;
       const { w: W, h: H } = CANVAS[cat];
       let asset, palette;
       if (media.frames.length > 1) {
-        const max = { nameplates: 12, decorations: 12, effects: 14, frames: 6 }[cat];
+        const max = { nameplates: 36, decorations: 36, effects: 60, frames: 8 }[cat];
         const step = Math.max(1, Math.ceil(media.frames.length / max));
         const pick = media.frames.filter((_, i) => i % step === 0);
-        const urls = pick.map((fr) => {
+        const cvs = pick.map((fr) => {
           const c = document.createElement('canvas'); c.width = W; c.height = H;
           coverInto(c.getContext('2d'), fr, cat, focus);
-          return enc(c, cat === 'frames' ? 0.72 : 0.8);
+          return c;
         });
+        const secs = media.seconds || pick.length / 12;
         if (cat === 'effects' && pick.length >= 6) {
-          // começo = entrada (a cena acontecendo); o loop usa a segunda metade, mais curta
-          const half = Math.floor(urls.length / 2);
-          const secs = media.seconds || pick.length * 0.4;
-          asset = { type: 'svg', ...flipbookSvgs(cat, urls.slice(half), secs / 2, variant, urls, secs) };
+          // começo = entrada (a cena acontecendo); o loop usa a segunda metade
+          const half = Math.floor(cvs.length / 2);
+          asset = { type: 'svg', ...flipbookSvgs(cat, cvs.slice(half), secs / 2, variant, cvs.slice(0, half + 1), secs / 2) };
         } else {
-          asset = { type: 'svg', ...flipbookSvgs(cat, urls, media.seconds || pick.length * 0.4, variant) };
+          asset = { type: 'svg', ...flipbookSvgs(cat, cvs, secs, variant) };
         }
         const c0 = document.createElement('canvas'); c0.width = W; c0.height = H;
         coverInto(c0.getContext('2d', { willReadFrequently: true }), pick[0], cat, focus);

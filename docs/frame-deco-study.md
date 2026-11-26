@@ -99,3 +99,11 @@ As **707 molduras** da loja foram agrupadas (k-means) pelo perfil angular de mas
 8. Peso na base, como fogo, túmulos ou plantas (38)
 
 O alcance chega aos cantos do canvas (~170 px do centro), já que orelhas e chifres passam do círculo. Quando a mídia vira moldura, o gerador sorteia 3 desses tipos e faz uma moldura de cada forma. O avatar fica livre, porque a arte só começa no raio 112.
+
+## Mais formas (`tools/study_more_shapes.py`)
+
+As 707 molduras foram reagrupadas em **16 tipos** (15 com 6 ou mais itens). Os mapas de loop dos 60 efeitos foram agrupados em **8 tipos**, e os que têm 2 ou mais efeitos aparecem no seletor como "Oficial: …". Os dois ficam em `catalog/media-study.json`, que o seletor de **Forma** lê.
+
+```bash
+python tools/study_more_shapes.py --cache <pasta-temporária> --k 16 --ke 8
+```
