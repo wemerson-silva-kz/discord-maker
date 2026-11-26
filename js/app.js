@@ -465,7 +465,7 @@
     'feturbulence', 'fedisplacementmap', 'fedropshadow', 'fecomponenttransfer', 'fefunca', 'fefuncr', 'fefuncg', 'fefuncb', 'image']);
   const SVG_MAX = 60000;
   /* SVG com ilustração embutida (modo Ilustração): só imagens raster em data: base64. */
-  const SVG_MAX_RASTER = 3000000;
+  const SVG_MAX_RASTER = 12000000; // efeitos da mídia: folhas de sprites com até 60 quadros
   const RASTER_HREF = /^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/=]+$/;
 
   /**

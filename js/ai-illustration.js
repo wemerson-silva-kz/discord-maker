@@ -930,7 +930,7 @@ ${isparks}</svg>`;
       applyMask(tx, cat, variant);
       sx.drawImage(t, (i % cols) * W, Math.floor(i / cols) * H);
     });
-    let url = sh.toDataURL('image/webp', cat === 'frames' ? 0.75 : 0.82);
+    let url = sh.toDataURL('image/webp', cat === 'frames' ? 0.72 : 0.74);
     if (!/^data:image\/webp/.test(url)) url = sh.toDataURL('image/png');
     return { url, n, cols, rows, W, H };
   }
