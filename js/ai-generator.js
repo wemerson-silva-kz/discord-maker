@@ -537,35 +537,138 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
     });
   }
 
-  /* ---------- Partículas no loop do efeito ---------- */
-  const PART_STORAGE = 'cosmetic-studio:gen-particles';
-  function renderParticles() {
-    const box = $('#gen-particles'), I = window.CosmeticIllustration;
-    if (!box || !I || !I.PARTS) return;
-    try { ui.particles = JSON.parse(store.get(PART_STORAGE) || 'null') || { kind: '', wind: '', amount: 1 }; } catch (e) { ui.particles = { kind: '', wind: '', amount: 1 }; }
-    const save = () => store.set(PART_STORAGE, JSON.stringify(ui.particles));
-    const chip = (label, on, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'gen-chip' + (on ? ' is-active' : ''); b.textContent = label; b.addEventListener('click', fn); return b; };
-    const draw = () => {
-      box.innerHTML = '';
-      const kinds = document.createElement('div'); kinds.className = 'flex flex-wrap gap-1.5';
-      kinds.appendChild(chip('Nenhuma', !ui.particles.kind, () => { ui.particles.kind = ''; save(); draw(); }));
-      Object.entries(I.PARTS).forEach(([k, p]) => kinds.appendChild(chip(p.label, ui.particles.kind === k, () => { ui.particles.kind = k; ui.particles.wind = ''; save(); draw(); })));
-      box.appendChild(kinds);
-      if (!ui.particles.kind) return;
-      const row = document.createElement('div'); row.className = 'flex flex-wrap items-center gap-1.5 mt-2';
-      const cur = ui.particles.wind || I.PARTS[ui.particles.kind].wind;
-      Object.entries(I.PART_WINDS).forEach(([w, l]) => row.appendChild(chip(l, cur === w, () => { ui.particles.wind = w; save(); draw(); })));
-      const amt = document.createElement('label'); amt.className = 'flex items-center gap-2 text-[11px] text-dc-muted ml-2';
-      amt.innerHTML = 'Quantidade <input type="range" min="0.4" max="2.5" step="0.1" class="accent-[#5865F2] w-28">';
-      const rg = amt.querySelector('input'); rg.value = ui.particles.amount || 1;
-      rg.addEventListener('input', () => { ui.particles.amount = +rg.value; save(); prev(); });
-      row.appendChild(amt);
-      box.appendChild(row);
-      const pv = document.createElement('div'); pv.className = 'part-prev mt-2'; box.appendChild(pv);
-      const prev = () => { const L = I.particleLayer(450, 880, { ...ui.particles }, null, 7); pv.innerHTML = `<svg viewBox="0 0 450 880" xmlns="http://www.w3.org/2000/svg"><style>${L.css}</style><rect width="450" height="880" fill="#2b2d31"/><rect width="450" height="160" fill="#5865F2" opacity=".35"/><circle cx="82" cy="160" r="60" fill="#5865F2"/>${L.svg}</svg>`; };
-      prev();
-    };
-    draw();
+  /* ---------- Elementos animados (efeito e moldura) ---------- */
+  const EL_STORAGE = 'cosmetic-studio:gen-elements';
+  function loadElements() {
+    if (ui.elements) return;
+    try { ui.elements = JSON.parse(store.get(EL_STORAGE) || 'null'); } catch (e) { ui.elements = null; }
+    if (!ui.elements || typeof ui.elements !== 'object') ui.elements = {};
+    ['effects', 'decorations'].forEach((c) => { if (!Array.isArray(ui.elements[c])) ui.elements[c] = []; });
+    if (!ui.elements.transition) ui.elements.transition = 'nenhuma';
+    if (ui.elements.ai === undefined) ui.elements.ai = true;
+  }
+  const saveElements = () => store.set(EL_STORAGE, JSON.stringify(ui.elements));
+  function renderElements() {
+    const I = window.CosmeticIllustration;
+    if (!I || !I.PARTS) return;
+    loadElements();
+    const chip = (label, on, fn, cls = '') => { const b = document.createElement('button'); b.type = 'button'; b.className = 'gen-chip ' + cls + (on ? ' is-active' : ''); b.textContent = label; b.addEventListener('click', fn); return b; };
+    ['effects', 'decorations'].forEach((cat) => {
+      const box = document.getElementById('gen-elements-' + cat);
+      if (!box) return;
+      const list = ui.elements[cat];
+      const draw = () => {
+        box.innerHTML = '';
+        const kinds = document.createElement('div'); kinds.className = 'flex flex-wrap gap-1.5';
+        Object.entries(I.PARTS).forEach(([k, p]) => {
+          if (cat === 'decorations' && (k === 'luz')) return;
+          const on = list.some((l) => l.kind === k);
+          kinds.appendChild(chip(p.label, on, () => {
+            const i = list.findIndex((l) => l.kind === k);
+            if (i >= 0) list.splice(i, 1); else if (list.length < 5) list.push({ kind: k, amount: 1, region: 'tudo' });
+            saveElements(); draw();
+          }));
+        });
+        box.appendChild(kinds);
+        list.forEach((l) => {
+          const row = document.createElement('div'); row.className = 'el-row';
+          const name = document.createElement('b'); name.textContent = I.PARTS[l.kind].label; row.appendChild(name);
+          const P = I.PARTS[l.kind];
+          if (!P.grass && !P.rays && !P.bolt) {
+            const cur = l.wind || P.wind;
+            Object.entries(I.PART_WINDS).forEach(([w, lb]) => row.appendChild(chip(lb, cur === w, () => { l.wind = w; saveElements(); draw(); }, 'gen-chip-sm')));
+          }
+          if (cat === 'effects' && !P.grass && !P.rays) {
+            const sel = document.createElement('select'); sel.className = 'dc-input !h-7 !py-0 text-xs w-auto';
+            Object.entries(I.PART_REGIONS).forEach(([v, lb]) => { const o = document.createElement('option'); o.value = v; o.textContent = lb; if ((l.region || 'tudo') === v) o.selected = true; sel.appendChild(o); });
+            sel.addEventListener('change', () => { l.region = sel.value; saveElements(); prev(); });
+            row.appendChild(sel);
+          }
+          const rg = document.createElement('input'); rg.type = 'range'; rg.min = '0.3'; rg.max = '2.5'; rg.step = '0.1'; rg.value = l.amount || 1; rg.className = 'accent-[#5865F2] w-24'; rg.title = 'Quantidade';
+          rg.addEventListener('input', () => { l.amount = +rg.value; saveElements(); prev(); });
+          row.appendChild(rg);
+          const col = document.createElement('input'); col.type = 'color'; col.value = l.color || '#ffffff'; col.title = 'Cor (deixe branco para usar as cores da mídia)'; col.className = 'el-color';
+          col.addEventListener('input', () => { l.color = col.value === '#ffffff' ? '' : col.value; saveElements(); prev(); });
+          row.appendChild(col);
+          box.appendChild(row);
+        });
+        const pv = document.createElement('div'); pv.className = 'part-prev mt-2' + (cat === 'decorations' ? ' is-deco' : ''); box.appendChild(pv);
+        const prev = () => {
+          if (!list.length) { pv.innerHTML = ''; return; }
+          const W = cat === 'decorations' ? 288 : 450, H = cat === 'decorations' ? 288 : 880;
+          const bg = cat === 'decorations' ? `<rect width="288" height="288" fill="#2b2d31"/><circle cx="144" cy="144" r="118" fill="#5865F2"/>` : `<rect width="450" height="880" fill="#2b2d31"/><rect width="450" height="160" fill="#5865F2" opacity=".35"/><circle cx="82" cy="160" r="60" fill="#5865F2"/>`;
+          pv.innerHTML = I.withParticles(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><style></style>${bg}</svg>`, cat, list, null, 7);
+        };
+        prev();
+      };
+      draw();
+    });
+    const tb = document.getElementById('gen-transition');
+    if (tb) {
+      const drawT = () => {
+        tb.innerHTML = '';
+        [['nenhuma', 'Nenhuma'], ['flash', '💥 Flash de luz'], ['corte', '✂️ Corte seco'], ['dissolver', '🌫 Dissolver']].forEach(([v, lb]) => tb.appendChild(chip(lb, ui.elements.transition === v, () => { ui.elements.transition = v; saveElements(); drawT(); })));
+      };
+      drawT();
+    }
+    const ai = document.getElementById('gen-el-ai');
+    if (ai) { ai.checked = !!ui.elements.ai; ai.onchange = () => { ui.elements.ai = ai.checked; saveElements(); }; }
+  }
+
+  /* ---------- IA identifica os elementos animados da mídia, quadro a quadro ---------- */
+  const IDENTIFY_SYSTEM = `Você é um diretor de animação. Recebe QUADROS em sequência de um vídeo/GIF (ou uma imagem) e identifica os ELEMENTOS ANIMADOS que se repetem e podem virar camadas de um efeito de perfil do Discord e de uma moldura de avatar.
+Elementos possíveis (use só estes nomes): folhas, petalas, penas, corvos (qualquer pássaro), grama, neve, brilhos, brasas (faíscas, fogo em partículas), raios (eletricidade), luz (raios de luz/feixes), fragmentos (algo se desfazendo em pedaços), fumaca, bolhas.
+Compare os quadros: o que se MOVE entre eles? Direção: vento (atravessa de lado), cair, subir. Região onde aparece: topo, baixo, lados, tudo. Quantidade 0.3 a 2.5 (1 = normal). Cor dominante em hex.
+Transição da entrada: flash (estouro de luz), corte (troca seca de cena), dissolver, nenhuma.
+Responda SÓ JSON: {"efeito":[{"elemento":"corvos","direcao":"vento","regiao":"topo","quantidade":1.2,"cor":"#111111"}],"moldura":[{"elemento":"brasas","direcao":"subir","quantidade":1,"cor":"#ffaa33"}],"transicao":"flash","resumo":"frase curta do que você viu"}
+No máximo 3 elementos por formato, só os que realmente aparecem. Para a moldura, escolha 1–2 que fiquem bonitos em volta do avatar.`;
+  async function visionJson(system, blocks, cfg) {
+    const model = textModelFor(cfg);
+    let out = '';
+    if (cfg.provider === 'anthropic') {
+      const mod = await loadSdk();
+      const client = new mod.default({ apiKey: cfg.key, dangerouslyAllowBrowser: true });
+      const content = blocks.map((b) => (b.image ? { type: 'image', source: { type: 'base64', media_type: b.image.mime, data: b.image.data } } : { type: 'text', text: b.text }));
+      const res = await client.messages.create({ model, max_tokens: 1500, system, messages: [{ role: 'user', content }] });
+      out = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    } else if (PROVIDERS[cfg.provider].native === 'gemini') {
+      const parts = blocks.map((b) => (b.image ? { inlineData: { mimeType: b.image.mime, data: b.image.data } } : { text: b.text }));
+      const res = await fetch(`${GEMINI_BASE}/models/${encodeURIComponent(geminiModelName(model))}:generateContent`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw geminiError(res.status, data, model);
+      const cand = data && data.candidates && data.candidates[0];
+      out = ((cand && cand.content && cand.content.parts) || []).filter((pt) => !pt.thought).map((pt) => pt.text || '').join('');
+    } else {
+      const base = (cfg.baseUrl || PROVIDERS[cfg.provider].base || '').replace(/\/+$/, '');
+      const headers = { 'Content-Type': 'application/json' };
+      if (cfg.key) headers.Authorization = 'Bearer ' + cfg.key;
+      const content = blocks.map((b) => (b.image ? { type: 'image_url', image_url: { url: `data:${b.image.mime};base64,${b.image.data}` } } : { type: 'text', text: b.text }));
+      const res = await fetch(base + '/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content }], response_format: { type: 'json_object' } }) });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((data && data.error && (data.error.message || data.error)) || 'HTTP ' + res.status);
+      out = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+    }
+    return parseJsonLoose(out);
+  }
+  async function identifyElements(media, cfg) {
+    const I = window.CosmeticIllustration;
+    const fr = (media.frames || []).slice(0, 8);
+    const blocks = [{ text: `${fr.length} quadro(s) em ordem${media.animated ? ' (animado)' : ' (imagem parada: deduza o movimento que combina)'}:` }];
+    fr.forEach((c, i) => {
+      const s = document.createElement('canvas'); const k = Math.min(1, 384 / Math.max(c.width, c.height));
+      s.width = Math.round(c.width * k); s.height = Math.round(c.height * k); s.getContext('2d').drawImage(c, 0, 0, s.width, s.height);
+      blocks.push({ text: `Quadro ${i + 1}` }, { image: { mime: 'image/jpeg', data: s.toDataURL('image/jpeg', 0.7).split(',')[1] } });
+    });
+    const j = await visionJson(IDENTIFY_SYSTEM, blocks, cfg);
+    const norm = (arr) => (Array.isArray(arr) ? arr : []).map((e) => {
+      const kind = String((e && (e.elemento || e.tipo)) || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace('passaros', 'corvos').replace('fogo', 'brasas').replace('faiscas', 'brasas').replace('fumaça', 'fumaca');
+      if (!I.PARTS[kind]) return null;
+      return { kind, wind: ['vento', 'cair', 'subir'].includes(e.direcao) ? e.direcao : '', region: ['topo', 'baixo', 'lados', 'tudo'].includes(e.regiao) ? e.regiao : 'tudo', amount: Math.max(0.3, Math.min(2.5, +e.quantidade || 1)), color: /^#[0-9a-f]{6}$/i.test(e.cor || '') ? e.cor : '' };
+    }).filter(Boolean).slice(0, 3);
+    return { effects: norm(j.efeito), decorations: norm(j.moldura).slice(0, 2), transition: ['flash', 'corte', 'dissolver', 'nenhuma'].includes(j.transicao) ? j.transicao : '', summary: String(j.resumo || '').slice(0, 160) };
   }
 
   /* ---------- Mídia colada (Pinterest, imagem, GIF, vídeo) ---------- */
@@ -1895,7 +1998,27 @@ ${lines.join('\n\n')}`;
       const hi = await window.CosmeticMediaRef.artFrames(ui.media);
       const motion = {};
       cats.forEach((cat) => { motion[cat] = { fx: fxFor(prompt || '') }; });
-      const list = await window.CosmeticIllustration.fromMedia(cats, { ...hi, name: ui.media.name, kind: ui.media.kind }, motion, { ...(ui.shapes || {}), particles: ui.particles && ui.particles.kind ? ui.particles : null });
+      loadElements();
+      const elements = { effects: ui.elements.effects.slice(), decorations: ui.elements.decorations.slice() };
+      let transition = ui.elements.transition !== 'nenhuma' ? ui.elements.transition : '';
+      // A IA assiste os quadros e identifica os elementos que se movem (corvos, folhas, brasas…)
+      const cfg = ui.engine === 'ai' ? aiConfig() : null;
+      if (ui.elements.ai && cfg && (cfg.key || cfg.provider === 'ollama') && (cats.includes('effects') || cats.includes('decorations'))) {
+        try {
+          setBusy(true, 'A IA está assistindo os quadros e identificando os elementos animados…');
+          const id = await identifyElements(ui.media, cfg);
+          if (!elements.effects.length) elements.effects = id.effects;
+          if (!elements.decorations.length) elements.decorations = id.decorations;
+          if (!transition && id.transition && id.transition !== 'nenhuma') transition = id.transition;
+          const names = [...new Set([...id.effects, ...id.decorations].map((l) => window.CosmeticIllustration.PARTS[l.kind].label))];
+          if (names.length || id.summary) CS.toast(`IA identificou: ${names.join(', ') || 'nada que se repita'}${id.summary ? ' — ' + id.summary : ''}`, 'info');
+          setBusy(true, 'Recortando a sua mídia em cada formato…');
+        } catch (err) {
+          console.warn('[Identificar elementos]', err);
+          CS.toast('A IA não conseguiu identificar os elementos (' + (err.message || 'erro') + '). Usando o que você escolheu.', 'info');
+        }
+      }
+      const list = await window.CosmeticIllustration.fromMedia(cats, { ...hi, name: ui.media.name, kind: ui.media.kind }, motion, { ...(ui.shapes || {}), elements, transition });
       list.forEach((it) => {
         if (it.cat === 'nameplates' && it.palette && it.palette[0]) it.raw.asset.discordPalette = nearestDiscordPalette(it.palette[0]);
       });
@@ -2360,7 +2483,7 @@ ${current}`;
     $('#gen-refs-add').addEventListener('click', openPicker);
     renderFx();
     renderShapes();
-    renderParticles();
+    renderElements();
     // abas de formato (a caixinha marca se gera; o clique no resto abre o painel)
     $$('#gen-cats .fmt-tab').forEach((tab) => {
       const open = () => {

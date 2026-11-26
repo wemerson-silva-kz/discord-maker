@@ -758,3 +758,9 @@ input[type='color'].swatch::-moz-color-swatch { border: none; border-radius: 6px
 
 .gen-chip.is-active { border-color: #5865F2; background: rgba(88,101,242,.22); color: #fff; }
 .part-prev svg { width: 120px; height: 235px; border-radius: 10px; border: 1px solid rgba(255,255,255,.08); display: block; }
+
+.el-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 8px; border-radius: 8px; background: rgba(0,0,0,.2); font-size: 12px; }
+.el-row b { color: #fff; font-weight: 700; margin-right: 4px; }
+.gen-chip-sm { height: 22px !important; padding: 0 7px !important; font-size: 11px !important; }
+.el-color { width: 26px; height: 22px; border: 0; background: none; padding: 0; cursor: pointer; }
+.part-prev.is-deco svg { width: 140px; height: 140px; }

@@ -210,15 +210,20 @@
                         <textarea id="gen-pp-decorations" rows="2" maxlength="600" class="dc-input h-auto py-2 text-sm resize-y" placeholder="Ex.: só as nuvens no topo, sem cobrir o rosto"></textarea></label>
                       <div class="flex items-baseline justify-between gap-2 mt-3 mb-1.5"><span class="sub-label !mb-0">Forma</span><span class="text-[11px] text-dc-faint">branco = arte · azul = avatar/card</span></div>
                       <div id="gen-shapes-decorations" class="shape-grid"></div>
+                      <div class="mt-4"><span class="sub-label">Elementos animados em volta do avatar</span>
+                        <p class="text-[11px] text-dc-faint mb-2">Além do recorte da mídia: brasas subindo, folhas girando, raios piscando colados à borda.</p>
+                        <div id="gen-elements-decorations"></div></div>
                     </div>
                     <div class="fmt-panel hidden" data-panel="effects" role="tabpanel">
                       <label class="block"><span class="sub-label">Prompt só para o efeito</span>
                         <textarea id="gen-pp-effects" rows="2" maxlength="600" class="dc-input h-auto py-2 text-sm resize-y" placeholder="Ex.: barco entra velejando; no loop só estrelas no céu"></textarea></label>
                       <div class="flex items-baseline justify-between gap-2 mt-3 mb-1.5"><span class="sub-label !mb-0">Forma</span><span class="text-[11px] text-dc-faint">branco = arte · azul = avatar/card</span></div>
                       <div id="gen-shapes-effects" class="shape-grid"></div>
-                      <div class="mt-4"><span class="sub-label">Partículas passando no loop</span>
-                        <p class="text-[11px] text-dc-faint mb-2">Por cima da sua mídia, em 3 planos (fundo pequeno, meio e algumas grandes desfocadas na frente). Vale para a mídia como arte.</p>
-                        <div id="gen-particles"></div></div>
+                      <div class="mt-4"><span class="sub-label">Elementos animados por cima</span>
+                        <p class="text-[11px] text-dc-faint mb-2">Camadas que passam no efeito (até 5), em 3 planos de profundidade. Escolha aqui ou deixe a IA identificar nos quadros da mídia.</p>
+                        <div id="gen-elements-effects"></div></div>
+                      <div class="mt-4"><span class="sub-label">Transição da entrada</span><div id="gen-transition" class="flex flex-wrap gap-1.5"></div></div>
+                      <label class="flex items-start gap-2 mt-3 text-xs text-dc-muted cursor-pointer select-none"><input type="checkbox" id="gen-el-ai" class="accent-[#5865F2] mt-0.5" /><span><b class="text-dc-text">IA identifica os elementos</b> assistindo os quadros (corvos, folhas, brasas, raios…) quando você não escolher. Usa o modelo de texto/visão.</span></label>
                     </div>
                     <div class="fmt-panel hidden" data-panel="frames" role="tabpanel">
                       <label class="block"><span class="sub-label">Prompt só para o profile frame</span>

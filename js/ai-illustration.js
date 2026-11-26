@@ -953,65 +953,182 @@ ${isparks}</svg>`;
     const svg = `<g class="${id}a">${img}</g><g class="${id}b">${img.replace('<image ', '<image ')}</g>`;
     return { css, svg };
   }
-  /* ---- Partículas por cima do loop (folhas ao vento, pétalas, neve…) ----
-   * Como no vídeo de referência: profundidade em 3 planos — poucas grandes e desfocadas na
-   * frente (rápidas), várias médias e muitas pequenas ao fundo (lentas). Cores da mídia. */
+  /* ---- Elementos animados por cima da arte (aprendidos em vídeos de referência) ----
+   * Estudo quadro a quadro (docs/motion-study.md): corvos em bando, grama ao vento, penas e
+   * folhas caindo com profundidade, brasas/faíscas subindo, raios elétricos piscando, raios de
+   * luz, fragmentos se desfazendo, fumaça. Sempre em 3 planos: fundo pequeno e lento, meio,
+   * e poucos grandes, rápidos e desfocados na frente. */
   const PARTS = {
-    folhas: { label: '🍃 Folhas ao vento', wind: 'vento', path: 'M0-10C6-6 7 4 0 10C-7 4-6-6 0-10Z', vein: 'M0-9L0 9', hue: 'g' },
-    petalas: { label: '🌸 Pétalas', wind: 'vento', path: 'M0-8C5-8 7-2 0 8C-7-2-5-8 0-8Z', hue: 'p' },
+    folhas: { label: '🍃 Folhas', wind: 'vento', path: 'M0-10C6-6 7 4 0 10C-7 4-6-6 0-10Z', vein: 'M0-9L0 9', hue: 'g', flip: 1 },
+    petalas: { label: '🌸 Pétalas', wind: 'vento', path: 'M0-8C5-8 7-2 0 8C-7-2-5-8 0-8Z', hue: 'p', flip: 1 },
+    penas: { label: '🪶 Penas', wind: 'cair', path: 'M0-12C3-8 3 6 0 12C-3 6-3-8 0-12Z', vein: 'M0-12L0 12', hue: 'k', flip: 1 },
+    corvos: { label: '🐦‍⬛ Corvos / pássaros', wind: 'vento', bird: 1, hue: 'k' },
+    grama: { label: '🌾 Grama ao vento', grass: 1, hue: 'g' },
     neve: { label: '❄️ Neve', wind: 'cair', circle: 1, hue: 'w' },
-    brilhos: { label: '✨ Brilhos', wind: 'subir', path: 'M0-9L2-2 9 0 2 2 0 9-2 2-9 0-2-2Z', hue: 'l' },
-    brasas: { label: '🔥 Brasas', wind: 'subir', circle: 1, hue: 'f' },
+    brilhos: { label: '✨ Brilhos', wind: 'subir', path: 'M0-9L2-2 9 0 2 2 0 9-2 2-9 0-2-2Z', hue: 'l', glow: 1 },
+    brasas: { label: '🔥 Brasas / faíscas', wind: 'subir', circle: 1, hue: 'f', glow: 1 },
+    raios: { label: '⚡ Raios elétricos', bolt: 1, hue: 'e', glow: 1 },
+    luz: { label: '🌤 Raios de luz', rays: 1, hue: 'l', glow: 1 },
+    fragmentos: { label: '🌑 Fragmentos se desfazendo', wind: 'vento', path: 'M-5-3L4-6 6 2-2 6-6 1Z', hue: 'k' },
+    fumaca: { label: '🌫 Fumaça / névoa', smoke: 1, wind: 'subir', hue: 'w' },
     bolhas: { label: '🫧 Bolhas', wind: 'subir', ring: 1, hue: 'w' },
   };
   const PART_WINDS = { vento: '↙ Vento', cair: '↓ Caindo', subir: '↑ Subindo' };
-  function partColors(kind, palette) {
+  const PART_REGIONS = { tudo: 'Tudo', topo: 'Topo', baixo: 'Embaixo', lados: 'Laterais' };
+  function partColors(kind, palette, color) {
+    if (color && /^#[0-9a-f]{6}$/i.test(color)) return [color, color];
     const pal = (palette || []).filter(Boolean);
-    const fixed = { g: ['#7BC043', '#A8D86E', '#4E8F2A'], p: ['#FFC1D9', '#FF9EC4', '#FFE3EE'], w: ['#FFFFFF', '#E6F0FF'], l: ['#FFF6C8', '#FFFFFF', '#FFE08A'], f: ['#FFB347', '#FF7A2F', '#FFD27A'] }[PARTS[kind].hue];
-    return pal.length && (kind === 'folhas' || kind === 'petalas') ? [...fixed.slice(0, 2), pal[0]] : fixed;
+    const fixed = { g: ['#7BC043', '#A8D86E', '#4E8F2A'], p: ['#FFC1D9', '#FF9EC4', '#FFE3EE'], w: ['#FFFFFF', '#E6F0FF'], l: ['#FFF6C8', '#FFFFFF', '#FFE08A'], f: ['#FFB347', '#FF7A2F', '#FFD27A'], k: ['#15151a', '#24242c', '#0b0b0e'], e: ['#BFE9FF', '#7FD3FF', '#FFFFFF'] }[PARTS[kind].hue];
+    return pal.length && (kind === 'folhas' || kind === 'petalas' || kind === 'grama') ? [...fixed.slice(0, 2), pal[0]] : fixed;
   }
-  /** Camada SVG de partículas. opts: { kind, wind, amount (0.5–2) } */
-  function particleLayer(W, H, opts = {}, palette, seed = 7) {
+  /** Uma camada. opts: { kind, wind, amount (0.3–2.5), region, color }; ring = moldura (em volta do avatar). */
+  function particleLayer(W, H, opts = {}, palette, seed = 7, uid = 'a', ring = null) {
     const P = PARTS[opts.kind];
     if (!P) return { css: '', svg: '' };
-    const wind = opts.wind || P.wind;
-    let st = seed * 9301 + 49297;
+    const wind = opts.wind || P.wind || 'vento';
+    let st = (seed * 9301 + 49297 + uid.charCodeAt(0) * 7) % 233280;
     const rnd = () => ((st = (st * 9301 + 49297) % 233280) / 233280);
-    const cols = partColors(opts.kind, palette);
-    const n = Math.round(16 * Math.max(0.3, Math.min(2.5, opts.amount || 1)));
-    const css = [], els = [];
-    const shape = (c) => P.circle ? `<circle r="4" fill="${c}"/>` : P.ring ? `<circle r="6" fill="none" stroke="${c}" stroke-width="1.4" opacity=".8"/><circle cx="-2" cy="-2" r="1.5" fill="#fff" opacity=".8"/>` : `<path d="${P.path}" fill="${c}"/>${P.vein ? `<path d="${P.vein}" stroke="rgba(0,0,0,.25)" stroke-width=".8" fill="none"/>` : ''}`;
-    for (let i = 0; i < n; i++) {
-      // plano: 0 = fundo (pequeno, lento), 1 = meio, 2 = frente (grande, rápido, desfocado; raro)
-      const z = rnd() < 0.1 ? 2 : rnd() < 0.45 ? 1 : 0;
-      const sc = [0.8, 1.5, 5][z] * (0.8 + 0.4 * rnd());
-      const dur = [9, 6.5, 3.2][z] * (0.8 + 0.5 * rnd()), del = -rnd() * dur;
-      const op = [0.75, 0.95, 0.85][z];
-      let x0, y0, x1, y1;
-      if (wind === 'vento') { x0 = W + 40 + rnd() * 80; y0 = -60 + rnd() * H * 0.8; x1 = -80 - rnd() * 60; y1 = y0 + H * (0.25 + 0.35 * rnd()); }
-      else if (wind === 'cair') { x0 = rnd() * W; y0 = -30; x1 = x0 + (rnd() - 0.5) * 120; y1 = H + 30; }
-      else { x0 = rnd() * W; y0 = H + 30; x1 = x0 + (rnd() - 0.5) * 100; y1 = -30; }
-      const mx = (x0 + x1) / 2 + (rnd() - 0.5) * 140, my = (y0 + y1) / 2 + (rnd() - 0.5) * 120;
-      const spin = (rnd() < 0.5 ? -1 : 1) * (180 + rnd() * 540);
-      const fade = wind === 'subir' ? '0%{opacity:0}15%{opacity:1}80%{opacity:1}100%{opacity:0}' : '0%,100%{opacity:1}';
-      css.push(`@keyframes pm${i}{0%{transform:translate(${f(x0)}px,${f(y0)}px)}50%{transform:translate(${f(mx)}px,${f(my)}px)}100%{transform:translate(${f(x1)}px,${f(y1)}px)}}@keyframes pr${i}{from{transform:rotate(0) scale(${f(sc)},${f(sc)})}50%{transform:rotate(${f(spin / 2)}deg) scale(${f(sc)},${f(sc * (P.circle || P.ring ? 1 : 0.35))})}to{transform:rotate(${f(spin)}deg) scale(${f(sc)},${f(sc)})}}@keyframes pf${i}{${fade}}
-.pm${i}{animation:pm${i} ${f(dur)}s ${f(del)}s linear infinite,pf${i} ${f(dur)}s ${f(del)}s linear infinite}.pr${i}{animation:pr${i} ${f(dur * 0.6)}s ${f(del)}s ease-in-out infinite}`);
-      const c = cols[Math.floor(rnd() * cols.length)];
-      els.push(`<g class="pm${i}" opacity="${op}"${z === 2 ? ' filter="url(#pbl)"' : z === 0 ? ' filter="url(#pbs)"' : ''}><g class="pr${i}">${shape(c)}</g></g>`);
-    }
-    const glow = opts.kind === 'brilhos' || opts.kind === 'brasas' ? ' style="mix-blend-mode:screen"' : '';
-    return {
-      css: css.join(''),
-      svg: `<defs><filter id="pbl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.6"/></filter><filter id="pbs" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation=".5"/></filter></defs><g${glow}>${els.join('')}</g>`,
+    const cols = partColors(opts.kind, palette, opts.color);
+    const amt = Math.max(0.3, Math.min(2.5, opts.amount || 1));
+    const css = [], els = [], u = uid;
+    const reg = opts.region || 'tudo';
+    const inReg = () => {
+      if (ring) { const a = rnd() * Math.PI * 2, rr = ring.r0 + rnd() * (ring.r1 - ring.r0); return [ring.cx + Math.cos(a) * rr, ring.cy + Math.sin(a) * rr]; }
+      const x = rnd() * W;
+      if (reg === 'topo') return [x, rnd() * H * 0.35];
+      if (reg === 'baixo') return [x, H * (0.65 + rnd() * 0.35)];
+      if (reg === 'lados') return [rnd() < 0.5 ? rnd() * W * 0.18 : W * (0.82 + rnd() * 0.18), rnd() * H];
+      return [x, rnd() * H];
     };
+    const filt = `<filter id="${u}bl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.6"/></filter><filter id="${u}bs" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation=".5"/></filter><filter id="${u}gl" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+    const S = ring ? 0.45 : 1; // moldura é pequena (288 px)
+
+    if (P.grass) {
+      // Grama: tufos na base balançando (frente maior e desfocada), como no pôr do sol do estudo.
+      const n = Math.round(46 * amt);
+      for (let i = 0; i < n; i++) {
+        const z = rnd() < 0.15 ? 2 : rnd() < 0.5 ? 1 : 0;
+        const x = ring ? ring.cx + (rnd() - 0.5) * ring.r1 * 1.6 : rnd() * W;
+        const base = ring ? ring.cy + ring.r0 * 0.95 : H + 4;
+        const h = (ring ? 26 : [60, 110, 190][z]) * (0.6 + 0.6 * rnd());
+        const lean = (rnd() - 0.3) * h * 0.4, w = [2.2, 3.5, 7][z] * S * (ring ? 1.6 : 1);
+        const c = cols[Math.floor(rnd() * cols.length)];
+        const dur = 2.4 + rnd() * 2.2, del = -rnd() * dur, sw = 4 + rnd() * 7;
+        css.push(`@keyframes ${u}g${i}{0%,100%{transform:rotate(${f(-sw * 0.3)}deg)}50%{transform:rotate(${f(sw)}deg)}}.${u}g${i}{transform-box:fill-box;transform-origin:50% 100%;animation:${u}g${i} ${f(dur)}s ${f(del)}s ease-in-out infinite}`);
+        els.push(`<path class="${u}g${i}" d="M${f(x - w)} ${f(base)}Q${f(x + lean * 0.4)} ${f(base - h * 0.55)} ${f(x + lean)} ${f(base - h)}Q${f(x + lean * 0.4 + w * 0.3)} ${f(base - h * 0.55)} ${f(x + w)} ${f(base)}Z" fill="${c}" opacity="${[0.7, 0.9, 0.95][z]}"${z === 2 ? ` filter="url(#${u}bl)"` : ''}/>`);
+      }
+      return { css: css.join(''), svg: `<defs>${filt}</defs><g>${els.join('')}</g>` };
+    }
+    if (P.rays) {
+      // Raios de luz: feixes diagonais largos e suaves, pulsando devagar.
+      const n = Math.max(3, Math.round(5 * amt));
+      const ox = W * (0.55 + rnd() * 0.4), oy = -H * 0.1;
+      for (let i = 0; i < n; i++) {
+        const ang = 100 + i * (40 / n) + rnd() * 8, len = H * 1.3, wd = (50 + rnd() * 80) * S;
+        const dur = 4 + rnd() * 4, del = -rnd() * dur;
+        css.push(`@keyframes ${u}r${i}{0%,100%{opacity:.08}50%{opacity:${f(0.25 + rnd() * 0.2)}}}.${u}r${i}{animation:${u}r${i} ${f(dur)}s ${f(del)}s ease-in-out infinite}`);
+        els.push(`<path class="${u}r${i}" d="M${f(ox)} ${f(oy)}l${f(Math.cos(ang * Math.PI / 180) * len - wd)} ${f(Math.sin(ang * Math.PI / 180) * len)}h${f(wd * 2)}Z" fill="url(#${u}rg)"/>`);
+      }
+      return { css: css.join(''), svg: `<defs>${filt}<linearGradient id="${u}rg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${cols[0]}" stop-opacity=".9"/><stop offset="1" stop-color="${cols[0]}" stop-opacity="0"/></linearGradient></defs><g style="mix-blend-mode:screen" filter="url(#${u}bl)">${els.join('')}</g>` };
+    }
+    if (P.bolt) {
+      // Raios elétricos: zigue-zagues que acendem num instante e somem (piscam fora de fase).
+      const n = Math.max(2, Math.round(5 * amt));
+      for (let i = 0; i < n; i++) {
+        let [x, y] = inReg();
+        const segs = 6 + Math.floor(rnd() * 5), dir = rnd() * Math.PI * 2, L = (ring ? 9 : 28) * (0.6 + rnd());
+        let d = `M${f(x)} ${f(y)}`;
+        for (let k = 0; k < segs; k++) { x += Math.cos(dir) * L + (rnd() - 0.5) * L * 1.4; y += Math.sin(dir) * L + (rnd() - 0.5) * L * 1.4; d += `L${f(x)} ${f(y)}`; }
+        const dur = 1.6 + rnd() * 2.6, del = -rnd() * dur, on = f(4 + rnd() * 6);
+        css.push(`@keyframes ${u}z${i}{0%,${on}%{opacity:1}${f(+on + 2)}%,100%{opacity:0}}.${u}z${i}{opacity:0;animation:${u}z${i} ${f(dur)}s ${f(del)}s steps(1,end) infinite}`);
+        els.push(`<path class="${u}z${i}" d="${d}" fill="none" stroke="${cols[i % cols.length]}" stroke-width="${f((ring ? 1.2 : 2.4) * (0.7 + rnd() * 0.6))}" stroke-linejoin="round" filter="url(#${u}gl)"/>`);
+      }
+      return { css: css.join(''), svg: `<defs>${filt}</defs><g style="mix-blend-mode:screen">${els.join('')}</g>` };
+    }
+    if (P.smoke) {
+      const n = Math.max(3, Math.round(7 * amt));
+      for (let i = 0; i < n; i++) {
+        const [x, y] = inReg(), r = (ring ? 14 : 60) * (0.6 + rnd()), dur = 7 + rnd() * 6, del = -rnd() * dur, dy = wind === 'subir' ? -(ring ? 30 : 160) : (ring ? 20 : 120);
+        css.push(`@keyframes ${u}s${i}{0%{transform:translate(0,0) scale(.6);opacity:0}30%{opacity:.35}100%{transform:translate(${f((rnd() - 0.5) * 80 * S)}px,${f(dy)}px) scale(1.4);opacity:0}}.${u}s${i}{transform-box:fill-box;transform-origin:50% 50%;animation:${u}s${i} ${f(dur)}s ${f(del)}s ease-out infinite}`);
+        els.push(`<circle class="${u}s${i}" cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${cols[i % cols.length]}" filter="url(#${u}bl)"/>`);
+      }
+      return { css: css.join(''), svg: `<defs><filter id="${u}bl" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="${ring ? 5 : 18}"/></filter></defs><g>${els.join('')}</g>` };
+    }
+
+    // Partículas que atravessam: folhas, pétalas, penas, corvos, neve, brilhos, brasas, fragmentos, bolhas
+    const base = P.bird ? 12 : P.circle && P.glow ? 22 : 16;
+    const n = Math.round(base * amt);
+    const shape = (c, z) => {
+      if (P.bird) {
+        // pássaro: corpo + duas asas que batem (escala vertical das asas)
+        const fl = f(0.22 + rnd() * 0.2);
+        css.push(`@keyframes ${u}w${els.length}{0%,100%{transform:scaleY(1)}50%{transform:scaleY(-.7)}}.${u}w${els.length}{transform-box:fill-box;transform-origin:50% 100%;animation:${u}w${els.length} ${fl}s ease-in-out infinite}`);
+        return `<ellipse rx="3.2" ry="1.6" fill="${c}"/><path class="${u}w${els.length}" d="M-1 0C-5-6-10-5-13-2C-9-3-5-2-1 0ZM1 0C5-6 10-5 13-2C9-3 5-2 1 0Z" fill="${c}"/>`;
+      }
+      if (P.circle) return `<circle r="${P.glow ? 2.4 : 4}" fill="${c}"/>`;
+      if (P.ring) return `<circle r="6" fill="none" stroke="${c}" stroke-width="1.4" opacity=".8"/><circle cx="-2" cy="-2" r="1.5" fill="#fff" opacity=".8"/>`;
+      return `<path d="${P.path}" fill="${c}"/>${P.vein ? `<path d="${P.vein}" stroke="rgba(0,0,0,.25)" stroke-width=".8" fill="none"/>` : ''}`;
+    };
+    for (let i = 0; i < n; i++) {
+      const z = rnd() < (P.bird ? 0.12 : 0.1) ? 2 : rnd() < 0.45 ? 1 : 0;
+      const sc = (P.bird ? [0.7, 1.3, 4.2] : [0.8, 1.5, 5])[z] * (0.8 + 0.4 * rnd()) * S;
+      const dur = (P.bird ? [11, 8, 3.6] : [9, 6.5, 3.2])[z] * (0.8 + 0.5 * rnd()) * (ring ? 0.7 : 1), del = -rnd() * dur;
+      const op = P.bird ? [0.6, 0.85, 0.95][z] : [0.75, 0.95, 0.85][z];
+      let x0, y0, x1, y1;
+      if (ring) {
+        // moldura: sobem/rodeiam colados à borda do avatar
+        const a0 = rnd() * Math.PI * 2, a1 = a0 + (rnd() < 0.5 ? -1 : 1) * (0.6 + rnd()), r0 = ring.r0 + rnd() * (ring.r1 - ring.r0), r1 = ring.r0 + rnd() * (ring.r1 - ring.r0);
+        x0 = ring.cx + Math.cos(a0) * r0; y0 = ring.cy + Math.sin(a0) * r0; x1 = ring.cx + Math.cos(a1) * r1; y1 = ring.cy + Math.sin(a1) * r1 - (wind === 'subir' ? 30 : 0);
+      } else {
+        const [rx, ry] = inReg();
+        if (wind === 'vento') { x0 = W + 40 + rnd() * 80; y0 = ry - H * 0.2; x1 = -80 - rnd() * 60; y1 = y0 + H * (P.bird ? (rnd() - 0.5) * 0.3 : 0.25 + 0.35 * rnd()); }
+        else if (wind === 'cair') { x0 = rx; y0 = -30; x1 = x0 + (rnd() - 0.5) * 120; y1 = H + 30; }
+        else { x0 = rx; y0 = H + 30; x1 = x0 + (rnd() - 0.5) * 100; y1 = -30; }
+      }
+      const mx = (x0 + x1) / 2 + (rnd() - 0.5) * 140 * S, my = (y0 + y1) / 2 + (rnd() - 0.5) * 120 * S;
+      const spin = P.bird ? (x1 < x0 ? 0 : 0) : (rnd() < 0.5 ? -1 : 1) * (180 + rnd() * 540);
+      const fade = wind === 'subir' || ring || opts.kind === 'fragmentos' ? '0%{opacity:0}15%{opacity:1}75%{opacity:1}100%{opacity:0}' : '0%,100%{opacity:1}';
+      const sy = P.flip ? 0.35 : 1, mir = P.bird && x1 > x0 ? -1 : 1;
+      css.push(`@keyframes ${u}m${i}{0%{transform:translate(${f(x0)}px,${f(y0)}px)}50%{transform:translate(${f(mx)}px,${f(my)}px)}100%{transform:translate(${f(x1)}px,${f(y1)}px)}}@keyframes ${u}r${i}{from{transform:rotate(0) scale(${f(sc * mir)},${f(sc)})}50%{transform:rotate(${f(spin / 2)}deg) scale(${f(sc * mir)},${f(sc * sy)})}to{transform:rotate(${f(spin)}deg) scale(${f(sc * mir)},${f(sc)})}}@keyframes ${u}f${i}{${fade}}
+.${u}m${i}{animation:${u}m${i} ${f(dur)}s ${f(del)}s linear infinite,${u}f${i} ${f(dur)}s ${f(del)}s linear infinite}.${u}r${i}{animation:${u}r${i} ${f(dur * 0.6)}s ${f(del)}s ease-in-out infinite}`);
+      const c = cols[Math.floor(rnd() * cols.length)];
+      const fl = P.glow ? ` filter="url(#${u}gl)"` : z === 2 ? ` filter="url(#${u}bl)"` : z === 0 ? ` filter="url(#${u}bs)"` : '';
+      els.push(`<g class="${u}m${i}" opacity="${op}"${fl}><g class="${u}r${i}">${shape(c, z)}</g></g>`);
+    }
+    const blend = P.glow ? ' style="mix-blend-mode:screen"' : '';
+    return { css: css.join(''), svg: `<defs>${filt}</defs><g${blend}>${els.join('')}</g>` };
   }
-  /** Põe a camada de partículas por cima de um SVG pronto. */
+  /** Normaliza o pedido: um objeto {kind} antigo ou {layers:[…]} → lista de camadas. */
+  const layersOf = (opts) => (!opts ? [] : Array.isArray(opts) ? opts : Array.isArray(opts.layers) ? opts.layers : opts.kind ? [opts] : []).filter((l) => l && PARTS[l.kind]).slice(0, 5);
+  /** Põe as camadas de elementos por cima de um SVG pronto (efeito: tela toda; moldura: em volta do avatar). */
   function withParticles(svg, cat, opts, palette, seed) {
-    if (!svg || !opts || !PARTS[opts.kind]) return svg;
+    const layers = layersOf(opts);
+    if (!svg || !layers.length) return svg;
     const { w: W, h: H } = CANVAS[cat];
-    const L = particleLayer(W, H, opts, palette, seed);
+    const ring = cat === 'decorations' ? { cx: 144, cy: 144, r0: 118, r1: 142 } : null;
+    let css = '', body = '';
+    layers.forEach((l, k) => { const L = particleLayer(W, H, l, palette, seed + k * 13, 'abcde'[k], ring); css += L.css; body += L.svg; });
     if (!svg.includes('</style>')) svg = svg.replace(/(<svg[^>]*>)/, '$1<style></style>');
-    return svg.replace('</style>', L.css + '</style>').replace(/<\/svg>\s*$/, L.svg + '</svg>');
+    return svg.replace('</style>', css + '</style>').replace(/<\/svg>\s*$/, body + '</svg>');
+  }
+  /** Transição da entrada (estudo: flash de luz que estoura e revela; corte seco; dissolver). */
+  function withIntroFx(svg, cat, kind, color) {
+    if (!svg || !kind || kind === 'nenhuma') return svg;
+    const { w: W, h: H } = CANVAS[cat];
+    const c = /^#[0-9a-f]{6}$/i.test(color || '') ? color : '#FFF4C2';
+    let css = '', body = '';
+    if (kind === 'flash') {
+      css = `@keyframes tfl{0%{opacity:0}8%{opacity:1}40%{opacity:0}100%{opacity:0}}.tfl{opacity:0;animation:tfl 1.4s ease-out both;mix-blend-mode:screen}`;
+      body = `<defs><radialGradient id="tfg"><stop offset="0" stop-color="#fff"/><stop offset=".4" stop-color="${c}"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></radialGradient></defs><rect class="tfl" width="${W}" height="${H}" fill="url(#tfg)"/>`;
+    } else if (kind === 'dissolver') {
+      css = `@keyframes tds{0%{opacity:1}100%{opacity:0}}.tds{animation:tds 1.2s ease-in both}`;
+      body = `<defs><filter id="tdf"><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="3"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.3"/></filter></defs><rect class="tds" width="${W}" height="${H}" fill="#000" filter="url(#tdf)" opacity=".85"/>`;
+    } else if (kind === 'corte') {
+      css = `@keyframes tct{0%,12%{opacity:1}13%,100%{opacity:0}}.tct{animation:tct 1s steps(1,end) both}`;
+      body = `<rect class="tct" width="${W}" height="${H}" fill="#000"/>`;
+    }
+    if (!svg.includes('</style>')) svg = svg.replace(/(<svg[^>]*>)/, '$1<style></style>');
+    return svg.replace('</style>', css + '</style>').replace(/<\/svg>\s*$/, body + '</svg>');
   }
 
   function flipbookSvgs(cat, frames, seconds, variant, introFrames, introSeconds) {
@@ -1079,10 +1196,6 @@ ${isparks}</svg>`;
         const c0 = document.createElement('canvas'); c0.width = W; c0.height = H;
         coverInto(c0.getContext('2d', { willReadFrequently: true }), pick[0], cat, focus);
         palette = paletteOf(c0.getContext('2d', { willReadFrequently: true }), W, H);
-        if (cat === 'effects' && shapes.particles) {
-          asset.svg = withParticles(asset.svg, cat, shapes.particles, palette, 7);
-          if (asset.introSvg) asset.introSvg = withParticles(asset.introSvg, cat, shapes.particles, palette, 7);
-        }
       } else {
         if (cat === 'effects' && STUDY.loop) {
           // imagem parada: entrada com o mapa da entrada; loop leve com o mapa do loop
@@ -1091,13 +1204,19 @@ ${isparks}</svg>`;
           const a1 = buildSvgs(cat, artI, 11, motion[cat] || {}), a2 = buildSvgs(cat, artL, 11, motion[cat] || {});
           asset = { type: 'svg', ...a1, svg: a2.svg, loopSeconds: a2.loopSeconds };
           palette = artI.palette;
-          if (shapes.particles) { asset.svg = withParticles(asset.svg, cat, shapes.particles, palette, 7); asset.introSvg = withParticles(asset.introSvg, cat, shapes.particles, palette, 7); }
         } else {
           const art = await processImage(null, cat, { canvas: media.frames[0], focus, variant });
           asset = { type: 'svg', ...buildSvgs(cat, art, 11, motion[cat] || {}) };
           palette = art.palette;
         }
       }
+      // elementos animados por cima (escolhidos na tela ou identificados pela IA nos quadros)
+      const el = shapes.elements && shapes.elements[cat];
+      if (el && (cat === 'effects' || cat === 'decorations')) {
+        asset.svg = withParticles(asset.svg, cat, el, palette, 7);
+        if (asset.introSvg) asset.introSvg = withParticles(asset.introSvg, cat, el, palette, 7);
+      }
+      if (cat === 'effects' && asset.introSvg && shapes.transition) asset.introSvg = withIntroFx(asset.introSvg, cat, shapes.transition, palette && palette[0]);
       if (cat === 'frames') asset.wrap = FRAME_WRAP;
       const base = (media.name || '').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim();
       out.push({
@@ -1302,5 +1421,5 @@ ${isparks}</svg>`;
     };
   }
 
-  window.CosmeticIllustration = { PARTS, PART_WINDS, particleLayer, withParticles, shapeOptions, shapePreview, fromMedia, imageApi, FX_DEFAULT, FX_LABELS, fxFromText, remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
+  window.CosmeticIllustration = { PARTS, PART_WINDS, PART_REGIONS, particleLayer, withParticles, withIntroFx, layersOf, shapeOptions, shapePreview, fromMedia, imageApi, FX_DEFAULT, FX_LABELS, fxFromText, remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
 })();
