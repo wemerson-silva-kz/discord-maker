@@ -452,8 +452,109 @@ Para CADA formato que tiver referências, estude todas as referências daquele f
 - "preset": o movimento que mais combina, um de: rise (partículas/chamas sobem), fall (caem: chuva, pétalas, neve), drift (passam na horizontal: peixes, nuvens, vento), orbit (giram em volta), pulse (pulsam/brilham), sway (ondulam/balançam), sweep (faixa de brilho passando).
 - "intensidade": 1 (sutil), 2 (médio) ou 3 (forte).
 - "cores": 3 a 5 cores em hex que dominam as referências.
+- "efeitos": quais efeitos de animação combinam com o que se vê nos quadros (true/false para cada): ondular (a arte toda balança em faixas, como água/bandeira; só se a própria referência ondula), calor (distorção tremida), respirar (leve zoom/sobe-desce), brilho (brilho pulsando), faixa (faixa de luz passando), brilhos (estrelinhas piscando), particulas (pontinhos subindo/caindo), chamas (chamas lambendo). Na dúvida, false para ondular e calor. Se o usuário pediu para tirar ou colocar um efeito, obedeça.
 - "pedido": 1 frase descrevendo um NOVO item daquele formato, no mesmo sentido das referências, mas com o TEMA do usuário (não copie as referências; traga algo novo que pareça da mesma família). Se o usuário deu um detalhe para o formato, respeite-o.
-Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"formato": "nameplate|decoration|effect|frame", "visual": "...", "movimento": "...", "preset": "...", "intensidade": 2, "cores": ["#..."], "pedido": "..."}]}`;
+Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"formato": "nameplate|decoration|effect|frame", "visual": "...", "movimento": "...", "preset": "...", "intensidade": 2, "cores": ["#..."], "efeitos": {"ondular": false, "calor": false, "respirar": true, "brilho": true, "faixa": true, "brilhos": true, "particulas": true, "chamas": false}, "pedido": "..."}]}`;
+
+  /* ---------- Efeitos de movimento (ondular, calor, brilhos…) ---------- */
+  const FX_STORAGE = 'cosmetic-studio:gen-fx';
+  const FX_AI_STORAGE = 'cosmetic-studio:gen-fx-ai';
+  const FX_AI_KEYS = { ondular: 'wave', calor: 'heat', respirar: 'breathe', brilho: 'glow', faixa: 'shine', brilhos: 'sparkles', particulas: 'motes', chamas: 'licks' };
+  function fxFromAi(e) {
+    const out = {};
+    if (e && typeof e === 'object') Object.entries(FX_AI_KEYS).forEach(([pt, key]) => { if (typeof e[pt] === 'boolean') out[key] = e[pt]; });
+    return out;
+  }
+  function fxState() {
+    if (!ui.fx) {
+      try { ui.fx = JSON.parse(store.get(FX_STORAGE) || '{}') || {}; } catch (e) { ui.fx = {}; }
+      ui.fxAi = store.get(FX_AI_STORAGE) !== '0';
+    }
+    return ui.fx;
+  }
+  /** Efeitos finais: escolhas na tela → sugestão da IA (se "IA escolhe") → o que o texto pede. */
+  function fxFor(text, aiFx) {
+    const I = window.CosmeticIllustration;
+    if (!I) return {};
+    return { ...I.FX_DEFAULT, ...fxState(), ...(ui.fxAi ? aiFx || {} : {}), ...I.fxFromText(text) };
+  }
+  function renderFx() {
+    const box = $('#gen-fx');
+    const I = window.CosmeticIllustration;
+    if (!box || !I) return;
+    const st = fxState();
+    box.innerHTML = '';
+    Object.entries(I.FX_LABELS).forEach(([key, label]) => {
+      const l = document.createElement('label');
+      l.className = 'gen-check';
+      const i = document.createElement('input');
+      i.type = 'checkbox';
+      i.checked = { ...I.FX_DEFAULT, ...st }[key];
+      i.addEventListener('change', () => { ui.fx[key] = i.checked; store.set(FX_STORAGE, JSON.stringify(ui.fx)); });
+      const sp = document.createElement('span');
+      sp.textContent = label;
+      l.append(i, sp);
+      box.appendChild(l);
+    });
+    const ai = $('#gen-fx-ai');
+    if (ai) ai.checked = ui.fxAi;
+  }
+
+  /* ---------- Mídia colada (Pinterest, imagem, GIF, vídeo) ---------- */
+  async function loadMedia(getter) {
+    if (!window.CosmeticMediaRef) return CS.toast('Módulo de mídia não carregou. Atualize a página.', 'danger');
+    const st = $('#gen-media-status');
+    st.textContent = 'Lendo a mídia…';
+    try {
+      const m = await getter();
+      if (!m.frames.length) throw new Error('Não achei nenhum quadro.');
+      ui.media = m;
+      renderMedia();
+      CS.toast(`Mídia carregada (${m.kind}, ${m.frames.length} quadro(s)). A IA vai usá-la para gerar os formatos marcados.`, 'success');
+      if (m.note) CS.toast(m.note, 'info');
+    } catch (e) {
+      console.warn('[Mídia]', e);
+      st.textContent = '';
+      CS.toast(e.message || 'Não deu para ler a mídia.', 'danger');
+    }
+  }
+  function renderMedia() {
+    const box = $('#gen-media-preview');
+    const st = $('#gen-media-status');
+    box.innerHTML = '';
+    const m = ui.media;
+    $('#gen-prompt').required = !m && !refsResolved().length;
+    if (!m) { st.textContent = ''; box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    m.frames.forEach((f) => {
+      const img = document.createElement('img');
+      img.src = f.toDataURL('image/jpeg', 0.7);
+      img.alt = '';
+      img.className = 'h-16 rounded-md border border-white/10';
+      box.appendChild(img);
+    });
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'btn btn-sm btn-secondary self-center';
+    x.textContent = '✕ Remover';
+    x.addEventListener('click', () => { ui.media = null; renderMedia(); });
+    box.appendChild(x);
+    st.textContent = `${m.kind} · ${m.frames.length} quadro(s)${m.animated ? ' ao longo do tempo' : ''} · ${m.name} `;
+    if (m.videoUrl) {
+      const a = document.createElement('a');
+      a.href = m.videoUrl; a.target = '_blank'; a.rel = 'noopener';
+      a.className = 'text-[#00A8FC] hover:underline';
+      a.textContent = '(abrir o vídeo para baixar)';
+      st.appendChild(a);
+    }
+  }
+  /** A mídia vira uma referência para CADA formato pedido. */
+  function mediaGroups(cats) {
+    if (!ui.media || !window.CosmeticMediaRef) return {};
+    const out = {};
+    cats.forEach((cat) => { out[cat] = [{ name: `Mídia do usuário (${ui.media.kind})`, ...window.CosmeticMediaRef.stripOf(ui.media, cat) }]; });
+    return out;
+  }
 
   /** Monta as tiras de quadros das referências, agrupadas por formato. */
   async function refStrips(refs, cats, limit = 10) {
@@ -521,6 +622,7 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
         preset: MOTIONS.includes(f.preset) ? f.preset : 'rise',
         intensidade: Math.min(3, Math.max(1, Math.round(+f.intensidade || 2))),
         cores: (Array.isArray(f.cores) ? f.cores : []).filter((c) => /^#[0-9a-f]{6}$/i.test(c)).slice(0, 5),
+        fx: fxFromAi(f.efeitos),
       };
     });
     return res;
@@ -612,7 +714,7 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
     const system = systemFor(req, true);
     const user = userTextFor(req);
     const images = req.images.filter((i) => i.url || i.data).map((i) => (i.url ? i : { url: `data:${i.mime || 'image/png'};base64,${i.data}` }));
-    const userContent = images.length && cfg.provider === 'openai'
+    const userContent = images.length
       ? [{ type: 'text', text: user }, ...images.map((i) => ({ type: 'image_url', image_url: { url: i.url } }))]
       : user;
     const headers = { 'Content-Type': 'application/json' };
@@ -1398,7 +1500,7 @@ ${lines.join('\n\n')}`;
     $('#gen-prompt').placeholder = list.length
       ? 'Opcional: descreva o que mudar (ex.: versão sombria, com nuvens escuras)'
       : 'Ex.: dragão de jade cuspindo fogo verde em um templo nas nuvens';
-    $('#gen-prompt').required = !list.length;
+    $('#gen-prompt').required = !list.length && !ui.media;
   }
   /** Miniatura de um item para chips e para o seletor. */
   function refThumb(cat, item, size) {
@@ -1528,6 +1630,7 @@ ${lines.join('\n\n')}`;
     return {
       provider: PROVIDERS[cfg.provider] ? cfg.provider : 'gemini',
       models: cfg.models || {},
+      imageModels: cfg.imageModels || {},
       baseUrls: cfg.baseUrls || {},
       keys: cfg.keys || {},
       remember: !!cfg.remember,
@@ -1536,15 +1639,28 @@ ${lines.join('\n\n')}`;
   const ai = loadAiSettings();
   function persistAiSettings() {
     store.set(AI_STORAGE, JSON.stringify({
-      provider: ai.provider, models: ai.models, baseUrls: ai.baseUrls, remember: ai.remember,
+      provider: ai.provider, models: ai.models, imageModels: ai.imageModels, baseUrls: ai.baseUrls, remember: ai.remember,
       keys: ai.remember ? ai.keys : {},
     }));
   }
 
-  /** Modelo sugerido: no modo Ilustração, o modelo de IMAGEM do provedor (se tiver). */
+  /** Modelo de texto/visão sugerido do provedor. */
   function defaultModel(provider) {
+    return PROVIDERS[provider].model;
+  }
+  const isImageModel = (m) => /(^|[-/._])image|gpt-image|dall-e|imagen|^wan\d|flux|stable-diffusion|sdxl|seedream|recraft/i.test(String(m || ''));
+  /** Modelo de imagem sugerido (Alibaba: qwen-image). */
+  function defaultImageModel(provider) {
     const p = PROVIDERS[provider];
-    return (ui.mode === 'raster' && p.imageModel) || p.model;
+    if (p.imageModel) return p.imageModel;
+    const base = ai.baseUrls[provider] ?? p.base ?? '';
+    if (/aliyuncs|dashscope/i.test(base)) return 'qwen-image-3.0';
+    return '';
+  }
+  function imageModelValue() {
+    const v = ($('#gen-image-model') && $('#gen-image-model').value.trim()) || '';
+    const txt = $('#gen-model').value.trim();
+    return v || (isImageModel(txt) ? txt : '') || defaultImageModel(ai.provider);
   }
 
   function renderProvider() {
@@ -1552,6 +1668,8 @@ ${lines.join('\n\n')}`;
     $('#gen-provider').value = ai.provider;
     $('#gen-model').value = ai.models[ai.provider] ?? defaultModel(ai.provider);
     $('#gen-model').placeholder = defaultModel(ai.provider) || 'nome-do-modelo';
+    $('#gen-image-model').value = ai.imageModels[ai.provider] ?? defaultImageModel(ai.provider);
+    $('#gen-image-model').placeholder = defaultImageModel(ai.provider) || 'sem modelo de imagem';
     $('#gen-baseurl').value = ai.baseUrls[ai.provider] ?? p.base ?? '';
     $('#gen-baseurl-box').classList.toggle('hidden', !p.editableBase);
     $('#gen-key').value = ai.keys[ai.provider] || '';
@@ -1564,25 +1682,56 @@ ${lines.join('\n\n')}`;
 
   /** Preenche a lista de modelos (hoje: Gemini) a partir da chave informada. */
   let modelListSeq = 0;
+  function fillList(dl, ids) {
+    dl.innerHTML = '';
+    ids.forEach((m) => { const o = document.createElement('option'); o.value = m.id || m; if (m.label) o.label = m.label; dl.appendChild(o); });
+  }
   async function refreshModelList() {
     const dl = $('#gen-models');
+    const il = $('#gen-image-models');
     dl.innerHTML = '';
+    il.innerHTML = '';
     const p = PROVIDERS[ai.provider];
     const key = $('#gen-key').value.trim();
+    const info = $('#gen-models-info');
+    info.textContent = '';
+    if (p.native !== 'gemini' && ai.provider !== 'anthropic') {
+      const base = ($('#gen-baseurl').value.trim() || p.base || '').replace(/\/+$/, '');
+      if (!/^https?:\/\//.test(base) || (!key && !p.keyOptional)) return;
+      const seq = ++modelListSeq;
+      try {
+        const res = await fetch(base + '/models', { headers: key ? { Authorization: 'Bearer ' + key } : {} });
+        const j = await res.json().catch(() => null);
+        if (seq !== modelListSeq) return;
+        if (!res.ok) throw new Error((j && j.error && (j.error.message || j.error)) || 'HTTP ' + res.status);
+        const ids = ((j && j.data) || []).map((m) => m.id).filter(Boolean).sort();
+        const imgs = ids.filter(isImageModel);
+        const txt = ids.filter((m) => !isImageModel(m));
+        fillList(dl, txt);
+        fillList(il, imgs);
+        const vision = txt.filter((m) => /vl|vision|omni|4o|gemini|claude|pixtral|llava|qwen3\.[5-9]|qwen4|kimi-k[23]/i.test(m));
+        info.textContent = `${ids.length} modelos na sua conta: ${txt.length} de texto${vision.length ? ` (com visão, para ler vídeo/imagem: ${vision.slice(0, 4).join(', ')}${vision.length > 4 ? '…' : ''})` : ''} e ${imgs.length} de imagem${imgs.length ? ` (${imgs.slice(0, 4).join(', ')}${imgs.length > 4 ? '…' : ''})` : ''}. Clique no campo para ver a lista.`;
+        const cur = $('#gen-model').value.trim();
+        if (ids.length && cur && !ids.includes(cur)) info.textContent = `⚠ "${cur}" não existe nesta conta. ` + info.textContent;
+        if (!ai.imageModels[ai.provider] && imgs.length && !imgs.includes($('#gen-image-model').value.trim())) {
+          $('#gen-image-model').value = imgs.find((m) => /qwen-image|gpt-image|image/i.test(m) && !/edit|pro/i.test(m)) || imgs[0];
+        }
+      } catch (e) {
+        if (seq === modelListSeq) info.textContent = `Não deu para listar os modelos (${e.message}). Você pode digitar o nome.`;
+      }
+      return;
+    }
     if (p.native !== 'gemini' || !key) return;
     const seq = ++modelListSeq;
     try {
       const models = await listGeminiModels(key);
       if (seq !== modelListSeq) return;
-      models.forEach((m) => {
-        const o = document.createElement('option');
-        o.value = m.id;
-        o.label = m.label;
-        dl.appendChild(o);
-      });
+      fillList(dl, models.filter((m) => !isImageModel(m.id)));
+      fillList(il, models.filter((m) => isImageModel(m.id)));
+      if (!ai.imageModels[ai.provider]) { const bi = pickGeminiImageModel(models); if (bi) $('#gen-image-model').value = bi; }
       const current = geminiModelName($('#gen-model').value);
       if (models.length && !models.some((m) => m.id === current) && !ai.models[ai.provider]) {
-        const best = (ui.mode === 'raster' && pickGeminiImageModel(models)) || pickGeminiModel(models);
+        const best = pickGeminiModel(models);
         if (best) {
           $('#gen-model').value = best;
           $('#gen-provider-hint').textContent = `${p.hint} Modelo escolhido automaticamente: ${best} (${models.length} disponíveis).`;
@@ -1669,12 +1818,37 @@ ${lines.join('\n\n')}`;
     return added;
   }
 
+  /** Mídia como arte: os formatos saem da própria mídia, animados com os quadros reais. */
+  async function generateFromMedia(cats, prompt) {
+    if (!window.CosmeticIllustration || !window.CosmeticMediaRef) return CS.toast('Módulos não carregaram. Atualize a página.', 'danger');
+    setBusy(true, 'Recortando a sua mídia em cada formato…');
+    showSkeletons(cats.length);
+    try {
+      const hi = await window.CosmeticMediaRef.artFrames(ui.media);
+      const motion = {};
+      cats.forEach((cat) => { motion[cat] = { fx: fxFor(prompt || '') }; });
+      const list = await window.CosmeticIllustration.fromMedia(cats, { ...hi, name: ui.media.name, kind: ui.media.kind }, motion);
+      list.forEach((it) => {
+        if (it.cat === 'nameplates' && it.palette && it.palette[0]) it.raw.asset.discordPalette = nearestDiscordPalette(it.palette[0]);
+      });
+      $$('#gen-results .gen-skeleton').forEach((n) => n.remove());
+      const added = addResults(list);
+      added.forEach((a, i) => { if (list[i] && list[i].quality) ui.quality.set(a.id, list[i].quality); });
+      renderResults();
+      CS.toast(`${list.length} item(ns) feitos com a sua mídia${hi.frames.length > 1 ? `, animados com ${hi.frames.length} quadros reais` : ''}.`, 'success');
+    } catch (err) {
+      console.error('[Mídia como arte]', err);
+      $$('#gen-results .gen-skeleton').forEach((n) => n.remove());
+      renderResults();
+      CS.toast(err.message || 'Falha ao usar a mídia.', 'danger');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /** Modo Ilustração: o modelo de imagem pinta, o app recorta, protege as zonas e anima. */
   async function generateIllustrations(prompt, cats, refs, cfg, details = {}) {
     const native = PROVIDERS[cfg.provider] && PROVIDERS[cfg.provider].native === 'gemini' ? 'gemini' : cfg.provider;
-    if (native !== 'gemini' && native !== 'openai') {
-      return CS.toast('O modo Ilustração precisa do Google Gemini (modelo "…-image") ou da OpenAI (gpt-image).', 'danger');
-    }
     if (!window.CosmeticIllustration) return CS.toast('Módulo de ilustração não carregou. Atualize a página.', 'danger');
     setBusy(true, 'Pintando as ilustrações… isso leva de 10 a 40 s por item.');
     showSkeletons(cats.length);
@@ -1685,9 +1859,10 @@ ${lines.join('\n\n')}`;
       // descrição + 1 quadro de referência (mais que isso ele cola as referências lado a lado).
       const refsByCat = {}, motion = {}, perCat = { ...details };
       const mine = refs.filter((r) => cats.includes(r.cat));
-      if (mine.length) {
-        setBusy(true, `Lendo ${mine.length} referência(s) quadro a quadro…`);
+      if (mine.length || ui.media) {
+        setBusy(true, ui.media ? 'Assistindo a mídia quadro a quadro…' : `Lendo ${mine.length} referência(s) quadro a quadro…`);
         const groups = await refStrips(mine, cats, 12);
+        Object.entries(mediaGroups(cats)).forEach(([cat, list]) => { groups[cat] = [...list, ...(groups[cat] || [])]; });
         if (Object.keys(groups).length) {
           setBusy(true, 'Estudando as referências (visual e movimento)…');
           let an = {};
@@ -1697,9 +1872,9 @@ ${lines.join('\n\n')}`;
           }
           Object.entries(an).forEach(([cat, a]) => {
             perCat[cat] = [details[cat], a.pedido, a.visual && `Keep the look of the user's references: ${a.visual}`, a.movimento && `Their motion: ${a.movimento}`].filter(Boolean).join('. ');
-            motion[cat] = { preset: a.preset, intensity: a.intensidade };
+            motion[cat] = { preset: a.preset, intensity: a.intensidade, fx: fxFor([prompt, details[cat]].join(' '), a.fx) };
           });
-          if (native === 'gemini') Object.entries(groups).forEach(([cat, list]) => { refsByCat[cat] = [{ mime: 'image/png', data: list[0].first }]; });
+          if (native !== 'openai') Object.entries(groups).forEach(([cat, list]) => { refsByCat[cat] = [{ mime: 'image/png', data: list[0].first }]; });
         }
         cats.forEach((cat) => {
           if (perCat[cat]) return;
@@ -1707,9 +1882,11 @@ ${lines.join('\n\n')}`;
           if (names.length) perCat[cat] = 'In the spirit of: ' + names.join(', ');
         });
       }
-      const theme = prompt || 'tema livre, item premium';
-      const list = await window.CosmeticIllustration.generate({ prompt: theme, cats, details: perCat }, { ...cfg, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl }, {
+      cats.forEach((cat) => { if (!motion[cat]) motion[cat] = { fx: fxFor([prompt, details[cat]].join(' ')) }; });
+      const theme = prompt || (ui.media ? 'o mesmo tema e visual da mídia de referência' : 'tema livre, item premium');
+      const list = await window.CosmeticIllustration.generate({ prompt: theme, cats, details: perCat }, { ...cfg, model: cfg.imageModel, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl }, {
         refs: refsByCat,
+        fromMedia: !!ui.media,
         motion,
         onProgress: (msg) => setBusy(true, msg + ' (10 a 40 s por item)'),
       });
@@ -1739,11 +1916,14 @@ ${lines.join('\n\n')}`;
     let details = {};
     const cats = selectedCats();
     const refs = refsResolved();
-    if (!prompt && !refs.length) {
+    if (!prompt && !refs.length && !ui.media) {
       $('#gen-prompt').focus();
       return CS.toast('Descreva um tema ou escolha referências da biblioteca.', 'danger');
     }
     if (!cats.length) return CS.toast('Escolha pelo menos uma categoria.', 'danger');
+
+    // Mídia do usuário como arte: recorta, protege as zonas e anima com os quadros reais (sem IA)
+    if (ui.media && ui.mediaArt) return generateFromMedia(cats, prompt);
 
     if (ui.engine === 'ai') {
       const preset = PROVIDERS[ai.provider];
@@ -1751,8 +1931,10 @@ ${lines.join('\n\n')}`;
         provider: ai.provider,
         key: $('#gen-key').value.trim(),
         model: $('#gen-model').value.trim() || preset.model,
+        imageModel: imageModelValue(),
         baseUrl: $('#gen-baseurl').value.trim() || preset.base,
       };
+      if (isImageModel(cfg.model)) cfg.model = textModelFor(cfg);
       if (!cfg.key && !preset.keyOptional) {
         $('#gen-key').focus();
         return CS.toast(`Cole sua chave da ${preset.label} ou troque para o motor Local.`, 'danger');
@@ -1778,15 +1960,10 @@ ${lines.join('\n\n')}`;
       ({ theme: prompt, details } = parsePrompt(prompt));
       let mode = cats.includes('frames') && ui.mode === 'particles' ? 'svg' : ui.mode;
       if (mode !== ui.mode) CS.toast('Profile frames são desenhados no estilo Arte (SVG).', 'info');
-      // Modelo de IMAGEM escolhido num modo de código: ele escreve SVG muito mal — usa o modo Ilustração
-      if (mode !== 'raster' && /(^|[-/])image|gpt-image|dall-e|imagen/i.test(cfg.model)) {
-        mode = 'raster';
-        CS.toast(`"${cfg.model}" é um modelo de imagem: usando o modo Ilustração.`, 'info');
-      }
-      // Ilustração (padrão) só existe no Gemini e na OpenAI: nos demais provedores, desenha em SVG
-      if (mode === 'raster' && preset.native !== 'gemini' && ai.provider !== 'openai') {
+      // Ilustração precisa de um modelo de IMAGEM; sem ele, desenha em SVG
+      if (mode === 'raster' && !cfg.imageModel) {
         mode = 'svg';
-        CS.toast(`${preset.label.replace(/\s*\(.*\)$/, '')} não gera imagens: usando o estilo Arte (SVG).`, 'info');
+        CS.toast('Escolha um "Modelo de imagem" para o modo Ilustração. Sem ele, usando o estilo Arte (SVG).', 'info');
       }
       if (mode === 'raster') return generateIllustrations(prompt, cats, refs, cfg, details);
       setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está ${mode === 'svg' ? 'desenhando a arte' : 'montando'} do seu kit… ${mode === 'svg' ? 'isso pode levar até 1–2 minutos.' : 'isso leva alguns segundos.'}`);
@@ -1807,6 +1984,11 @@ ${lines.join('\n\n')}`;
         }
       }
       setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está ${mode === 'svg' ? 'desenhando a arte' : 'montando'} do seu kit…`);
+      if (ui.media && window.CosmeticMediaRef) {
+        const st = window.CosmeticMediaRef.stripOf(ui.media, cats[0]);
+        req.images.unshift({ mime: st.mime, data: st.data });
+        req.refs.unshift({ cat: cats[0], item: { name: `Mídia do usuário (${ui.media.kind})`, description: 'Vale para TODOS os formatos pedidos: reproduza o tema, as cores, os elementos e o movimento que aparecem nos quadros.', asset: { type: 'image' } }, hasImage: true, frames: st.frames, animated: st.animated });
+      }
       if (mode === 'svg' && ui.styleRefs) {
         req.styleRefs = styleExamples(cats, prompt, cats.length > 2 ? 1 : 2).slice(0, Math.max(0, 4 - req.images.length));
         for (const x of req.styleRefs) {
@@ -1960,7 +2142,7 @@ ${lines.join('\n\n')}`;
   /** Configuração do provedor atual (ou null, com aviso). */
   function aiConfig() {
     const preset = PROVIDERS[ai.provider];
-    const cfg = { provider: ai.provider, key: $('#gen-key').value.trim(), model: $('#gen-model').value.trim() || preset.model, baseUrl: $('#gen-baseurl').value.trim() || preset.base };
+    const cfg = { provider: ai.provider, key: $('#gen-key').value.trim(), model: $('#gen-model').value.trim() || preset.model, imageModel: imageModelValue(), baseUrl: $('#gen-baseurl').value.trim() || preset.base };
     if (!cfg.key && !preset.keyOptional) { $('#gen-key').focus(); CS.toast(`Para refazer, cole sua chave da ${preset.label}.`, 'danger'); return null; }
     return cfg;
   }
@@ -1982,8 +2164,8 @@ ${lines.join('\n\n')}`;
       let raw, quality;
       if (isIllustration) {
         const native = PROVIDERS[cfg.provider].native === 'gemini' ? 'gemini' : cfg.provider;
-        if (native !== 'gemini' && native !== 'openai') throw new Error('Ilustrações são refeitas com o Gemini (modelo "…-image") ou a OpenAI (gpt-image).');
-        const r = await window.CosmeticIllustration.remake(cat, item, instruction, { ...cfg, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl });
+        if (!cfg.imageModel) throw new Error('Escolha um "Modelo de imagem" para refazer ilustrações.');
+        const r = await window.CosmeticIllustration.remake(cat, item, instruction, { ...cfg, model: cfg.imageModel, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl }, { fx: fxFor(instruction) });
         if (cat === 'nameplates' && r.palette && r.palette[0]) r.asset.discordPalette = nearestDiscordPalette(r.palette[0]);
         raw = { name: name + ' ✎', description: instruction.slice(0, 150), rarity: item.rarity, tags: item.tags, prompt: [item.prompt, instruction].filter(Boolean).join(' — ').slice(0, 2000), engine: native, engineLabel: r.label, asset: r.asset };
         quality = { ok: true, issues: [], summary: '✓ refeito · zonas protegidas' };
@@ -2065,9 +2247,19 @@ ${current}`;
       ai.models[ai.provider] = e.target.value.trim();
       persistAiSettings();
     });
+    $('#gen-image-model').addEventListener('change', (e) => {
+      ai.imageModels[ai.provider] = e.target.value.trim();
+      persistAiSettings();
+    });
+    const mart = $('#gen-media-art');
+    ui.mediaArt = store.get('cosmetic-studio:gen-media-art') !== '0';
+    mart.checked = ui.mediaArt;
+    mart.addEventListener('change', () => { ui.mediaArt = mart.checked; store.set('cosmetic-studio:gen-media-art', ui.mediaArt ? '1' : '0'); });
     $('#gen-baseurl').addEventListener('change', (e) => {
       ai.baseUrls[ai.provider] = e.target.value.trim();
       persistAiSettings();
+      if (!ai.imageModels[ai.provider]) $('#gen-image-model').value = defaultImageModel(ai.provider);
+      refreshModelList();
     });
     $('#gen-key').addEventListener('change', (e) => {
       ai.keys[ai.provider] = e.target.value.trim();
@@ -2095,6 +2287,35 @@ ${current}`;
 
     $('#gen-form').addEventListener('submit', onGenerate);
     $('#gen-refs-add').addEventListener('click', openPicker);
+    renderFx();
+    const fxAi = $('#gen-fx-ai');
+    if (fxAi) fxAi.addEventListener('change', () => { ui.fxAi = fxAi.checked; store.set(FX_AI_STORAGE, ui.fxAi ? '1' : '0'); });
+    const mUrl = $('#gen-media-url');
+    const loadUrl = () => { const v = mUrl.value.trim(); if (v) loadMedia(() => window.CosmeticMediaRef.fromUrl(v)); };
+    $('#gen-media-load').addEventListener('click', loadUrl);
+    mUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); loadUrl(); } });
+    mUrl.addEventListener('paste', () => setTimeout(loadUrl, 0));
+    $('#gen-media-file').addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (file) loadMedia(() => window.CosmeticMediaRef.fromFile(file));
+    });
+    const drop = $('#gen-media-box');
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('ring-2', 'ring-[#5865F2]'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('ring-2', 'ring-[#5865F2]'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('ring-2', 'ring-[#5865F2]');
+      const file = e.dataTransfer.files && e.dataTransfer.files[0];
+      const txt = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+      if (file) loadMedia(() => window.CosmeticMediaRef.fromFile(file));
+      else if (txt) { mUrl.value = txt.trim(); loadUrl(); }
+    });
+    // Colar uma imagem/vídeo (Ctrl+V) em qualquer lugar do gerador
+    $('#gen-form').addEventListener('paste', (e) => {
+      const file = [...((e.clipboardData && e.clipboardData.files) || [])].find((f) => /^(image|video)\//.test(f.type));
+      if (file) { e.preventDefault(); loadMedia(() => window.CosmeticMediaRef.fromFile(file)); }
+    });
     const rv = $('#gen-review');
     const sr = $('#gen-style');
     if (sr) {
@@ -2146,8 +2367,6 @@ ${current}`;
       if (!b) return;
       ui.mode = b.dataset.mode;
       store.set(MODE_STORAGE, ui.mode);
-      // Sem modelo escolhido pelo usuário: o campo acompanha o modo (imagem × texto)
-      if (!ai.models[ai.provider]) renderProvider();
       $$('#gen-mode button').forEach((x) => x.classList.toggle('is-active', x === b));
     });
     renderRefs();

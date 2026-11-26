@@ -32,10 +32,10 @@
   const STYLE = 'Polished 2D game cosmetic illustration in the style of official Discord shop items: clean cel shading with 2-3 tones per color, crisp smooth edges, soft rim light, a short harmonious palette (one dominant color, one support, one accent), bright and readable at small size, a few big well-drawn shapes rather than clutter. No text, no letters, no numbers, no logos, no watermark, no UI elements, no photo realism, no 3D render look.';
 
   const LAYOUT = {
-    decorations: 'FORMAT: square avatar decoration. The artwork is a decorative ring that wraps around an EMPTY CIRCULAR HOLE in the exact center of the image; the hole diameter is about 72% of the image width and must contain only background. Place the main ornament on the top or a top corner of the ring and smaller accents around the rest so it feels balanced. The art hugs the hole edge and stays inside the image borders.',
+    decorations: 'FORMAT: square avatar decoration. The avatar is a circle in the exact center whose diameter is 83% of the image width; the artwork sits AROUND it, hugging its edge from the outside, and only small parts (a paw, a leaf, a horn tip) may overlap the avatar edge — the avatar itself stays clear background. The ring is NOT a solid band: leave about a quarter of the way around empty, with a few big well-drawn elements instead of a continuous wreath. Put the main ornament on the top or a top corner, more weight on the top and the sides than on the bottom. Everything stays inside the image borders.',
     nameplates: 'FORMAT: very wide horizontal banner ornament. All artwork must sit inside the central horizontal band (the middle 40% of the image height); everything above and below that band is plain background. The LEFT HALF of the image is completely empty background. The illustration grows in density toward the right end, with the main motif on the far right.',
     effects: 'FORMAT: tall vertical overlay effect for a profile card, like the official Discord profile effects. The scene lives in the TOP HALF: it is densest across the very top (the banner area, top 25% of the height) and spills down to about 55% of the height, getting lighter as it goes down (e.g. garlands, bunting, fireworks, flames, petals, clouds hanging from the top). The bottom 40% of the image is empty background, with at most a few tiny floating particles. Keep the small circle near the top-left corner (centered at about 18% of the width and 16% of the height, the avatar) mostly clear. Do not draw any circle, frame or dark shape behind the avatar area. No thick columns down the sides.',
-    frames: 'FORMAT: tall ornamental frame that WRAPS AROUND a tall portrait profile card, like the official Discord profile frames. Imagine an empty rounded rectangle (the card) occupying the middle of the image: from 4% to 96% of the width and from 12% to 92% of the height — it must stay empty background. The frame sits OUTSIDE that rectangle: a rich main ornament crowns the TOP edge and rises above it (e.g. a mask with eyes, horns, a roof, a creature peeking over the card), a smaller ornament sits on the BOTTOM edge, and a SLIM border (only about 5% of the image width thick) runs down the left and right edges connecting them. No thick columns or pillars down the sides. Nothing inside the card area except the very edge.',
+    frames: 'FORMAT: tall ornamental frame that WRAPS AROUND a tall portrait profile card, like the official Discord profile frames. Imagine an empty rounded rectangle (the card) from 4.3% to 95.7% of the width and from 12% to 91.5% of the height — it must stay empty background. The frame lives OUTSIDE that rectangle: (1) a rich CROWN spans the whole width above the card, filling the top 12% of the image, and dips only slightly (about 2% of the height) over the card top edge; (2) a smaller BASE ornament sits along the bottom edge and rises only slightly over the card; (3) the left and right sides are either empty or a SLIM border about 4% of the image width thick, half of it outside the card; elements may spill partway down the sides from the crown. Proven layouts of the official frames: a creature or character peeking over the top with paws, legs or a tail along the bottom; flowers, leaves, crystals, clouds or flames clustered along the top and bottom edges; a thin elegant border with a main ornament centered at the top. Nothing inside the card area except the very edge. No thick columns or pillars.',
   };
   /* Acima disto (fração do canvas coberta) a arte é uma cena cheia, não elementos soltos. */
   const FULL_LIMIT = { effects: 0.42, decorations: 0.6, nameplates: 0.75, frames: 0.5 };
@@ -56,7 +56,7 @@
   }
 
   const STRICT = 'IMPORTANT: the previous attempt painted a full scene that filled the whole image. Draw ONLY the isolated decorative elements described above, with NO scenery, NO texture and NO backdrop behind them; most of the image must be plain flat background.';
-  function promptFor(cat, theme, provider, hasRefs, strict) {
+  function promptFor(cat, theme, provider, hasRefs, strict, fromMedia) {
     theme = cleanTheme(theme).replace(/[\s.]+$/, '');
     const bg = provider === 'gemini'
       ? 'BACKGROUND: perfectly flat solid pure green (#00FF00) everywhere outside the artwork — including any empty hole in the middle — with no gradient, texture, shadow, vignette or white margin. Do not use any green-screen green inside the artwork itself (if the theme needs green, use jade, emerald or teal tones that are clearly darker or bluer).'
@@ -69,7 +69,8 @@
       bg,
       'Also reply with one short line of text: NOME: <a creative item name in Brazilian Portuguese, 2 to 4 words>.',
       strict ? STRICT : '',
-      hasRefs ? 'The attached image is only an inspiration for colors and mood. Do NOT copy it and do NOT place it in the result.' : '',
+      fromMedia ? 'The attached image is the SOURCE ARTWORK chosen by the user. Recreate it as this format: keep exactly its art style, line work, shading, colors, subject and elements (e.g. the same moon, the same waves, the same clouds), only re-composed to fit the format above. It must clearly look like the same artwork.'
+        : hasRefs ? 'The attached image is only an inspiration for colors and mood. Do NOT copy it and do NOT place it in the result.' : '',
       'The output must be ONE image containing ONE object. No numbers, no captions, no panels, no grid.',
     ].filter(Boolean).join('\n\n');
   }
@@ -86,10 +87,10 @@
     return /^(gpt-image|dall-e)/i.test(m) ? m : DEFAULT_OPENAI_IMAGE;
   }
 
-  async function geminiImage(cat, theme, cfg, refs, strict) {
+  async function geminiImage(cat, theme, cfg, refs, strict, fromMedia) {
     const model = geminiImageModel(cfg.model);
     const url = `${(cfg.baseUrl || GEMINI_BASE).replace(/\/+$/, '')}/models/${encodeURIComponent(model)}:generateContent`;
-    const parts = [{ text: promptFor(cat, theme, 'gemini', refs.length > 0, strict) }, ...refs.map((r) => ({ inlineData: { mimeType: r.mime, data: r.data } }))];
+    const parts = [{ text: promptFor(cat, theme, 'gemini', refs.length > 0, strict, fromMedia && refs.length > 0) }, ...refs.map((r) => ({ inlineData: { mimeType: r.mime, data: r.data } }))];
     for (const withAspect of [true, false]) {
       const generationConfig = { responseModalities: ['TEXT', 'IMAGE'] };
       if (withAspect) generationConfig.imageConfig = { aspectRatio: ASPECT[cat].gemini };
@@ -153,6 +154,86 @@
     const b64 = data && data.data && data.data[0] && data.data[0].b64_json;
     if (!b64) throw new Error('A OpenAI não devolveu imagem.');
     return { mime: 'image/png', data: b64, model, keyed: false };
+  }
+
+  /* ---- Outras IAs com modelo de imagem ---- */
+  const IMG_PROXY = (u) => `https://wsrv.nl/?url=${encodeURIComponent(u)}&output=png`;
+  /** URL de imagem → base64 (tenta direto; sem CORS, usa um proxy de imagens). */
+  async function urlToB64(u) {
+    if (/^data:/.test(u)) { const [h, d] = u.split(','); return { mime: (h.match(/data:([^;]+)/) || [])[1] || 'image/png', data: d }; }
+    let blob = null;
+    try { const r = await fetch(u); if (r.ok) blob = await r.blob(); } catch (e) { /* sem CORS */ }
+    if (!blob) { const r = await fetch(IMG_PROXY(u)); if (!r.ok) throw new Error('Não deu para baixar a imagem gerada.'); blob = await r.blob(); }
+    const data = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
+    return { mime: blob.type || 'image/png', data };
+  }
+  /** Qual API de imagem usar para esta configuração. */
+  function imageApi(cfg) {
+    if (cfg.provider === 'gemini') return 'gemini';
+    if (cfg.provider === 'openai') return 'openai';
+    if (/aliyuncs\.com|dashscope/i.test(cfg.baseUrl || '')) return 'dashscope';
+    if (cfg.provider === 'openrouter' || /openrouter\.ai/i.test(cfg.baseUrl || '')) return 'chat-image';
+    return 'images-api';
+  }
+  const API_LABEL = { gemini: 'Gemini', openai: 'OpenAI', dashscope: 'Alibaba', 'chat-image': 'OpenRouter', 'images-api': 'IA' };
+  const DASH_SIZE = { nameplates: '1664*928', decorations: '1328*1328', effects: '928*1664', frames: '928*1664' };
+  /** Alibaba Model Studio (qwen-image, wan…): API nativa multimodal-generation. */
+  async function dashscopeImage(cat, prompt, cfg, images = []) {
+    const origin = new URL(cfg.baseUrl).origin;
+    const url = origin + '/api/v1/services/aigc/multimodal-generation/generation';
+    const tries = images.length ? [images, []] : [[]];
+    let lastErr;
+    for (const imgs of tries) {
+      for (const withSize of [true, false]) {
+        const parameters = { watermark: false, n: 1, prompt_extend: false };
+        if (withSize) parameters.size = DASH_SIZE[cat];
+        const content = [...imgs.map((i) => ({ image: `data:${i.mime};base64,${i.data}` })), { text: prompt }];
+        let res;
+        try {
+          res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + cfg.key }, body: JSON.stringify({ model: cfg.model, input: { messages: [{ role: 'user', content }] }, parameters }) });
+        } catch (e) { throw new Error('Não foi possível conectar à Alibaba.'); }
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          const msg = (data && (data.message || data.code)) || 'HTTP ' + res.status;
+          lastErr = new Error(`Alibaba (${cfg.model}): ${msg}`);
+          if (res.status === 429) { lastErr.retryAfter = 20; throw lastErr; }
+          if (res.status === 401 || res.status === 404) throw lastErr;
+          continue;
+        }
+        const parts = (((data.output || {}).choices || [])[0] || {}).message;
+        const found = ((parts && parts.content) || []).find((c) => c.image);
+        if (!found) { lastErr = new Error('A Alibaba não devolveu imagem.'); continue; }
+        return { ...(await urlToB64(found.image)), model: cfg.model, keyed: true };
+      }
+    }
+    throw lastErr || new Error('A Alibaba não aceitou o pedido.');
+  }
+  /** OpenRouter e afins: chat com saída de imagem (modalities). */
+  async function chatImage(cat, prompt, cfg, images = []) {
+    const base = (cfg.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+    const content = [{ type: 'text', text: prompt }, ...images.map((i) => ({ type: 'image_url', image_url: { url: `data:${i.mime};base64,${i.data}` } }))];
+    const res = await fetch(base + '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + cfg.key }, body: JSON.stringify({ model: cfg.model, modalities: ['image', 'text'], messages: [{ role: 'user', content }] }) });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) { const e = new Error(`${cfg.model}: ` + ((data && data.error && data.error.message) || 'HTTP ' + res.status)); if (res.status === 429) e.retryAfter = 20; throw e; }
+    const msg = data && data.choices && data.choices[0] && data.choices[0].message;
+    const img = msg && msg.images && msg.images[0];
+    const u = img && (img.image_url ? img.image_url.url : img.url);
+    if (!u) throw new Error(`"${cfg.model}" não devolveu imagem: escolha um modelo que gere imagens.`);
+    return { ...(await urlToB64(u)), model: cfg.model, keyed: true };
+  }
+  /** Qualquer API com /images/generations (Together, xAI, Fireworks…). */
+  async function imagesApi(cat, prompt, cfg) {
+    const base = (cfg.baseUrl || '').replace(/\/+$/, '');
+    let res;
+    try {
+      res = await fetch(base + '/images/generations', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(cfg.key ? { Authorization: 'Bearer ' + cfg.key } : {}) }, body: JSON.stringify({ model: cfg.model, prompt, n: 1, response_format: 'b64_json' }) });
+    } catch (e) { throw new Error('Não foi possível conectar à API de imagens.'); }
+    const data = await res.json().catch(() => null);
+    if (!res.ok) { const e = new Error(`${cfg.model}: ` + ((data && data.error && (data.error.message || data.error)) || 'HTTP ' + res.status)); if (res.status === 429) e.retryAfter = 20; throw e; }
+    const d = data && data.data && data.data[0];
+    if (d && d.b64_json) return { mime: 'image/png', data: d.b64_json, model: cfg.model, keyed: true };
+    if (d && d.url) return { ...(await urlToB64(d.url)), model: cfg.model, keyed: true };
+    throw new Error('A API não devolveu imagem.');
   }
 
   /* ---------------------------------------------------------------- */
@@ -274,7 +355,7 @@
       let k = 1;
       if (cat === 'decorations') {
         const r = Math.hypot(x - 144, y - 144);
-        k = smooth(90, 108, r); // centro do avatar livre, borda pode ser tocada
+        k = smooth(104, 116, r); // avatar (r=120) livre; a arte só encosta na borda
       } else if (cat === 'nameplates') {
         k = smooth(140, 215, x); // avatar + nome à esquerda
       } else if (cat === 'effects') {
@@ -286,8 +367,8 @@
         // card em (56, 304)–(1256, 2316): o miolo fica livre; o ornamento pode invadir a borda
         // (até ~180 px no topo, sobre o banner, ~110 na base e só ~30–48 px dos lados, como os
         // oficiais: no "Deadpool Mask" a borda lateral tem 74 px e entra 30 px no card)
-        const inX = smooth(56 + 26, 56 + 48, x) * smooth(56 + 26, 56 + 48, W - x);
-        const inY = smooth(304 + 130, 304 + 200, y) * smooth(212 + 60, 212 + 120, H - y);
+        const inX = smooth(56 + 10, 56 + 22, x) * smooth(56 + 10, 56 + 22, W - x);
+        const inY = smooth(304 + 50, 304 + 90, y) * smooth(212 + 24, 212 + 50, H - y);
         k = 1 - inX * inY;
         // avatar (card: centro 290,487 raio ~235)
         k = Math.min(k, smooth(225, 260, Math.hypot(x - (56 + 290), y - (304 + 487))) + (1 - inX * inY) * 0);
@@ -319,9 +400,18 @@
   }
 
   /** Imagem gerada → canvas oficial (WebP com alpha) + paleta + cobertura. */
-  async function processImage(gen, cat) {
-    const src = await loadImage(`data:${gen.mime};base64,${gen.data}`);
+  async function processImage(gen, cat, opts = {}) {
     const { w: W, h: H } = CANVAS[cat];
+    const out = document.createElement('canvas');
+    out.width = W; out.height = H;
+    const ctx = out.getContext('2d', { willReadFrequently: true });
+    if (opts.canvas) {
+      // Mídia do usuário: mantém o cenário, recorta no formato e só protege as zonas
+      coverInto(ctx, opts.canvas, cat, opts.focus);
+      applyMask(ctx, cat);
+      return finishArt(ctx, out, cat, W, H);
+    }
+    const src = await loadImage(`data:${gen.mime};base64,${gen.data}`);
     const tmp = document.createElement('canvas');
     tmp.width = src.naturalWidth; tmp.height = src.naturalHeight;
     const tctx = tmp.getContext('2d', { willReadFrequently: true });
@@ -332,9 +422,6 @@
     const bb = alphaBounds(raw);
     if (!bb) throw new Error('A imagem gerada veio vazia depois de remover o fundo.');
 
-    const out = document.createElement('canvas');
-    out.width = W; out.height = H;
-    const ctx = out.getContext('2d', { willReadFrequently: true });
     if (cat === 'decorations') {
       // mantém o centro da imagem no centro do avatar; escala pelo maior lado ocupado
       const cx = tmp.width / 2, cy = tmp.height / 2;
@@ -353,6 +440,120 @@
       ctx.drawImage(tmp, (W - dw) / 2, cat === 'frames' ? 0 : (H - dh) / 2, dw, dh);
     }
     protectZones(ctx, cat, W, H);
+    return finishArt(ctx, out, cat, W, H);
+  }
+
+  /** Onde fica o "miolo" interessante de uma imagem (para recortar a faixa/quadrado certo). */
+  function focusOf(canvas) {
+    const w = 48, h = Math.max(1, Math.round((canvas.height / canvas.width) * 48));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(canvas, 0, 0, w, h);
+    const d = x.getImageData(0, 0, w, h).data;
+    const row = new Array(h).fill(0), col = new Array(w).fill(0);
+    for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+      const i = (yy * w + xx) * 4, r = d[i], g = d[i + 1], b = d[i + 2];
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      const v = (mx / 255) * (0.4 + (mx ? (mx - mn) / mx : 0)); // claro e saturado = chama atenção
+      row[yy] += v; col[xx] += v;
+    }
+    return { row, col };
+  }
+  /** Desenha a mídia cobrindo o canvas do formato, com o recorte no trecho mais marcante. */
+  function coverInto(ctx, src, cat, focus) {
+    const { w: W, h: H } = CANVAS[cat];
+    const s = Math.max(W / src.width, H / src.height);
+    const cw = W / s, ch = H / s; // tamanho do recorte na mídia
+    const best = (arr, win, total) => {
+      const n = arr.length, k = Math.max(1, Math.round((win / total) * n));
+      let bi = 0, bv = -1;
+      for (let i = 0; i + k <= n; i++) { let v = 0; for (let j = i; j < i + k; j++) v += arr[j]; if (v > bv) { bv = v; bi = i; } }
+      return (bi / n) * total;
+    };
+    let sx = (src.width - cw) / 2, sy = (src.height - ch) / 2;
+    if ((cat === 'nameplates' || cat === 'decorations') && focus) {
+      if (ch < src.height - 1) sy = best(focus.row, ch, src.height);
+      if (cw < src.width - 1) sx = best(focus.col, cw, src.width);
+    }
+    if (cat === 'frames') sy = 0;
+    ctx.drawImage(src, sx, sy, cw, ch, 0, 0, W, H);
+  }
+
+  /* ---- Máscaras da mídia: contorno orgânico (nada de quadrado), como os oficiais ---- */
+  /** Ruído suave 1D determinístico (soma de senos), em [-1, 1]. */
+  function wobble(seed, scale) {
+    const R = rnd(seed);
+    const w = [0, 1, 2, 3].map((i) => ({ f: (1 + i * 1.7 + R()) / scale, p: R() * 6.283, a: 1 / (i + 1) }));
+    const tot = w.reduce((s0, x) => s0 + x.a, 0);
+    return (t) => w.reduce((s0, x) => s0 + x.a * Math.sin(t * x.f + x.p), 0) / tot;
+  }
+  /**
+   * Máscara (canvas branco com alpha) de cada formato para a mídia do usuário.
+   * Moldura: anel POR FORA do avatar (avatar r=120 no canvas de 288; a arte entra ~6 px),
+   *   mais grosso em cima, borda externa irregular.
+   * Frame: coroa no topo + base + laterais finas; entra ~18 px nos lados do card, ~56 px
+   *   sobre o banner e ~36 px na base; contorno externo irregular; miolo transparente.
+   * Nameplate / efeito: as zonas protegidas de sempre.
+   */
+  function mediaMask(cat) {
+    const { w: W, h: H } = CANVAS[cat];
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x2 = c.getContext('2d', { willReadFrequently: true });
+    x2.fillStyle = '#fff'; x2.fillRect(0, 0, W, H);
+    if (cat !== 'decorations' && cat !== 'frames') { protectZones(x2, cat, W, H); return c; }
+    const img = x2.getImageData(0, 0, W, H), d = img.data;
+    if (cat === 'decorations') {
+      const nOut = wobble(3, 0.35), nIn = wobble(9, 0.25);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const dx = x - 144, dy = y - 144, rr = Math.hypot(dx, dy), th = Math.atan2(dy, dx);
+        const top = Math.max(0, -Math.sin(th)); // 1 no topo
+        const rOut = 126 + 14 * top + 5 * nOut(th * 6);
+        const rIn = 114 + 2 * nIn(th * 5);
+        const k = smooth(rIn - 3, rIn + 3, rr) * (1 - smooth(rOut - 4, rOut + 1, rr));
+        d[(y * W + x) * 4 + 3] = Math.round(255 * k);
+      }
+    } else {
+      const L = 56, Rr = 1256, T = 304, B = 2316;
+      const nT = wobble(5, 1), nB = wobble(7, 1), nL = wobble(11, 1), nR = wobble(13, 1);
+      const nTi = wobble(17, 1), nBi = wobble(19, 1), nLi = wobble(23, 1), nRi = wobble(29, 1);
+      // Medidas do estudo de 40 frames oficiais (docs/frame-deco-study.md): coroa ~300 px acima
+      // do card e desce ~41 px; base sobe ~30 px; laterais ~36 px fora e ~22 px dentro, e em
+      // metade dos frames as laterais nem existem — aqui elas descem da coroa/sobem da base e
+      // somem no meio ("escorrem pelas laterais"). Miolo 0%.
+      const nG = wobble(31, 1);
+      for (let y = 0; y < H; y++) {
+        const outL = L - 36 + 12 * nL(y / 140), outR = Rr + 36 - 12 * nR(y / 150);
+        const inL = L + 22 + 6 * nLi(y / 90), inR = Rr - 22 - 6 * nRi(y / 95);
+        const gap = 90 * nG(y / 300);
+        const sideOn = 1 - smooth(T + 380 + gap, T + 760 + gap, y) * (1 - smooth(B - 640 - gap, B - 300 - gap, y));
+        for (let x = 0; x < W; x++) {
+          const yTop = 20 + 120 * (0.5 + 0.5 * nT(x / 120)); // borda de cima da coroa (irregular)
+          const yBot = H - 20 - 90 * (0.5 + 0.5 * nB(x / 110));
+          const inT = T + 41 + 18 * nTi(x / 80), inB = B - 30 - 12 * nBi(x / 85);
+          // fora da silhueta externa
+          let k = smooth(yTop - 6, yTop + 6, y) * (1 - smooth(yBot - 6, yBot + 6, y)) * smooth(outL - 4, outL + 4, x) * (1 - smooth(outR - 4, outR + 4, x));
+          // miolo do card vazio
+          const inside = smooth(inL - 5, inL + 5, x) * (1 - smooth(inR - 5, inR + 5, x)) * smooth(inT - 8, inT + 8, y) * (1 - smooth(inB - 8, inB + 8, y));
+          k *= 1 - inside;
+          // laterais: só perto da coroa e da base
+          const band = smooth(inT - 10, inT + 30, y) * (1 - smooth(inB - 30, inB + 10, y));
+          k *= 1 - band * (1 - sideOn);
+          d[(y * W + x) * 4 + 3] = Math.round(255 * k);
+        }
+      }
+    }
+    x2.putImageData(img, 0, 0);
+    return c;
+  }
+  const maskCache = {};
+  const maskOf = (cat) => (maskCache[cat] = maskCache[cat] || mediaMask(cat));
+  function applyMask(ctx, cat) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.drawImage(maskOf(cat), 0, 0);
+    ctx.restore();
+  }
+
+  function finishArt(ctx, out, cat, W, H) {
     const palette = paletteOf(ctx, W, H);
     const enc = (c) => { const u = c.toDataURL('image/webp', 0.86); return /^data:image\/webp/.test(u) ? u : c.toDataURL('image/png'); };
     // Camada de brilhos: só as partes claras e saturadas (fogo, runas, joias, magia) — elas vão pulsar e tremeluzir
@@ -399,18 +600,36 @@
     return pts;
   }
 
+  /** Efeitos de movimento da animação (o usuário liga/desliga; a IA pode sugerir). */
+  const FX_DEFAULT = { wave: false, heat: false, breathe: true, glow: true, shine: true, sparkles: true, motes: true, licks: true };
+  const FX_LABELS = { wave: 'Ondular', heat: 'Distorção de calor', breathe: 'Respirar', glow: 'Brilho pulsando', shine: 'Faixa de luz', sparkles: 'Brilhos ✦', motes: 'Partículas', licks: 'Chamas lambendo' };
+  /** Lê pedidos do texto: "sem ondular", "com ondulação", "sem partículas"… */
+  function fxFromText(text) {
+    const t = String(text || '').toLowerCase().normalize('NFD').replace(/[^\x00-\x7f]/g, '');
+    const words = { wave: 'ondul|onda|wave|balanc', heat: 'distorc|calor|heat|tremul', breathe: 'respir|breath', glow: 'brilho pulsa|pulsar|glow', shine: 'faixa de luz|reflexo|shine|brilho passa', sparkles: 'brilhos|estrel|sparkle|cintil', motes: 'particula|brasa|poeira|particle', licks: 'chama|lambe|flame' };
+    const art = '(?:(?:o|a|os|as|esse|essa|esses|essas|aquele|efeitos? de|movimentos? de|animacao de) +)*';
+    const out = {};
+    Object.entries(words).forEach(([key, re]) => {
+      if (new RegExp('(?:sem|tira[a-z]*|remov[a-z]*|desliga[a-z]*|nao (?:quero|use|usa|usar|coloca)[a-z]*|without) +' + art + '(?:' + re + ')').test(t)) out[key] = false;
+      else if (new RegExp('(?:com|quero|liga[a-z]*|adiciona[a-z]*|coloca[a-z]*|with) +' + art + '(?:' + re + ')').test(t)) out[key] = true;
+    });
+    return out;
+  }
+
   function buildSvgs(cat, art, seed, motion = {}) {
     const { url, hl, palette, W, H } = art;
     const preset = motion.preset || 'rise';
+    // Efeitos de movimento: ondular e distorção de calor ficam DESLIGADOS por padrão.
+    const fx = { ...FX_DEFAULT, ...(motion.fx || {}) };
     const k = [0.6, 1, 1.6][(motion.intensity || 2) - 1] || 1;
     const R = rnd(seed || 7);
     const n = { decorations: 12, nameplates: 8, effects: 18, frames: 16 }[cat];
     const pts = sparklePoints(cat, W, H, n, R);
     const sz = { decorations: 5, nameplates: 4, effects: 7, frames: 10 }[cat];
-    const sparkles = pts.map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * (0.6 + R() * 0.8))}" fill="${palette[i % palette.length]}"/>`).join('');
+    const sparkles = !fx.sparkles ? '' : pts.map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * (0.6 + R() * 0.8))}" fill="${palette[i % palette.length]}"/>`).join('');
     // brasas/partículas subindo a partir das áreas com arte (todas as categorias)
     const rise = { decorations: 60, nameplates: 30, effects: Math.round(H * 0.3), frames: 120 }[cat];
-    const motes = sparklePoints(cat, W, H, cat === 'nameplates' ? 8 : 14, R).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f((cat === 'frames' ? 3 : 1.6) + R() * (cat === 'frames' ? 4 : 2.2))}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
+    const motes = !fx.motes ? '' : sparklePoints(cat, W, H, cat === 'nameplates' ? 8 : 14, R).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f((cat === 'frames' ? 3 : 1.6) + R() * (cat === 'frames' ? 4 : 2.2))}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
     const shineW = Math.round(W * 0.28);
     const sway = { decorations: 'scale(1.015)', nameplates: 'translateY(-1.5px)', effects: 'translateY(-5px)', frames: 'translateY(-2px)' }[cat];
     const dispScale = { decorations: 5, nameplates: 3, effects: 8, frames: 9 }[cat];
@@ -449,23 +668,23 @@ mask{mask-type:alpha}
     const sh = H / N;
     const clips = Array.from({ length: N }, (_, i) => `<clipPath id="c${i}"><rect x="-20" y="${f(i * sh - 0.6)}" width="${W + 40}" height="${f(sh + 1.2)}"/></clipPath>`).join('');
     const waveCss = Array.from({ length: 8 }, (_, k) => `.v${k}{animation-delay:-${f(k * 0.25)}s}`).join('');
-    const body = Array.from({ length: N }, (_, i) => `<g clip-path="url(#c${i})"><use class="wv v${i % 8}" href="#full"/></g>`).join('');
+    const body = !fx.wave ? '<use href="#full"/>' : Array.from({ length: N }, (_, i) => `<g clip-path="url(#c${i})"><use class="wv v${i % 8}" href="#full"/></g>`).join('');
     const up = { effects: 26, frames: 16, nameplates: 6, decorations: 10 }[cat] * k;
     const lick = cat === 'decorations' || preset === 'pulse' || preset === 'orbit' ? `scale(${(1 + 0.07 * k).toFixed(3)})`
       : preset === 'fall' ? `translateY(${f(up * 0.6)}px)`
         : preset === 'drift' || preset === 'sweep' ? `translateX(${f(up)}px)`
           : `translateY(-${f(up)}px)${cat === 'effects' ? ' scaleY(1.1)' : ''}`;
-    const licks = hl ? `<use class="lk" href="#hl"/><use class="lk lk2" href="#hl"/><use class="hlb" href="#hl"/>` : '';
+    const licks = hl && fx.licks ? `<use class="lk" href="#hl"/><use class="lk lk2" href="#hl"/><use class="hlb" href="#hl"/>` : '';
     const lights = '';
     const head = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">`;
     const fullDef = `<g id="full"><use href="#art"/>${hl ? '<use class="hl" href="#hl"/>' : ''}</g>`;
-    const css2 = css.replace(',heat .5s steps(1) infinite', '') + `
+    const css2 = (fx.heat ? css : css.replace(',heat .5s steps(1) infinite', '')) + `
 .wv{animation:wave 2s ease-in-out infinite}${waveCss}
 @keyframes wave{0%,100%{transform:translateX(-${A}px)}50%{transform:translateX(${A}px)}}
 .lk{transform-box:view-box;transform-origin:50% ${cat === 'decorations' ? '50%' : '100%'};mix-blend-mode:screen;opacity:0;animation:lick 1s ease-out infinite}.lk2{animation-delay:-.5s}
-@keyframes lick{0%{opacity:.7;transform:none}100%{opacity:0;transform:${lick}}}`;
+@keyframes lick{0%{opacity:.7;transform:none}100%{opacity:0;transform:${lick}}}${fx.breathe ? '' : ' .art{animation:none}'}${fx.glow ? '' : ' .glow{display:none}'}`;
     if (cat !== 'effects') {
-      const loop = `${head}<style>${css2}</style>${defs.replace('</defs>', clips + fullDef + '</defs>')}<g class="art"><use class="glow" href="#art"/>${body}${licks}${shine}</g>${motes}${sparkles}</svg>`;
+      const loop = `${head}<style>${css2}</style>${defs.replace('</defs>', clips + fullDef + '</defs>')}<g class="art"><use class="glow" href="#art"/>${body}${licks}${fx.shine ? shine : ''}</g>${motes}${sparkles}</svg>`;
       return { svg: loop, loopSeconds: 4 };
     }
 
@@ -480,8 +699,8 @@ mask{mask-type:alpha}
 <radialGradient id="ga"><stop offset=".55" stop-color="#000"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
 <mask id="lm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${H}" fill="url(#gv)"/><circle cx="82" cy="138" r="92" fill="url(#ga)"/></mask>`;
     const onSide = ([x, y]) => y < FADE && Math.hypot(x - 82, y - 138) > 90;
-    const fewSparks = sparkles.split('</path>').length > 1 ? pts.filter(onSide).slice(0, 8).map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * 0.8)}" fill="${palette[i % palette.length]}"/>`).join('') : '';
-    const fewMotes = sparklePoints(cat, W, H, 16, R).filter(onSide).slice(0, 8).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f(1.6 + R() * 2)}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
+    const fewSparks = fx.sparkles && sparkles.split('</path>').length > 1 ? pts.filter(onSide).slice(0, 8).map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * 0.8)}" fill="${palette[i % palette.length]}"/>`).join('') : '';
+    const fewMotes = !fx.motes ? '' : sparklePoints(cat, W, H, 16, R).filter(onSide).slice(0, 8).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f(1.6 + R() * 2)}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
     const loopDefs = defs.replace('</defs>', clips + fullDef + edge + '</defs>');
     const loop = `${head}<style>${css2}
 .lite{opacity:.5}
@@ -502,7 +721,7 @@ mask{mask-type:alpha}
 .full{animation:out .9s ease-in ${f(T - 1.1)}s both}
 .edge{opacity:0;animation:inn .9s ease-out ${f(T - 1.1)}s both}
 .fl{mix-blend-mode:screen;filter:url(#blur);opacity:0;animation:fl 1.6s ease-out .2s both}
-.hl{mix-blend-mode:screen;animation:flick 1s steps(1) infinite,heat .5s steps(1) infinite}
+.hl{mix-blend-mode:screen;animation:flick 1s steps(1) infinite${fx.heat ? ',heat .5s steps(1) infinite' : ''}}
 .sw{animation:sw 1.1s cubic-bezier(.45,0,.25,1) 1.1s both}
 .s{transform-box:fill-box;transform-origin:center;opacity:0}
 ${burst}
@@ -524,6 +743,77 @@ ${burst}
 <circle class="ring" cx="${cx}" cy="${cy}" r="60" stroke="${c0}"/><circle class="ring ring2" cx="${cx}" cy="${cy}" r="60" stroke="${palette[1] || '#fff'}"/>
 ${isparks}</svg>`;
     return { svg: loop, loopSeconds: 4, introSvg: intro, introSeconds: T };
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* MÍDIA COMO ARTE: usa o vídeo/GIF/imagem do usuário direto          */
+  /* ---------------------------------------------------------------- */
+  /** Máscara das zonas protegidas (alpha) para aplicar UMA vez sobre todos os quadros. */
+  function zoneMask(cat) {
+    return maskOf(cat).toDataURL('image/png');
+  }
+  /** Vários quadros → SVG que troca de quadro com fusão suave e emenda sem pulo. */
+  function flipbookSvgs(cat, urls, seconds) {
+    const { w: W, h: H } = CANVAS[cat];
+    const n = urls.length, T = Math.max(1.5, seconds), d = T / n;
+    const pct = (t) => f((t / T) * 100);
+    const head = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">`;
+    const defs = `<defs>${urls.map((u, i) => `<image id="q${i}" href="${u}" x="0" y="0" width="${W}" height="${H}"/>`).join('')}<image id="zm" href="${zoneMask(cat)}" x="0" y="0" width="${W}" height="${H}"/><mask id="pm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><use href="#zm"/></mask></defs>`;
+    // quadro i entra em fusão no fim do quadro anterior e fica até o fim; por cima de tudo, o 1º volta (emenda)
+    const kf = [];
+    const layers = ['<use href="#q0"/>'];
+    for (let i = 1; i <= n; i++) {
+      const a = (i - 0.5) * d, b = i * d - 0.001;
+      kf.push(`@keyframes p${i}{0%,${pct(a)}%{opacity:0}${pct(b)}%,100%{opacity:1}}.p${i}{animation:p${i} ${f(T)}s linear infinite}`);
+      layers.push(`<use class="p${i}" href="#q${i % n}"/>`);
+    }
+    const body = `<g mask="url(#pm)">${layers.join('')}</g>`;
+    const loop = `${head}<style>mask{mask-type:alpha}${kf.join('')}</style>${defs}${body}</svg>`;
+    if (cat !== 'effects') return { svg: loop, loopSeconds: f(T) };
+    const intro = `${head}<style>mask{mask-type:alpha}${kf.join('')}
+.in{transform-box:view-box;transform-origin:50% 30%;animation:zin 1.6s cubic-bezier(.16,1,.3,1) both}
+@keyframes zin{0%{opacity:0;transform:scale(1.12);filter:blur(8px) brightness(1.8)}60%{opacity:1;filter:none}100%{opacity:1;transform:none}}</style>${defs}<g class="in">${body}</g></svg>`;
+    return { svg: loop, loopSeconds: f(T), introSvg: intro, introSeconds: 2 };
+  }
+  /**
+   * Gera os formatos direto da mídia do usuário (sem IA).
+   * @param {{frames:HTMLCanvasElement[], seconds?:number, name?:string}} media
+   */
+  async function fromMedia(cats, media, motion = {}) {
+    const out = [];
+    const focus = focusOf(media.frames[Math.floor(media.frames.length / 2)]);
+    const enc = (c, q) => { const u = c.toDataURL('image/webp', q); return /^data:image\/webp/.test(u) ? u : c.toDataURL('image/jpeg', q); };
+    for (const cat of cats) {
+      const { w: W, h: H } = CANVAS[cat];
+      let asset, palette;
+      if (media.frames.length > 1) {
+        const max = { nameplates: 12, decorations: 12, effects: 10, frames: 6 }[cat];
+        const step = Math.max(1, Math.ceil(media.frames.length / max));
+        const pick = media.frames.filter((_, i) => i % step === 0);
+        const urls = pick.map((fr) => {
+          const c = document.createElement('canvas'); c.width = W; c.height = H;
+          coverInto(c.getContext('2d'), fr, cat, focus);
+          return enc(c, cat === 'frames' ? 0.72 : 0.8);
+        });
+        asset = { type: 'svg', ...flipbookSvgs(cat, urls, media.seconds || pick.length * 0.4) };
+        const c0 = document.createElement('canvas'); c0.width = W; c0.height = H;
+        coverInto(c0.getContext('2d', { willReadFrequently: true }), pick[0], cat, focus);
+        palette = paletteOf(c0.getContext('2d', { willReadFrequently: true }), W, H);
+      } else {
+        const art = await processImage(null, cat, { canvas: media.frames[0], focus });
+        asset = { type: 'svg', ...buildSvgs(cat, art, 11, motion[cat] || {}) };
+        palette = art.palette;
+      }
+      if (cat === 'frames') asset.wrap = FRAME_WRAP;
+      const base = (media.name || '').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim();
+      out.push({
+        cat,
+        palette,
+        raw: { ...metaFor(cat, base || 'Sua mídia'), prompt: base, engine: 'media', engineLabel: 'Sua mídia · ' + (media.kind || ''), asset },
+        quality: { ok: true, issues: [], summary: '✓ sua mídia · zonas protegidas' },
+      });
+    }
+    return out;
   }
 
   /* ---------------------------------------------------------------- */
@@ -550,8 +840,7 @@ ${isparks}</svg>`;
    * @returns {Promise<Array<{cat:string, raw:object, quality:object}>>}
    */
   async function generate(req, cfg, opts = {}) {
-    const provider = cfg.provider === 'openai' ? 'openai' : cfg.provider === 'gemini' ? 'gemini' : null;
-    if (!provider) throw new Error('O modo Ilustração usa modelos de imagem: escolha Google Gemini ou OpenAI.');
+    const provider = imageApi(cfg);
     const theme = cleanTheme(req.prompt) || 'tema livre, item premium';
     let done = 0;
     const tick = () => opts.onProgress && opts.onProgress(`Pintando as ilustrações… ${done}/${req.cats.length}`);
@@ -566,9 +855,13 @@ ${isparks}</svg>`;
         const paint = async (strict) => {
           for (let attempt = 0; ; attempt++) {
             try {
-              return provider === 'gemini'
-                ? await geminiImage(cat, catTheme, cfg, (opts.refs && opts.refs[cat]) || [], strict)
-                : await openaiImage(cat, catTheme, cfg, strict);
+              const refs = (opts.refs && opts.refs[cat]) || [];
+              if (provider === 'gemini') return await geminiImage(cat, catTheme, cfg, refs, strict, opts.fromMedia);
+              if (provider === 'openai') return await openaiImage(cat, catTheme, cfg, strict);
+              const pr = promptFor(cat, catTheme, 'gemini', refs.length > 0, strict, opts.fromMedia && refs.length > 0);
+              if (provider === 'dashscope') return await dashscopeImage(cat, pr, cfg, refs);
+              if (provider === 'chat-image') return await chatImage(cat, pr, cfg, refs);
+              return await imagesApi(cat, pr, cfg);
             } catch (e) {
               if (!e.retryAfter || attempt >= 2) throw e;
               for (let t = Math.ceil(e.retryAfter); t > 0; t--) {
@@ -592,7 +885,7 @@ ${isparks}</svg>`;
           } catch (e) { console.warn('[Ilustração] nova tentativa falhou', e); }
         }
         const anim = buildSvgs(cat, art, 1 + i * 97 + theme.length, (opts.motion && opts.motion[cat]) || {});
-        const label = (provider === 'gemini' ? 'Gemini · ' : 'OpenAI · ') + gen.model;
+        const label = API_LABEL[provider] + ' · ' + gen.model;
         return {
           cat,
           raw: { ...metaFor(cat, (req.details && req.details[cat]) || theme),
@@ -696,16 +989,22 @@ ${isparks}</svg>`;
   async function remake(cat, item, instruction, cfg, motion = {}) {
     const art = artOf(item.asset && item.asset.svg);
     if (!art) throw new Error('Não achei a ilustração deste item.');
-    const provider = cfg.provider === 'openai' ? 'openai' : 'gemini';
-    const gen = provider === 'gemini' ? await editGemini(cat, await onGreen(art), instruction, cfg) : await editOpenAI(cat, art, instruction, cfg);
+    const provider = imageApi(cfg);
+    const editText = [`This image is a Discord ${CAT_WORD[cat]} on a flat green background. EDIT it following this request: ${instruction}.`, 'Change only what the request asks for. Keep the same format, composition and art style.', LAYOUT[cat], 'Keep the background perfectly flat pure green (#00FF00), no text, one single object.'].join('\n\n');
+    const green = () => onGreen(art).then((data) => [{ mime: 'image/png', data }]);
+    const gen = provider === 'gemini' ? await editGemini(cat, await onGreen(art), instruction, cfg)
+      : provider === 'openai' ? await editOpenAI(cat, art, instruction, cfg)
+        : provider === 'dashscope' ? await dashscopeImage(cat, editText, cfg, await green())
+          : provider === 'chat-image' ? await chatImage(cat, editText, cfg, await green())
+            : (() => { throw new Error('Esta API não edita imagens: gere de novo com o pedido no texto.'); })();
     const out = await processImage(gen, cat);
     const anim = buildSvgs(cat, out, 7 + instruction.length, motion);
     return {
       asset: { type: 'svg', ...anim, ...(cat === 'frames' ? { wrap: FRAME_WRAP } : {}) },
       palette: out.palette,
-      label: (provider === 'gemini' ? 'Gemini · ' : 'OpenAI · ') + gen.model,
+      label: API_LABEL[provider] + ' · ' + gen.model,
     };
   }
 
-  window.CosmeticIllustration = { remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
+  window.CosmeticIllustration = { fromMedia, imageApi, FX_DEFAULT, FX_LABELS, fxFromText, remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
 })();
