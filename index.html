@@ -164,6 +164,10 @@
                     <input type="checkbox" id="gen-media-art" class="accent-[#5865F2] mt-0.5" checked />
                     <span><b class="text-dc-text">Usar a própria mídia como arte</b> (sem IA, instantâneo): recorta cada formato da sua imagem/vídeo, deixa avatar e nome livres e anima com os quadros reais. Desmarque para a IA criar uma arte nova inspirada nela.</span>
                   </label>
+                  <label class="flex items-start gap-2 mt-2 text-xs text-dc-muted cursor-pointer select-none">
+                    <input type="checkbox" id="gen-create" class="accent-[#5865F2] mt-0.5" />
+                    <span><b class="text-dc-text">Criar moldura e frame novos</b> a partir dos elementos da cena (a IA identifica personagem, símbolos, criaturas, fogo, raios… e o modelo de imagem desenha ornamentos no padrão do Discord). Precisa de um modelo de imagem. Efeito e nameplate continuam usando a mídia.</span>
+                  </label>
                   <div id="gen-media-preview" class="hidden flex flex-wrap gap-2 mt-2"></div>
                   <p id="gen-media-status" class="text-[11px] text-dc-muted mt-1"></p>
                     </div>
@@ -231,6 +235,8 @@
                       <label class="block"><span class="sub-label">Prompt só para o profile frame</span>
                         <textarea id="gen-pp-frames" rows="2" maxlength="600" class="dc-input h-auto py-2 text-sm resize-y" placeholder="Ex.: coroa de nuvens e base de ondas"></textarea></label>
                       <div class="flex items-baseline justify-between gap-2 mt-3 mb-1.5"><span class="sub-label !mb-0">Forma</span><span class="text-[11px] text-dc-faint">branco = arte · azul = avatar/card</span></div>
+                      <div class="mb-3"><span class="sub-label">Como montar o frame com a mídia</span><div id="gen-frame-mode" class="flex flex-wrap gap-1.5"></div>
+                        <p class="text-[11px] text-dc-faint mt-1">Borda fina nas cores da mídia; o objeto principal vira a coroa (com cópias espelhadas dos lados) e os outros vão na base. A forma escolhida decide laterais, base e cantos.</p></div>
                       <div id="gen-shapes-frames" class="shape-grid"></div>
                     </div>
                   </div>

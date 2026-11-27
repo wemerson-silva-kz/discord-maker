@@ -69,7 +69,12 @@
       bg,
       'Also reply with one short line of text: NOME: <a creative item name in Brazilian Portuguese, 2 to 4 words>.',
       strict ? STRICT : '',
-      fromMedia ? 'The attached image is the SOURCE ARTWORK chosen by the user. Recreate it as this format: keep exactly its art style, line work, shading, colors, subject and elements (e.g. the same moon, the same waves, the same clouds), only re-composed to fit the format above. It must clearly look like the same artwork.'
+      fromMedia ? (cat === 'decorations' || cat === 'frames'
+        ? 'The attached image is a SCENE chosen by the user, NOT something to paste. First identify its key elements: the character signature symbols and props (weapon, clothing pattern, mask, accessories), creatures (crows, birds, animals), and effects (fire, lightning, feathers, leaves, petals, smoke, light). Then DESIGN BRAND-NEW ornaments built from those elements, in the same colors and art style, the way official Discord cosmetics do. '
+          + (cat === 'decorations'
+            ? 'Avatar decoration: 2 to 4 large, bold objects made from those elements hugging the circle edge (e.g. crows perched on the rim, a katana crossing the bottom, cloud emblems, flames licking up one side), with a thin connecting accent; heavier on top and sides; the round center stays EMPTY. Never draw the scene, the sky, the background or the whole character.'
+            : 'Profile frame: an ornate crown on top and a base at the bottom built from those elements (e.g. crows and feathers around a central emblem, crossed swords, flames, clouds), with a thin decorative border; the card area stays EMPTY. Never draw the scene, the sky or the background.')
+        : 'The attached image is the SOURCE ARTWORK chosen by the user. Recreate it as this format: keep exactly its art style, line work, shading, colors, subject and elements (e.g. the same moon, the same waves, the same clouds), only re-composed to fit the format above. It must clearly look like the same artwork.')
         : hasRefs ? 'The attached image is only an inspiration for colors and mood. Do NOT copy it and do NOT place it in the result.' : '',
       'The output must be ONE image containing ONE object. No numbers, no captions, no panels, no grid.',
     ].filter(Boolean).join('\n\n');
@@ -1281,6 +1286,89 @@ ${isparks}</svg>`;
     return { svg, loopSeconds: f(T), count: found.length };
   }
 
+  /* ---- Profile frame feito de OBJETOS + borda fina (como os oficiais) ----
+   * Estudo de 40 frames: coroa ~300 px acima do card e descendo ~41 px nele; base ~180 px
+   * abaixo e subindo ~30; laterais finas (ou nenhuma); miolo sempre livre. Aqui: borda fina com
+   * gradiente e brilho nas cores da mídia, o objeto principal recortado vira a coroa e os
+   * outros (ou uma cópia menor) vão na base; tudo animado com os quadros reais. */
+  function objectSprite(use, bx, maxW, maxH, id, T) {
+    const src = use[0];
+    const asp = ((bx.x1 - bx.x0) * src.width) / Math.max(1, (bx.y1 - bx.y0) * src.height);
+    const w0 = Math.min(maxW, maxH * asp), h0 = w0 / asp;
+    const size = Math.round(Math.max(w0, h0));
+    const first = cutObject(src, bx, size);
+    const cuts = use.map((fr, i) => (i === 0 ? first : cutObject(fr, bx, size, first.ref)));
+    const { w, h } = first;
+    if (cuts.length < 2) return { w, h, css: '', svg: `<image href="${first.canvas.toDataURL('image/png')}" width="${w}" height="${h}"/>` };
+    const cols = Math.max(1, Math.min(cuts.length, Math.floor(8000 / w)));
+    const sh = { n: cuts.length, cols, rows: Math.ceil(cuts.length / cols), W: w, H: h };
+    const sc = document.createElement('canvas'); sc.width = w * cols; sc.height = h * sh.rows;
+    const sx = sc.getContext('2d'); cuts.forEach((cu, i) => sx.drawImage(cu.canvas, (i % cols) * w, Math.floor(i / cols) * h));
+    sh.url = sc.toDataURL('image/webp', 0.82); if (!/^data:image\/webp/.test(sh.url)) sh.url = sc.toDataURL('image/png');
+    const L = sheetLayer(sh, T, id, false);
+    return { w, h, css: L.css, svg: `<clipPath id="${id}c"><rect width="${w}" height="${h}"/></clipPath><g clip-path="url(#${id}c)">${L.svg}</g>` };
+  }
+  function frameFromObjects(frames, style, boxes, palette) {
+    const found = (boxes && boxes.length ? boxes : findObjects(frames[Math.floor(frames.length / 2)], 3)).slice(0, 3);
+    const W = 1312, H = 2528, L = 56, R = 1256, T = 304, B = 2316;
+    // cores mais vivas e claras da mídia primeiro (fundo escuro não serve para a borda)
+    const vivid = (hx) => { const n = parseInt(String(hx).slice(1, 7), 16); const r = n >> 16, g = (n >> 8) & 255, b = n & 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b); return (mx - mn) + mx * 0.6; };
+    const pal = (palette || []).filter((c) => /^#[0-9a-f]{6}/i.test(c || '')).sort((a, b) => vivid(b) - vivid(a)).filter((c) => vivid(c) > 120);
+    const c1 = pal[0] || '#FFD36B', c2 = pal[1] || pal[0] || '#FF8A3D', c3 = pal[2] || '#FFFFFF';
+    const nF = Math.min(frames.length, 12), step = Math.max(1, Math.floor(frames.length / nF));
+    const use = frames.filter((_, i) => i % step === 0).slice(0, nF);
+    const TT = Math.max(1.5, use.length / 8);
+    const st = style || 'coroa-laterais';
+    let css = '', body = '';
+    // borda fina: dupla linha com gradiente + brilho; cantos com joia
+    const sides = st !== 'coroa-base' && st !== 'coroa' && st !== 'base';
+    const rr = 34;
+    const border = sides || st === 'coroa-laterais'
+      ? `<rect x="${L - 10}" y="${T - 10}" width="${R - L + 20}" height="${B - T + 20}" rx="${rr + 8}" fill="none" stroke="url(#fbg)" stroke-width="10" filter="url(#fgl)"${st === 'coroa-laterais' ? ' mask="url(#fsm)"' : ''}/>
+         <rect x="${L - 26}" y="${T - 26}" width="${R - L + 52}" height="${B - T + 52}" rx="${rr + 22}" fill="none" stroke="${c3}" stroke-opacity=".35" stroke-width="3"${st === 'coroa-laterais' ? ' mask="url(#fsm)"' : ''}/>`
+      : '';
+    const gem = (x, y, s) => `<g transform="translate(${x} ${y}) rotate(45)"><rect x="${-s}" y="${-s}" width="${s * 2}" height="${s * 2}" fill="url(#fbg)" stroke="${c3}" stroke-width="3" filter="url(#fgl)"/></g>`;
+    if (sides || st === 'cantos') body += [gem(L - 10, T - 10, 18), gem(R + 10, T - 10, 18), gem(L - 10, B + 10, 18), gem(R + 10, B + 10, 18)].join('');
+    // faixa da coroa e da base (fio com brilho onde os objetos se apoiam)
+    if (st !== 'base') body += `<path d="M${L + 40} ${T - 6}H${R - 40}" stroke="url(#fbg)" stroke-width="8" stroke-linecap="round" filter="url(#fgl)"/>`;
+    if (st !== 'coroa') body += `<path d="M${L + 120} ${B + 6}H${R - 120}" stroke="url(#fbg)" stroke-width="6" stroke-linecap="round" filter="url(#fgl)"/>`;
+    // objetos: principal = coroa (centro), outros = base; sem outros, cópia menor espelhada na base
+    if (found.length) {
+      const top = objectSprite(use, found[0], 760, 330, 'fo0', TT);
+      css += top.css;
+      if (st !== 'base') {
+        // coroa simétrica: o objeto no centro e duas cópias menores espelhadas dos lados
+        const k = 0.62, sw = top.w * k, shh = top.h * k;
+        body += `<g transform="translate(${f(W * 0.27 + sw / 2)} ${f(T + 40 - shh)}) scale(${-k} ${k})" opacity=".92">${top.svg}</g>`;
+        body += `<g transform="translate(${f(W * 0.73 - sw / 2)} ${f(T + 40 - shh)}) scale(${k} ${k})" opacity=".92">${top.svg}</g>`;
+        body += `<g transform="translate(${f(W / 2 - top.w / 2)} ${f(T + 45 - top.h)})">${top.svg}</g>`;
+      }
+      const rest = found.slice(1);
+      if (st !== 'coroa') {
+        if (rest.length) {
+          rest.forEach((bx, k) => {
+            const o = objectSprite(use, bx, 380, 230, 'fo' + (k + 1), TT);
+            css += o.css;
+            const x = rest.length === 1 ? W / 2 - o.w / 2 : (k === 0 ? L + 40 : R - 40 - o.w);
+            body += `<g transform="translate(${f(x)} ${f(B - 32)})">${o.svg}</g>`;
+          });
+        } else {
+          const o = objectSprite(use, found[0], 300, 200, 'fob', TT);
+          css += o.css;
+          body += `<g transform="translate(${f(R - 30)} ${f(B - 40)}) scale(-1 1)">${o.svg}</g>`;
+        }
+      }
+      if (st === 'base') body += `<g transform="translate(${f(W / 2 - top.w / 2)} ${f(B - 30)})">${top.svg.replace(/fo0/g, 'fz0')}</g>`.replace(/fz0/g, 'fo0');
+    }
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><style>${css}</style><defs>
+<linearGradient id="fbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset=".5" stop-color="${c3}"/><stop offset="1" stop-color="${c2}"/></linearGradient>
+<filter id="fgl" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<linearGradient id="fsg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".3" stop-color="#fff" stop-opacity="0"/><stop offset=".72" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff"/></linearGradient>
+<mask id="fsm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="url(#fsg)"/></mask>
+<filter id="fsh" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-opacity=".5"/></filter></defs>${border}<g filter="url(#fsh)">${body}</g></svg>`;
+    return { svg, loopSeconds: f(TT), count: found.length };
+  }
+
   /**
    * Gera os formatos direto da mídia do usuário (sem IA).
    * @param {{frames:HTMLCanvasElement[], seconds?:number, name?:string}} media
@@ -1309,11 +1397,20 @@ ${isparks}</svg>`;
       if (cat === 'decorations' && shapes.decoMode !== 'anel') {
         try { objDeco = decorationFromObjects(media.frames, variant, shapes.boxes); } catch (e) { console.warn('[Moldura de objetos]', e); }
       }
+      if (cat === 'frames' && shapes.frameMode !== 'recorte') {
+        try {
+          const c0 = document.createElement('canvas'); c0.width = 400; c0.height = 400;
+          coverInto(c0.getContext('2d', { willReadFrequently: true }), media.frames[0], 'decorations', focus);
+          const pal = paletteOf(c0.getContext('2d', { willReadFrequently: true }), 288, 288);
+          objDeco = frameFromObjects(media.frames, variant, shapes.boxes, pal);
+          if (objDeco) objDeco.palette = pal;
+        } catch (e) { console.warn('[Frame de objetos]', e); }
+      }
       if (objDeco) {
         asset = { type: 'svg', svg: objDeco.svg, loopSeconds: objDeco.loopSeconds };
         const c0 = document.createElement('canvas'); c0.width = W; c0.height = H;
-        coverInto(c0.getContext('2d', { willReadFrequently: true }), media.frames[0], cat, focus);
-        palette = paletteOf(c0.getContext('2d', { willReadFrequently: true }), W, H);
+        if (objDeco.palette) palette = objDeco.palette;
+        else { coverInto(c0.getContext('2d', { willReadFrequently: true }), media.frames[0], cat, focus); palette = paletteOf(c0.getContext('2d', { willReadFrequently: true }), W, H); }
       } else if (media.frames.length > 1) {
         const max = { nameplates: 36, decorations: 36, effects: 60, frames: 8 }[cat];
         const step = Math.max(1, Math.ceil(media.frames.length / max));
