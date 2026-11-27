@@ -32,7 +32,7 @@
   const STYLE = 'Polished 2D game cosmetic illustration in the style of official Discord shop items: clean cel shading with 2-3 tones per color, crisp smooth edges, soft rim light, a short harmonious palette (one dominant color, one support, one accent), bright and readable at small size, a few big well-drawn shapes rather than clutter. No text, no letters, no numbers, no logos, no watermark, no UI elements, no photo realism, no 3D render look.';
 
   const LAYOUT = {
-    decorations: 'FORMAT: square avatar decoration. The avatar is a circle in the exact center whose diameter is 83% of the image width; the artwork sits AROUND it, hugging its edge from the outside, and only small parts (a paw, a leaf, a horn tip) may overlap the avatar edge — the avatar itself stays clear background. The ring is NOT a solid band: leave about a quarter of the way around empty, with a few big well-drawn elements instead of a continuous wreath. Put the main ornament on the top or a top corner, more weight on the top and the sides than on the bottom. Everything stays inside the image borders.',
+    decorations: 'FORMAT: square avatar decoration. The avatar is a circle in the exact center whose diameter is 83% of the image width; the artwork sits AROUND it, hugging its edge from the outside, and only small parts (a paw, a leaf, a horn tip) may overlap the avatar edge — the avatar itself stays clear background. NEVER draw a face, character, portrait or any object inside the central circle: it is an empty hole where the user avatar goes. The ring is NOT a solid band: leave about a quarter of the way around empty, with a few big well-drawn elements instead of a continuous wreath. Put the main ornament on the top or a top corner, more weight on the top and the sides than on the bottom. Everything stays inside the image borders.',
     nameplates: 'FORMAT: very wide horizontal banner ornament. All artwork must sit inside the central horizontal band (the middle 40% of the image height); everything above and below that band is plain background. The LEFT HALF of the image is completely empty background. The illustration grows in density toward the right end, with the main motif on the far right.',
     effects: 'FORMAT: tall vertical overlay effect for a profile card, like the official Discord profile effects. The scene lives in the TOP HALF: it is densest across the very top (the banner area, top 25% of the height) and spills down to about 55% of the height, getting lighter as it goes down (e.g. garlands, bunting, fireworks, flames, petals, clouds hanging from the top). The bottom 40% of the image is empty background, with at most a few tiny floating particles. Keep the small circle near the top-left corner (centered at about 18% of the width and 16% of the height, the avatar) mostly clear. Do not draw any circle, frame or dark shape behind the avatar area. No thick columns down the sides.',
     frames: 'FORMAT: tall ornamental frame that WRAPS AROUND a tall portrait profile card, like the official Discord profile frames. Imagine an empty rounded rectangle (the card) from 4.3% to 95.7% of the width and from 12% to 91.5% of the height — it must stay empty background. The frame lives OUTSIDE that rectangle: (1) a rich CROWN spans the whole width above the card, filling the top 12% of the image, and dips only slightly (about 2% of the height) over the card top edge; (2) a smaller BASE ornament sits along the bottom edge and rises only slightly over the card; (3) the left and right sides are either empty or a SLIM border about 4% of the image width thick, half of it outside the card; elements may spill partway down the sides from the crown. Proven layouts of the official frames: a creature or character peeking over the top with paws, legs or a tail along the bottom; flowers, leaves, crystals, clouds or flames clustered along the top and bottom edges; a thin elegant border with a main ornament centered at the top. Nothing inside the card area except the very edge. No thick columns or pillars.',
@@ -431,6 +431,12 @@
       const cx = tmp.width / 2, cy = tmp.height / 2;
       const half = Math.max(cx - bb.x, bb.x + bb.w - cx, cy - bb.y, bb.y + bb.h - cy);
       ctx.drawImage(tmp, cx - half, cy - half, half * 2, half * 2, 0, 0, W, H);
+      // o centro é do avatar: a IA às vezes desenha um rosto/personagem ali — apaga o miolo
+      // (só a beirada, r > 108 de 120, pode encostar no avatar, como nas oficiais)
+      const g = ctx.createRadialGradient(144, 144, 100, 144, 144, 114);
+      g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.save(); ctx.globalCompositeOperation = 'destination-out'; ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(144, 144, 114, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     } else if (cat === 'nameplates') {
       // faixa: ocupa a altura toda e encosta na ponta direita (como as oficiais, a arte vai até o fim)
       let s = H / bb.h;
@@ -922,29 +928,58 @@ ${isparks}</svg>`;
    * Tocar = mover a folha quadro a quadro; uma 2ª cópia, um quadro à frente, entra em
    * fusão durante cada quadro. Só 2 imagens desenhadas por vez (fluido, sem travar).
    */
+  const GUT = 6; // px vazios entre quadros da folha
+  /** Junta quadros (já prontos) numa folha com espaço entre eles. */
+  function packSheet(canvases, W, H, maxSide = 16000, q = 0.8) {
+    const n = canvases.length, PW = W + GUT, PH = H + GUT;
+    const cols = Math.max(1, Math.min(n, Math.floor(maxSide / PW), Math.ceil(Math.sqrt(n * PH / PW))));
+    const rows = Math.ceil(n / cols);
+    const sh = document.createElement('canvas'); sh.width = PW * cols; sh.height = PH * rows;
+    const sx = sh.getContext('2d');
+    canvases.forEach((c, i) => sx.drawImage(c, (i % cols) * PW, Math.floor(i / cols) * PH));
+    let url = sh.toDataURL('image/webp', q);
+    if (!/^data:image\/webp/.test(url)) url = sh.toDataURL('image/png');
+    return { url, n, cols, rows, W, H, PW, PH };
+  }
+  /**
+   * Alfa estável no tempo: o recorte muda um pouco de quadro para quadro e a borda "cintila".
+   * Cada pixel usa a média do alfa no quadro anterior, atual e seguinte, e corta resto fraco.
+   */
+  function stabilizeAlpha(canvases) {
+    const n = canvases.length;
+    if (n < 3) return canvases;
+    const { width: w, height: h } = canvases[0];
+    const A = canvases.map((c) => c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h));
+    return canvases.map((c, i) => {
+      const prev = A[(i - 1 + n) % n].data, cur = A[i].data, next = A[(i + 1) % n].data;
+      const out = new ImageData(new Uint8ClampedArray(cur), w, h), d = out.data;
+      for (let o = 3; o < d.length; o += 4) {
+        let a = (prev[o] + 2 * cur[o] + next[o]) / 4;
+        a = a < 40 ? 0 : a > 215 ? 255 : (a - 40) * 255 / 175;
+        d[o] = a;
+      }
+      const k = document.createElement('canvas'); k.width = w; k.height = h;
+      k.getContext('2d').putImageData(out, 0, 0);
+      return k;
+    });
+  }
   function spriteSheet(cat, canvases, variant) {
     const { w: W, h: H } = CANVAS[cat];
-    const n = canvases.length, cols = Math.max(1, Math.min(n, Math.floor(16000 / W), Math.ceil(Math.sqrt(n * H / W))));
-    const rows = Math.ceil(n / cols);
-    const sh = document.createElement('canvas'); sh.width = W * cols; sh.height = H * rows;
-    const sx = sh.getContext('2d');
-    const t = document.createElement('canvas'); t.width = W; t.height = H;
-    const tx = t.getContext('2d');
-    canvases.forEach((c, i) => {
-      tx.clearRect(0, 0, W, H); tx.drawImage(c, 0, 0);
+    const masked = canvases.map((c) => {
+      const t = document.createElement('canvas'); t.width = W; t.height = H;
+      const tx = t.getContext('2d'); tx.drawImage(c, 0, 0);
       applyMask(tx, cat, variant);
-      sx.drawImage(t, (i % cols) * W, Math.floor(i / cols) * H);
+      return t;
     });
-    let url = sh.toDataURL('image/webp', cat === 'frames' ? 0.72 : 0.74);
-    if (!/^data:image\/webp/.test(url)) url = sh.toDataURL('image/png');
-    return { url, n, cols, rows, W, H };
+    return packSheet(masked, W, H, 16000, cat === 'frames' ? 0.72 : 0.78);
   }
   const p3 = (v) => Math.round(v * 1000) / 1000;
   const FPS_MIN = 24; // animações da mídia: no mínimo 24 quadros por segundo
   /** Camada CSS/SVG que toca uma folha. once = toca uma vez e para no último quadro. */
   function sheetLayer(sh, T, id, once, delay = 0) {
     const { n, cols, rows, W, H } = sh;
-    const pos = (i) => `translate(${-(i % cols) * W}px,${-Math.floor(i / cols) * H}px)`;
+    const PW = sh.PW || W, PH = sh.PH || H;
+    const pos = (i) => `translate(${-(i % cols) * PW}px,${-Math.floor(i / cols) * PH}px)`;
     const kA = [], kB = [];
     for (let i = 0; i < n; i++) {
       const pc = p3((i / n) * 100);
@@ -953,10 +988,11 @@ ${isparks}</svg>`;
     }
     kA.push(`100%{transform:${pos(once ? n - 1 : 0)}}`); kB.push(`100%{transform:${pos(once ? n - 1 : 1 % n)}}`);
     const it = once ? '1' : 'infinite', fill = once ? 'both' : 'none', d = p3(T / n);
-    const css = `@keyframes ${id}a{${kA.join('')}}@keyframes ${id}b{${kB.join('')}}@keyframes ${id}f{from{opacity:0}to{opacity:1}}
-.${id}a{animation:${id}a ${p3(T)}s step-end ${delay}s ${it} ${fill}}.${id}b{animation:${id}b ${p3(T)}s step-end ${delay}s ${it} ${fill},${id}f ${d}s linear ${delay}s ${once ? n - 1 : 'infinite'} ${fill}}`;
-    // a imagem entra uma vez só; as duas camadas (quadro atual + fusão) usam <use>
-    const svg = `<defs><image id="${id}i" href="${sh.url}" x="0" y="0" width="${W * cols}" height="${H * rows}"/></defs><g class="${id}a"><use href="#${id}i"/></g><g class="${id}b"><use href="#${id}i"/></g>`;
+    // Só o quadro atual (a 24 qps não precisa de fusão: a camada extra somava alfa nas áreas
+    // semitransparentes e fazia a borda piscar a cada troca de quadro).
+    const css = `@keyframes ${id}a{${kA.join('')}}.${id}a{will-change:transform;animation:${id}a ${p3(T)}s step-end ${delay}s ${it} ${fill}}`;
+    void kB; void d;
+    const svg = `<defs><image id="${id}i" href="${sh.url}" x="0" y="0" width="${PW * cols}" height="${PH * rows}"/></defs><g class="${id}a"><use href="#${id}i"/></g>`;
     return { css, svg };
   }
   /* ---- Elementos animados por cima da arte (aprendidos em vídeos de referência) ----
@@ -1257,6 +1293,7 @@ ${isparks}</svg>`;
       const size = big ? 140 : 96;
       const first = cutObject(use[0], bx, size);
       const cuts = use.map((fr, i) => (i === 0 ? first : cutObject(fr, bx, size, first.ref)));
+      const stable = stabilizeAlpha(cuts.map((cu) => cu.canvas));
       const { w, h } = first;
       const a = (angs[k] ?? (k * 120)) * Math.PI / 180;
       // centro do objeto: fora do avatar (r 120), só a ponta encosta (~10–20 px para dentro)
@@ -1267,11 +1304,7 @@ ${isparks}</svg>`;
       const rot = ((angs[k] ?? 0) > 90 && (angs[k] ?? 0) < 270) ? 0 : 0;
       const id = 'ob' + k;
       if (cuts.length > 1) {
-        const sh = { n: cuts.length, cols: Math.min(cuts.length, Math.floor(4000 / w)), W: w, H: h };
-        sh.rows = Math.ceil(sh.n / sh.cols);
-        const sc = document.createElement('canvas'); sc.width = w * sh.cols; sc.height = h * sh.rows;
-        const sx = sc.getContext('2d'); cuts.forEach((cu, i) => sx.drawImage(cu.canvas, (i % sh.cols) * w, Math.floor(i / sh.cols) * h));
-        sh.url = sc.toDataURL('image/webp', 0.85); if (!/^data:image\/webp/.test(sh.url)) sh.url = sc.toDataURL('image/png');
+        const sh = packSheet(stable, w, h, 4000, 0.8);
         const L = sheetLayer(sh, T, id, false);
         css += L.css;
         defs += `<clipPath id="${id}c"><rect width="${w}" height="${h}"/></clipPath>`;
@@ -1301,11 +1334,7 @@ ${isparks}</svg>`;
     const cuts = use.map((fr, i) => (i === 0 ? first : cutObject(fr, bx, size, first.ref)));
     const { w, h } = first;
     if (cuts.length < 2) return { w, h, css: '', svg: `<image href="${first.canvas.toDataURL('image/png')}" width="${w}" height="${h}"/>` };
-    const cols = Math.max(1, Math.min(cuts.length, Math.floor(8000 / w)));
-    const sh = { n: cuts.length, cols, rows: Math.ceil(cuts.length / cols), W: w, H: h };
-    const sc = document.createElement('canvas'); sc.width = w * cols; sc.height = h * sh.rows;
-    const sx = sc.getContext('2d'); cuts.forEach((cu, i) => sx.drawImage(cu.canvas, (i % cols) * w, Math.floor(i / cols) * h));
-    sh.url = sc.toDataURL('image/webp', 0.74); if (!/^data:image\/webp/.test(sh.url)) sh.url = sc.toDataURL('image/png');
+    const sh = packSheet(stabilizeAlpha(cuts.map((cu) => cu.canvas)), w, h, 8000, 0.78);
     const L = sheetLayer(sh, T, id, false);
     return { w, h, css: L.css, svg: `<clipPath id="${id}c"><rect width="${w}" height="${h}"/></clipPath><g clip-path="url(#${id}c)">${L.svg}</g>` };
   }
