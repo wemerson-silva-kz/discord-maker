@@ -922,29 +922,58 @@ ${isparks}</svg>`;
    * Tocar = mover a folha quadro a quadro; uma 2ª cópia, um quadro à frente, entra em
    * fusão durante cada quadro. Só 2 imagens desenhadas por vez (fluido, sem travar).
    */
+  const GUT = 6; // px vazios entre quadros da folha
+  /** Junta quadros (já prontos) numa folha com espaço entre eles. */
+  function packSheet(canvases, W, H, maxSide = 16000, q = 0.8) {
+    const n = canvases.length, PW = W + GUT, PH = H + GUT;
+    const cols = Math.max(1, Math.min(n, Math.floor(maxSide / PW), Math.ceil(Math.sqrt(n * PH / PW))));
+    const rows = Math.ceil(n / cols);
+    const sh = document.createElement('canvas'); sh.width = PW * cols; sh.height = PH * rows;
+    const sx = sh.getContext('2d');
+    canvases.forEach((c, i) => sx.drawImage(c, (i % cols) * PW, Math.floor(i / cols) * PH));
+    let url = sh.toDataURL('image/webp', q);
+    if (!/^data:image\/webp/.test(url)) url = sh.toDataURL('image/png');
+    return { url, n, cols, rows, W, H, PW, PH };
+  }
+  /**
+   * Alfa estável no tempo: o recorte muda um pouco de quadro para quadro e a borda "cintila".
+   * Cada pixel usa a média do alfa no quadro anterior, atual e seguinte, e corta resto fraco.
+   */
+  function stabilizeAlpha(canvases) {
+    const n = canvases.length;
+    if (n < 3) return canvases;
+    const { width: w, height: h } = canvases[0];
+    const A = canvases.map((c) => c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h));
+    return canvases.map((c, i) => {
+      const prev = A[(i - 1 + n) % n].data, cur = A[i].data, next = A[(i + 1) % n].data;
+      const out = new ImageData(new Uint8ClampedArray(cur), w, h), d = out.data;
+      for (let o = 3; o < d.length; o += 4) {
+        let a = (prev[o] + 2 * cur[o] + next[o]) / 4;
+        a = a < 40 ? 0 : a > 215 ? 255 : (a - 40) * 255 / 175;
+        d[o] = a;
+      }
+      const k = document.createElement('canvas'); k.width = w; k.height = h;
+      k.getContext('2d').putImageData(out, 0, 0);
+      return k;
+    });
+  }
   function spriteSheet(cat, canvases, variant) {
     const { w: W, h: H } = CANVAS[cat];
-    const n = canvases.length, cols = Math.max(1, Math.min(n, Math.floor(16000 / W), Math.ceil(Math.sqrt(n * H / W))));
-    const rows = Math.ceil(n / cols);
-    const sh = document.createElement('canvas'); sh.width = W * cols; sh.height = H * rows;
-    const sx = sh.getContext('2d');
-    const t = document.createElement('canvas'); t.width = W; t.height = H;
-    const tx = t.getContext('2d');
-    canvases.forEach((c, i) => {
-      tx.clearRect(0, 0, W, H); tx.drawImage(c, 0, 0);
+    const masked = canvases.map((c) => {
+      const t = document.createElement('canvas'); t.width = W; t.height = H;
+      const tx = t.getContext('2d'); tx.drawImage(c, 0, 0);
       applyMask(tx, cat, variant);
-      sx.drawImage(t, (i % cols) * W, Math.floor(i / cols) * H);
+      return t;
     });
-    let url = sh.toDataURL('image/webp', cat === 'frames' ? 0.72 : 0.74);
-    if (!/^data:image\/webp/.test(url)) url = sh.toDataURL('image/png');
-    return { url, n, cols, rows, W, H };
+    return packSheet(masked, W, H, 16000, cat === 'frames' ? 0.72 : 0.78);
   }
   const p3 = (v) => Math.round(v * 1000) / 1000;
   const FPS_MIN = 24; // animações da mídia: no mínimo 24 quadros por segundo
   /** Camada CSS/SVG que toca uma folha. once = toca uma vez e para no último quadro. */
   function sheetLayer(sh, T, id, once, delay = 0) {
     const { n, cols, rows, W, H } = sh;
-    const pos = (i) => `translate(${-(i % cols) * W}px,${-Math.floor(i / cols) * H}px)`;
+    const PW = sh.PW || W, PH = sh.PH || H;
+    const pos = (i) => `translate(${-(i % cols) * PW}px,${-Math.floor(i / cols) * PH}px)`;
     const kA = [], kB = [];
     for (let i = 0; i < n; i++) {
       const pc = p3((i / n) * 100);
@@ -953,10 +982,11 @@ ${isparks}</svg>`;
     }
     kA.push(`100%{transform:${pos(once ? n - 1 : 0)}}`); kB.push(`100%{transform:${pos(once ? n - 1 : 1 % n)}}`);
     const it = once ? '1' : 'infinite', fill = once ? 'both' : 'none', d = p3(T / n);
-    const css = `@keyframes ${id}a{${kA.join('')}}@keyframes ${id}b{${kB.join('')}}@keyframes ${id}f{from{opacity:0}to{opacity:1}}
-.${id}a{animation:${id}a ${p3(T)}s step-end ${delay}s ${it} ${fill}}.${id}b{animation:${id}b ${p3(T)}s step-end ${delay}s ${it} ${fill},${id}f ${d}s linear ${delay}s ${once ? n - 1 : 'infinite'} ${fill}}`;
-    // a imagem entra uma vez só; as duas camadas (quadro atual + fusão) usam <use>
-    const svg = `<defs><image id="${id}i" href="${sh.url}" x="0" y="0" width="${W * cols}" height="${H * rows}"/></defs><g class="${id}a"><use href="#${id}i"/></g><g class="${id}b"><use href="#${id}i"/></g>`;
+    // Só o quadro atual (a 24 qps não precisa de fusão: a camada extra somava alfa nas áreas
+    // semitransparentes e fazia a borda piscar a cada troca de quadro).
+    const css = `@keyframes ${id}a{${kA.join('')}}.${id}a{will-change:transform;animation:${id}a ${p3(T)}s step-end ${delay}s ${it} ${fill}}`;
+    void kB; void d;
+    const svg = `<defs><image id="${id}i" href="${sh.url}" x="0" y="0" width="${PW * cols}" height="${PH * rows}"/></defs><g class="${id}a"><use href="#${id}i"/></g>`;
     return { css, svg };
   }
   /* ---- Elementos animados por cima da arte (aprendidos em vídeos de referência) ----
@@ -1257,6 +1287,7 @@ ${isparks}</svg>`;
       const size = big ? 140 : 96;
       const first = cutObject(use[0], bx, size);
       const cuts = use.map((fr, i) => (i === 0 ? first : cutObject(fr, bx, size, first.ref)));
+      const stable = stabilizeAlpha(cuts.map((cu) => cu.canvas));
       const { w, h } = first;
       const a = (angs[k] ?? (k * 120)) * Math.PI / 180;
       // centro do objeto: fora do avatar (r 120), só a ponta encosta (~10–20 px para dentro)
@@ -1267,11 +1298,7 @@ ${isparks}</svg>`;
       const rot = ((angs[k] ?? 0) > 90 && (angs[k] ?? 0) < 270) ? 0 : 0;
       const id = 'ob' + k;
       if (cuts.length > 1) {
-        const sh = { n: cuts.length, cols: Math.min(cuts.length, Math.floor(4000 / w)), W: w, H: h };
-        sh.rows = Math.ceil(sh.n / sh.cols);
-        const sc = document.createElement('canvas'); sc.width = w * sh.cols; sc.height = h * sh.rows;
-        const sx = sc.getContext('2d'); cuts.forEach((cu, i) => sx.drawImage(cu.canvas, (i % sh.cols) * w, Math.floor(i / sh.cols) * h));
-        sh.url = sc.toDataURL('image/webp', 0.85); if (!/^data:image\/webp/.test(sh.url)) sh.url = sc.toDataURL('image/png');
+        const sh = packSheet(stable, w, h, 4000, 0.8);
         const L = sheetLayer(sh, T, id, false);
         css += L.css;
         defs += `<clipPath id="${id}c"><rect width="${w}" height="${h}"/></clipPath>`;
@@ -1301,11 +1328,7 @@ ${isparks}</svg>`;
     const cuts = use.map((fr, i) => (i === 0 ? first : cutObject(fr, bx, size, first.ref)));
     const { w, h } = first;
     if (cuts.length < 2) return { w, h, css: '', svg: `<image href="${first.canvas.toDataURL('image/png')}" width="${w}" height="${h}"/>` };
-    const cols = Math.max(1, Math.min(cuts.length, Math.floor(8000 / w)));
-    const sh = { n: cuts.length, cols, rows: Math.ceil(cuts.length / cols), W: w, H: h };
-    const sc = document.createElement('canvas'); sc.width = w * cols; sc.height = h * sh.rows;
-    const sx = sc.getContext('2d'); cuts.forEach((cu, i) => sx.drawImage(cu.canvas, (i % cols) * w, Math.floor(i / cols) * h));
-    sh.url = sc.toDataURL('image/webp', 0.74); if (!/^data:image\/webp/.test(sh.url)) sh.url = sc.toDataURL('image/png');
+    const sh = packSheet(stabilizeAlpha(cuts.map((cu) => cu.canvas)), w, h, 8000, 0.78);
     const L = sheetLayer(sh, T, id, false);
     return { w, h, css: L.css, svg: `<clipPath id="${id}c"><rect width="${w}" height="${h}"/></clipPath><g clip-path="url(#${id}c)">${L.svg}</g>` };
   }
