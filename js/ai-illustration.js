@@ -32,10 +32,10 @@
   const STYLE = 'Polished 2D game cosmetic illustration in the style of official Discord shop items: clean cel shading with 2-3 tones per color, crisp smooth edges, soft rim light, a short harmonious palette (one dominant color, one support, one accent), bright and readable at small size, a few big well-drawn shapes rather than clutter. No text, no letters, no numbers, no logos, no watermark, no UI elements, no photo realism, no 3D render look.';
 
   const LAYOUT = {
-    decorations: 'FORMAT: square avatar decoration. The artwork is a decorative ring that wraps around an EMPTY CIRCULAR HOLE in the exact center of the image; the hole diameter is about 72% of the image width and must contain only background. Place the main ornament on the top or a top corner of the ring and smaller accents around the rest so it feels balanced. The art hugs the hole edge and stays inside the image borders.',
+    decorations: 'FORMAT: square avatar decoration. The avatar is a circle in the exact center whose diameter is 83% of the image width; the artwork sits AROUND it, hugging its edge from the outside, and only small parts (a paw, a leaf, a horn tip) may overlap the avatar edge — the avatar itself stays clear background. The ring is NOT a solid band: leave about a quarter of the way around empty, with a few big well-drawn elements instead of a continuous wreath. Put the main ornament on the top or a top corner, more weight on the top and the sides than on the bottom. Everything stays inside the image borders.',
     nameplates: 'FORMAT: very wide horizontal banner ornament. All artwork must sit inside the central horizontal band (the middle 40% of the image height); everything above and below that band is plain background. The LEFT HALF of the image is completely empty background. The illustration grows in density toward the right end, with the main motif on the far right.',
     effects: 'FORMAT: tall vertical overlay effect for a profile card, like the official Discord profile effects. The scene lives in the TOP HALF: it is densest across the very top (the banner area, top 25% of the height) and spills down to about 55% of the height, getting lighter as it goes down (e.g. garlands, bunting, fireworks, flames, petals, clouds hanging from the top). The bottom 40% of the image is empty background, with at most a few tiny floating particles. Keep the small circle near the top-left corner (centered at about 18% of the width and 16% of the height, the avatar) mostly clear. Do not draw any circle, frame or dark shape behind the avatar area. No thick columns down the sides.',
-    frames: 'FORMAT: tall ornamental frame that WRAPS AROUND a tall portrait profile card, like the official Discord profile frames. Imagine an empty rounded rectangle (the card) occupying the middle of the image: from 4% to 96% of the width and from 12% to 92% of the height — it must stay empty background. The frame sits OUTSIDE that rectangle: a rich main ornament crowns the TOP edge and rises above it (e.g. a mask with eyes, horns, a roof, a creature peeking over the card), a smaller ornament sits on the BOTTOM edge, and a SLIM border (only about 5% of the image width thick) runs down the left and right edges connecting them. No thick columns or pillars down the sides. Nothing inside the card area except the very edge.',
+    frames: 'FORMAT: tall ornamental frame that WRAPS AROUND a tall portrait profile card, like the official Discord profile frames. Imagine an empty rounded rectangle (the card) from 4.3% to 95.7% of the width and from 12% to 91.5% of the height — it must stay empty background. The frame lives OUTSIDE that rectangle: (1) a rich CROWN spans the whole width above the card, filling the top 12% of the image, and dips only slightly (about 2% of the height) over the card top edge; (2) a smaller BASE ornament sits along the bottom edge and rises only slightly over the card; (3) the left and right sides are either empty or a SLIM border about 4% of the image width thick, half of it outside the card; elements may spill partway down the sides from the crown. Proven layouts of the official frames: a creature or character peeking over the top with paws, legs or a tail along the bottom; flowers, leaves, crystals, clouds or flames clustered along the top and bottom edges; a thin elegant border with a main ornament centered at the top. Nothing inside the card area except the very edge. No thick columns or pillars.',
   };
   /* Acima disto (fração do canvas coberta) a arte é uma cena cheia, não elementos soltos. */
   const FULL_LIMIT = { effects: 0.42, decorations: 0.6, nameplates: 0.75, frames: 0.5 };
@@ -56,7 +56,7 @@
   }
 
   const STRICT = 'IMPORTANT: the previous attempt painted a full scene that filled the whole image. Draw ONLY the isolated decorative elements described above, with NO scenery, NO texture and NO backdrop behind them; most of the image must be plain flat background.';
-  function promptFor(cat, theme, provider, hasRefs, strict) {
+  function promptFor(cat, theme, provider, hasRefs, strict, fromMedia) {
     theme = cleanTheme(theme).replace(/[\s.]+$/, '');
     const bg = provider === 'gemini'
       ? 'BACKGROUND: perfectly flat solid pure green (#00FF00) everywhere outside the artwork — including any empty hole in the middle — with no gradient, texture, shadow, vignette or white margin. Do not use any green-screen green inside the artwork itself (if the theme needs green, use jade, emerald or teal tones that are clearly darker or bluer).'
@@ -69,7 +69,8 @@
       bg,
       'Also reply with one short line of text: NOME: <a creative item name in Brazilian Portuguese, 2 to 4 words>.',
       strict ? STRICT : '',
-      hasRefs ? 'The attached image is only an inspiration for colors and mood. Do NOT copy it and do NOT place it in the result.' : '',
+      fromMedia ? 'The attached image is the SOURCE ARTWORK chosen by the user. Recreate it as this format: keep exactly its art style, line work, shading, colors, subject and elements (e.g. the same moon, the same waves, the same clouds), only re-composed to fit the format above. It must clearly look like the same artwork.'
+        : hasRefs ? 'The attached image is only an inspiration for colors and mood. Do NOT copy it and do NOT place it in the result.' : '',
       'The output must be ONE image containing ONE object. No numbers, no captions, no panels, no grid.',
     ].filter(Boolean).join('\n\n');
   }
@@ -86,10 +87,10 @@
     return /^(gpt-image|dall-e)/i.test(m) ? m : DEFAULT_OPENAI_IMAGE;
   }
 
-  async function geminiImage(cat, theme, cfg, refs, strict) {
+  async function geminiImage(cat, theme, cfg, refs, strict, fromMedia) {
     const model = geminiImageModel(cfg.model);
     const url = `${(cfg.baseUrl || GEMINI_BASE).replace(/\/+$/, '')}/models/${encodeURIComponent(model)}:generateContent`;
-    const parts = [{ text: promptFor(cat, theme, 'gemini', refs.length > 0, strict) }, ...refs.map((r) => ({ inlineData: { mimeType: r.mime, data: r.data } }))];
+    const parts = [{ text: promptFor(cat, theme, 'gemini', refs.length > 0, strict, fromMedia && refs.length > 0) }, ...refs.map((r) => ({ inlineData: { mimeType: r.mime, data: r.data } }))];
     for (const withAspect of [true, false]) {
       const generationConfig = { responseModalities: ['TEXT', 'IMAGE'] };
       if (withAspect) generationConfig.imageConfig = { aspectRatio: ASPECT[cat].gemini };
@@ -153,6 +154,86 @@
     const b64 = data && data.data && data.data[0] && data.data[0].b64_json;
     if (!b64) throw new Error('A OpenAI não devolveu imagem.');
     return { mime: 'image/png', data: b64, model, keyed: false };
+  }
+
+  /* ---- Outras IAs com modelo de imagem ---- */
+  const IMG_PROXY = (u) => `https://wsrv.nl/?url=${encodeURIComponent(u)}&output=png`;
+  /** URL de imagem → base64 (tenta direto; sem CORS, usa um proxy de imagens). */
+  async function urlToB64(u) {
+    if (/^data:/.test(u)) { const [h, d] = u.split(','); return { mime: (h.match(/data:([^;]+)/) || [])[1] || 'image/png', data: d }; }
+    let blob = null;
+    try { const r = await fetch(u); if (r.ok) blob = await r.blob(); } catch (e) { /* sem CORS */ }
+    if (!blob) { const r = await fetch(IMG_PROXY(u)); if (!r.ok) throw new Error('Não deu para baixar a imagem gerada.'); blob = await r.blob(); }
+    const data = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
+    return { mime: blob.type || 'image/png', data };
+  }
+  /** Qual API de imagem usar para esta configuração. */
+  function imageApi(cfg) {
+    if (cfg.provider === 'gemini') return 'gemini';
+    if (cfg.provider === 'openai') return 'openai';
+    if (/aliyuncs\.com|dashscope/i.test(cfg.baseUrl || '')) return 'dashscope';
+    if (cfg.provider === 'openrouter' || /openrouter\.ai/i.test(cfg.baseUrl || '')) return 'chat-image';
+    return 'images-api';
+  }
+  const API_LABEL = { gemini: 'Gemini', openai: 'OpenAI', dashscope: 'Alibaba', 'chat-image': 'OpenRouter', 'images-api': 'IA' };
+  const DASH_SIZE = { nameplates: '1664*928', decorations: '1328*1328', effects: '928*1664', frames: '928*1664' };
+  /** Alibaba Model Studio (qwen-image, wan…): API nativa multimodal-generation. */
+  async function dashscopeImage(cat, prompt, cfg, images = []) {
+    const origin = new URL(cfg.baseUrl).origin;
+    const url = origin + '/api/v1/services/aigc/multimodal-generation/generation';
+    const tries = images.length ? [images, []] : [[]];
+    let lastErr;
+    for (const imgs of tries) {
+      for (const withSize of [true, false]) {
+        const parameters = { watermark: false, n: 1, prompt_extend: false };
+        if (withSize) parameters.size = DASH_SIZE[cat];
+        const content = [...imgs.map((i) => ({ image: `data:${i.mime};base64,${i.data}` })), { text: prompt }];
+        let res;
+        try {
+          res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + cfg.key }, body: JSON.stringify({ model: cfg.model, input: { messages: [{ role: 'user', content }] }, parameters }) });
+        } catch (e) { throw new Error('Não foi possível conectar à Alibaba.'); }
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          const msg = (data && (data.message || data.code)) || 'HTTP ' + res.status;
+          lastErr = new Error(`Alibaba (${cfg.model}): ${msg}`);
+          if (res.status === 429) { lastErr.retryAfter = 20; throw lastErr; }
+          if (res.status === 401 || res.status === 404) throw lastErr;
+          continue;
+        }
+        const parts = (((data.output || {}).choices || [])[0] || {}).message;
+        const found = ((parts && parts.content) || []).find((c) => c.image);
+        if (!found) { lastErr = new Error('A Alibaba não devolveu imagem.'); continue; }
+        return { ...(await urlToB64(found.image)), model: cfg.model, keyed: true };
+      }
+    }
+    throw lastErr || new Error('A Alibaba não aceitou o pedido.');
+  }
+  /** OpenRouter e afins: chat com saída de imagem (modalities). */
+  async function chatImage(cat, prompt, cfg, images = []) {
+    const base = (cfg.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+    const content = [{ type: 'text', text: prompt }, ...images.map((i) => ({ type: 'image_url', image_url: { url: `data:${i.mime};base64,${i.data}` } }))];
+    const res = await fetch(base + '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + cfg.key }, body: JSON.stringify({ model: cfg.model, modalities: ['image', 'text'], messages: [{ role: 'user', content }] }) });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) { const e = new Error(`${cfg.model}: ` + ((data && data.error && data.error.message) || 'HTTP ' + res.status)); if (res.status === 429) e.retryAfter = 20; throw e; }
+    const msg = data && data.choices && data.choices[0] && data.choices[0].message;
+    const img = msg && msg.images && msg.images[0];
+    const u = img && (img.image_url ? img.image_url.url : img.url);
+    if (!u) throw new Error(`"${cfg.model}" não devolveu imagem: escolha um modelo que gere imagens.`);
+    return { ...(await urlToB64(u)), model: cfg.model, keyed: true };
+  }
+  /** Qualquer API com /images/generations (Together, xAI, Fireworks…). */
+  async function imagesApi(cat, prompt, cfg) {
+    const base = (cfg.baseUrl || '').replace(/\/+$/, '');
+    let res;
+    try {
+      res = await fetch(base + '/images/generations', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(cfg.key ? { Authorization: 'Bearer ' + cfg.key } : {}) }, body: JSON.stringify({ model: cfg.model, prompt, n: 1, response_format: 'b64_json' }) });
+    } catch (e) { throw new Error('Não foi possível conectar à API de imagens.'); }
+    const data = await res.json().catch(() => null);
+    if (!res.ok) { const e = new Error(`${cfg.model}: ` + ((data && data.error && (data.error.message || data.error)) || 'HTTP ' + res.status)); if (res.status === 429) e.retryAfter = 20; throw e; }
+    const d = data && data.data && data.data[0];
+    if (d && d.b64_json) return { mime: 'image/png', data: d.b64_json, model: cfg.model, keyed: true };
+    if (d && d.url) return { ...(await urlToB64(d.url)), model: cfg.model, keyed: true };
+    throw new Error('A API não devolveu imagem.');
   }
 
   /* ---------------------------------------------------------------- */
@@ -274,20 +355,19 @@
       let k = 1;
       if (cat === 'decorations') {
         const r = Math.hypot(x - 144, y - 144);
-        k = smooth(90, 108, r); // centro do avatar livre, borda pode ser tocada
+        k = smooth(104, 116, r); // avatar (r=120) livre; a arte só encosta na borda
       } else if (cat === 'nameplates') {
-        k = smooth(140, 215, x); // avatar + nome à esquerda
+        k = 1; // sem máscara do avatar: a arte ocupa a faixa toda
       } else if (cat === 'effects') {
         // Como os oficiais (guia medido): arte nos ~60% de cima, base quase vazia e avatar
         // ≈ 8% coberto — a base some num degradê e o avatar fica bem translúcido.
         k = 1 - smooth(H * 0.52, H * 0.74, y);
-        k = Math.min(k, 0.2 + 0.8 * smooth(52, 84, Math.hypot(x - 82, y - 138)));
       } else if (cat === 'frames') {
         // card em (56, 304)–(1256, 2316): o miolo fica livre; o ornamento pode invadir a borda
         // (até ~180 px no topo, sobre o banner, ~110 na base e só ~30–48 px dos lados, como os
         // oficiais: no "Deadpool Mask" a borda lateral tem 74 px e entra 30 px no card)
-        const inX = smooth(56 + 26, 56 + 48, x) * smooth(56 + 26, 56 + 48, W - x);
-        const inY = smooth(304 + 130, 304 + 200, y) * smooth(212 + 60, 212 + 120, H - y);
+        const inX = smooth(56 + 10, 56 + 22, x) * smooth(56 + 10, 56 + 22, W - x);
+        const inY = smooth(304 + 50, 304 + 90, y) * smooth(212 + 24, 212 + 50, H - y);
         k = 1 - inX * inY;
         // avatar (card: centro 290,487 raio ~235)
         k = Math.min(k, smooth(225, 260, Math.hypot(x - (56 + 290), y - (304 + 487))) + (1 - inX * inY) * 0);
@@ -319,9 +399,18 @@
   }
 
   /** Imagem gerada → canvas oficial (WebP com alpha) + paleta + cobertura. */
-  async function processImage(gen, cat) {
-    const src = await loadImage(`data:${gen.mime};base64,${gen.data}`);
+  async function processImage(gen, cat, opts = {}) {
     const { w: W, h: H } = CANVAS[cat];
+    const out = document.createElement('canvas');
+    out.width = W; out.height = H;
+    const ctx = out.getContext('2d', { willReadFrequently: true });
+    if (opts.canvas) {
+      // Mídia do usuário: mantém o cenário, recorta no formato e só protege as zonas
+      coverInto(ctx, opts.canvas, cat, opts.focus);
+      applyMask(ctx, cat, opts.variant);
+      return finishArt(ctx, out, cat, W, H);
+    }
+    const src = await loadImage(`data:${gen.mime};base64,${gen.data}`);
     const tmp = document.createElement('canvas');
     tmp.width = src.naturalWidth; tmp.height = src.naturalHeight;
     const tctx = tmp.getContext('2d', { willReadFrequently: true });
@@ -332,9 +421,6 @@
     const bb = alphaBounds(raw);
     if (!bb) throw new Error('A imagem gerada veio vazia depois de remover o fundo.');
 
-    const out = document.createElement('canvas');
-    out.width = W; out.height = H;
-    const ctx = out.getContext('2d', { willReadFrequently: true });
     if (cat === 'decorations') {
       // mantém o centro da imagem no centro do avatar; escala pelo maior lado ocupado
       const cx = tmp.width / 2, cy = tmp.height / 2;
@@ -353,6 +439,280 @@
       ctx.drawImage(tmp, (W - dw) / 2, cat === 'frames' ? 0 : (H - dh) / 2, dw, dh);
     }
     protectZones(ctx, cat, W, H);
+    return finishArt(ctx, out, cat, W, H);
+  }
+
+  /** Onde fica o "miolo" interessante de uma imagem (para recortar a faixa/quadrado certo). */
+  function focusOf(canvas) {
+    const w = 48, h = Math.max(1, Math.round((canvas.height / canvas.width) * 48));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(canvas, 0, 0, w, h);
+    const d = x.getImageData(0, 0, w, h).data;
+    const row = new Array(h).fill(0), col = new Array(w).fill(0);
+    for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+      const i = (yy * w + xx) * 4, r = d[i], g = d[i + 1], b = d[i + 2];
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      const v = (mx / 255) * (0.4 + (mx ? (mx - mn) / mx : 0)); // claro e saturado = chama atenção
+      row[yy] += v; col[xx] += v;
+    }
+    return { row, col };
+  }
+  /** Desenha a mídia cobrindo o canvas do formato, com o recorte no trecho mais marcante. */
+  function coverInto(ctx, src, cat, focus) {
+    const { w: W, h: H } = CANVAS[cat];
+    const s = Math.max(W / src.width, H / src.height);
+    const cw = W / s, ch = H / s; // tamanho do recorte na mídia
+    const best = (arr, win, total) => {
+      const n = arr.length, k = Math.max(1, Math.round((win / total) * n));
+      let bi = 0, bv = -1;
+      for (let i = 0; i + k <= n; i++) { let v = 0; for (let j = i; j < i + k; j++) v += arr[j]; if (v > bv) { bv = v; bi = i; } }
+      return (bi / n) * total;
+    };
+    let sx = (src.width - cw) / 2, sy = (src.height - ch) / 2;
+    if ((cat === 'nameplates' || cat === 'decorations') && focus) {
+      if (ch < src.height - 1) sy = best(focus.row, ch, src.height);
+      if (cw < src.width - 1) sx = best(focus.col, cw, src.width);
+    }
+    if (cat === 'frames') sy = 0;
+    ctx.drawImage(src, sx, sy, cw, ch, 0, 0, W, H);
+  }
+
+  /* ---- Estudo dos oficiais (catalog/effect-shape-study.json): mapas dos efeitos e formas das molduras ---- */
+  let STUDY = null;
+  async function loadStudy() {
+    if (STUDY) return STUDY;
+    try {
+      const j = await (await fetch('catalog/media-study.json')).json();
+      STUDY = { loop: j.efeitos.loop_mapa_16x9, intro: j.efeitos.entrada_mapa_16x9, shapes: (j.molduras_formas.tipos || []).filter((t) => t.n >= 8), etypes: j.efeitos.loop_tipos || [] };
+    } catch (e) { STUDY = { loop: null, intro: null, shapes: [], etypes: [] }; }
+    return STUDY;
+  }
+  /** Mapa 16×9 (linhas × colunas) → valor suave em (x, y) do canvas 450×880. */
+  function sampleMap(map, x, y) {
+    const gx = Math.min(8, Math.max(0, x / 50 - 0.5)), gy = Math.min(15, Math.max(0, y / 55 - 0.5));
+    const x0 = Math.floor(gx), y0 = Math.floor(gy), x1 = Math.min(8, x0 + 1), y1 = Math.min(15, y0 + 1), fx = gx - x0, fy = gy - y0;
+    return (map[y0][x0] * (1 - fx) + map[y0][x1] * fx) * (1 - fy) + (map[y1][x0] * (1 - fx) + map[y1][x1] * fx) * fy;
+  }
+  /** Interpola um perfil de 36 setores (0° = topo, sentido horário) no ângulo th (graus). */
+  const ang36 = (arr, th) => { const g = (((th % 360) + 360) % 360) / 10 - 0.5; const i0 = (Math.floor(g) + 36) % 36, i1 = (i0 + 1) % 36, t = g - Math.floor(g); return arr[i0] * (1 - t) + arr[i1] * t; };
+
+  /* ---- Máscaras da mídia: contorno orgânico (nada de quadrado), como os oficiais ---- */
+  /** Ruído suave 1D determinístico (soma de senos), em [-1, 1]. */
+  function wobble(seed, scale) {
+    const R = rnd(seed);
+    const w = [0, 1, 2, 3].map((i) => ({ f: (1 + i * 1.7 + R()) / scale, p: R() * 6.283, a: 1 / (i + 1) }));
+    const tot = w.reduce((s0, x) => s0 + x.a, 0);
+    return (t) => w.reduce((s0, x) => s0 + x.a * Math.sin(t * x.f + x.p), 0) / tot;
+  }
+  /**
+   * Máscara (canvas branco com alpha) de cada formato para a mídia do usuário.
+   * Moldura: anel POR FORA do avatar (avatar r=120 no canvas de 288; a arte entra ~6 px),
+   *   mais grosso em cima, borda externa irregular.
+   * Frame: coroa no topo + base + laterais finas; entra ~18 px nos lados do card, ~56 px
+   *   sobre o banner e ~36 px na base; contorno externo irregular; miolo transparente.
+   * Nameplate / efeito: as zonas protegidas de sempre.
+   */
+  function mediaMask(cat, variant) {
+    const { w: W, h: H } = CANVAS[cat];
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x2 = c.getContext('2d', { willReadFrequently: true });
+    x2.fillStyle = '#fff'; x2.fillRect(0, 0, W, H);
+    const EFX = {
+      'loop:topo': (x, y) => 1 - smooth(130, 280, y),
+      'loop:laterais': (x, y) => Math.max(1 - smooth(45, 120, x), smooth(330, 405, x)) * (1 - smooth(560, 760, y)),
+      'loop:base': (x, y) => smooth(560, 740, y),
+      'loop:cantos': (x, y) => Math.max(...[[0, 0], [450, 0], [0, 880], [450, 880]].map(([cx, cy]) => 1 - smooth(70, 190, Math.hypot(x - cx, y - cy)))),
+      'loop:cheio': () => 0.55,
+    };
+    const etMap = typeof variant === 'string' && variant.startsWith('tipo:') && STUDY && STUDY.etypes ? (STUDY.etypes[+variant.slice(5)] || {}).mapa_16x9 : null;
+    if (cat === 'effects' && (etMap || EFX[variant] || (STUDY && STUDY[variant || 'intro']))) {
+      // Onde os efeitos oficiais têm arte (mapa médio medido quadro a quadro) ou a forma escolhida.
+      const map = etMap || (EFX[variant] ? null : STUDY[variant || 'intro']);
+      let mx = 0; if (map) map.forEach((row) => row.forEach((v) => { mx = Math.max(mx, v); }));
+      const img = x2.getImageData(0, 0, W, H), d = img.data;
+      const nE = wobble(41, 1);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const v = map ? sampleMap(map, x, y) / (mx || 1) : EFX[variant](x, y);
+        let k = map ? smooth(0.22 + 0.06 * nE((x + y) / 60), 0.75, v) : Math.min(1, v * (0.9 + 0.2 * nE((x + y) / 60)));
+        d[(y * W + x) * 4 + 3] = Math.round(255 * k);
+      }
+      x2.putImageData(img, 0, 0);
+      return c;
+    }
+    const NP = {
+      esquerda: (x) => 1 - smooth(60, 160, x),
+      centro: (x) => smooth(80, 200, x) * (1 - smooth(W - 200, W - 80, x)),
+      pontas: (x) => Math.max(1 - smooth(30, 90, x), smooth(W - 150, W - 60, x)),
+    };
+    if (cat === 'nameplates' && (NP[variant] || variant === 'bordas')) {
+      const img = x2.getImageData(0, 0, W, H), d = img.data;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const v = variant === 'bordas' ? Math.max(1 - smooth(H * 0.12, H * 0.32, y), smooth(H * 0.68, H * 0.88, y)) : NP[variant](x);
+        d[(y * W + x) * 4 + 3] = Math.round(255 * Math.max(0, Math.min(1, v)));
+      }
+      x2.putImageData(img, 0, 0);
+      return c;
+    }
+    if (cat === 'nameplates' && variant === 'inteira') {
+      // arte na faixa toda; só um véu suave atrás do avatar e do nome para continuar legível
+      const img = x2.getImageData(0, 0, W, H), d = img.data;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) d[(y * W + x) * 4 + 3] = 255;
+      x2.putImageData(img, 0, 0);
+      return c;
+    }
+    if (cat !== 'decorations' && cat !== 'frames') { protectZones(x2, cat, W, H); return c; }
+    const img = x2.getImageData(0, 0, W, H), d = img.data;
+    const shape = cat === 'decorations' && STUDY && STUDY.shapes.length && typeof variant === 'number' ? STUDY.shapes[variant % STUDY.shapes.length] : null;
+    if (shape) {
+      // Forma medida nas molduras oficiais: massa, alcance e borda interna por ângulo.
+      const mm = Math.max(...shape.massa_36) || 1;
+      const nO = wobble(43 + (variant || 0), 0.35);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const dx = x - 144, dy = y - 144, rr = Math.hypot(dx, dy);
+        const th = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360;
+        const m = ang36(shape.massa_36, th) / mm;
+        const rOut = Math.min(205, Math.max(128, 112 + (ang36(shape.alcance_36, th) - 112) * 1.25 + 4 * nO(th / 20)));
+        const rIn = Math.max(112, Math.min(rOut - 8, ang36(shape.interno_36, th)));
+        const k = smooth(rIn - 3, rIn + 3, rr) * (1 - smooth(rOut - 4, rOut + 1, rr)) * smooth(0.18, 0.5, m);
+        d[(y * W + x) * 4 + 3] = Math.round(255 * k);
+      }
+    } else if (cat === 'decorations') {
+      const nOut = wobble(3, 0.35), nIn = wobble(9, 0.25);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const dx = x - 144, dy = y - 144, rr = Math.hypot(dx, dy), th = Math.atan2(dy, dx);
+        const top = Math.max(0, -Math.sin(th)); // 1 no topo
+        const rOut = 126 + 14 * top + 5 * nOut(th * 6);
+        const rIn = 114 + 2 * nIn(th * 5);
+        const k = smooth(rIn - 3, rIn + 3, rr) * (1 - smooth(rOut - 4, rOut + 1, rr));
+        d[(y * W + x) * 4 + 3] = Math.round(255 * k);
+      }
+    } else {
+      const L = 56, Rr = 1256, T = 304, B = 2316;
+      const nT = wobble(5, 1), nB = wobble(7, 1), nL = wobble(11, 1), nR = wobble(13, 1);
+      const nTi = wobble(17, 1), nBi = wobble(19, 1), nLi = wobble(23, 1), nRi = wobble(29, 1);
+      // Medidas do estudo de 40 frames oficiais (docs/frame-deco-study.md): coroa ~300 px acima
+      // do card e desce ~41 px; base sobe ~30 px; laterais ~36 px fora e ~22 px dentro, e em
+      // metade dos frames as laterais nem existem — aqui elas descem da coroa/sobem da base e
+      // somem no meio ("escorrem pelas laterais"). Miolo 0%.
+      const nG = wobble(31, 1);
+      for (let y = 0; y < H; y++) {
+        const outL = L - 36 + 12 * nL(y / 140), outR = Rr + 36 - 12 * nR(y / 150);
+        const inL = L + 22 + 6 * nLi(y / 90), inR = Rr - 22 - 6 * nRi(y / 95);
+        const gap = 90 * nG(y / 300);
+        const sideOn = 1 - smooth(T + 380 + gap, T + 760 + gap, y) * (1 - smooth(B - 640 - gap, B - 300 - gap, y));
+        for (let x = 0; x < W; x++) {
+          const yTop = 20 + 120 * (0.5 + 0.5 * nT(x / 120)); // borda de cima da coroa (irregular)
+          const yBot = H - 20 - 90 * (0.5 + 0.5 * nB(x / 110));
+          const inT = T + 41 + 18 * nTi(x / 80), inB = B - 30 - 12 * nBi(x / 85);
+          // fora da silhueta externa
+          let k = smooth(yTop - 6, yTop + 6, y) * (1 - smooth(yBot - 6, yBot + 6, y)) * smooth(outL - 4, outL + 4, x) * (1 - smooth(outR - 4, outR + 4, x));
+          // miolo do card vazio
+          const inside = smooth(inL - 5, inL + 5, x) * (1 - smooth(inR - 5, inR + 5, x)) * smooth(inT - 8, inT + 8, y) * (1 - smooth(inB - 8, inB + 8, y));
+          k *= 1 - inside;
+          // laterais conforme o estilo: escorrendo (padrão), nenhuma, completas; "coroa" tira a base
+          const band = smooth(inT - 10, inT + 30, y) * (1 - smooth(inB - 30, inB + 10, y));
+          const fs = variant || 'coroa-laterais';
+          const side = fs === 'borda' ? 1 : fs === 'coroa-base' ? 0 : fs === 'coroa' ? 1 - smooth(T + 300, T + 600, y) : sideOn;
+          k *= 1 - band * (1 - side);
+          if (fs === 'coroa') k *= 1 - smooth(inB - 400, inB - 100, y);
+          if (fs === 'base') k *= smooth(inB - 520, inB - 200, y);
+          if (fs === 'cantos') k *= 1 - smooth(520, 760, Math.hypot(Math.min(x, W - x), Math.min(y, H - y)));
+          if (fs === 'lado') k *= 1 - smooth(W * 0.45, W * 0.7, x) * band;
+          if (fs === 'coroa-alta') { k *= 1 - smooth(inT + 60, inT + 260, y) * (1 - smooth(inB - 120, inB, y)); }
+          d[(y * W + x) * 4 + 3] = Math.round(255 * k);
+        }
+      }
+    }
+    x2.putImageData(img, 0, 0);
+    return c;
+  }
+  /** Rótulo automático de uma forma de moldura, pela distribuição de massa medida. */
+  function shapeLabel(t) {
+    const m = t.massa_36, mx = Math.max(...m) || 1;
+    const on = m.filter((v) => v / mx > 0.35).length / 36;
+    const part = (a, b) => m.slice(a, b).reduce((s0, v) => s0 + v, 0);
+    const top = part(0, 5) + part(31, 36), bot = part(13, 23), right = part(5, 13), left = part(23, 31);
+    const tot = top + bot + right + left || 1;
+    const reach = Math.max(...t.alcance_36);
+    if (on > 0.8) return reach > 150 ? { k: 'anel-orelhas', label: 'Anel com orelhas' } : { k: 'anel', label: 'Anel cheio' };
+    if (top / tot > 0.4) return reach > 150 ? { k: 'orelhas', label: 'Orelhas / chifres' } : { k: 'topo', label: 'Ornamento no topo' };
+    if (bot / tot > 0.38) return { k: 'base', label: 'Peso embaixo' };
+    if (Math.abs(left - right) / tot > 0.15) return { k: 'lateral', label: 'Lua de lado' };
+    if (on < 0.45) return { k: 'soltos', label: 'Elementos soltos' };
+    return { k: 'arco', label: 'Arcos laterais' };
+  }
+  /** Rótulos repetidos ganham número (Anel cheio 1, Anel cheio 2…). */
+  function numbered(list) {
+    const c = {}, k = {};
+    list.forEach((o) => { c[o.label] = (c[o.label] || 0) + 1; });
+    return list.map((o) => (c[o.label] > 1 ? { ...o, label: o.label + ' ' + (k[o.label] = (k[o.label] || 0) + 1) } : o));
+  }
+  /** Rótulo de um tipo de loop medido, pela região onde ele tem mais arte. */
+  function effLabel(m) {
+    let top = 0, mid = 0, bot = 0, side = 0, tot = 0;
+    m.forEach((row, y) => row.forEach((v, x) => { tot += v; if (y < 4) top += v; else if (y > 11) bot += v; else mid += v; if (x < 2 || x > 6) side += v; }));
+    tot = tot || 1;
+    if (top / tot > 0.45) return 'Oficial: banner';
+    if (bot / tot > 0.4) return 'Oficial: embaixo';
+    if (side / tot > 0.6) return 'Oficial: laterais';
+    if (mid / tot > 0.55) return 'Oficial: meio';
+    return 'Oficial: espalhado';
+  }
+  /** Formas que o usuário pode escolher em cada formato. */
+  async function shapeOptions() {
+    await loadStudy();
+    return {
+      decorations: [{ v: 'auto', label: '3 sorteadas' }, ...numbered((STUDY.shapes || []).map((t, i) => ({ v: i, label: shapeLabel(t).label })))],
+      effects: [{ v: 'loop', label: 'Como os oficiais' }, ...numbered((STUDY.etypes || []).map((t, i) => ({ v: 'tipo:' + i, label: effLabel(t.mapa_16x9) }))), { v: 'loop:topo', label: 'Só no topo' }, { v: 'loop:laterais', label: 'Laterais' }, { v: 'loop:cantos', label: 'Cantos' }, { v: 'loop:base', label: 'Base' }, { v: 'loop:cheio', label: 'Cena inteira, leve' }],
+      frames: [{ v: 'coroa-laterais', label: 'Coroa + laterais escorrendo' }, { v: 'coroa-base', label: 'Coroa + base' }, { v: 'borda', label: 'Borda completa' }, { v: 'coroa', label: 'Só coroa' }, { v: 'coroa-alta', label: 'Coroa grande + base fina' }, { v: 'base', label: 'Só base' }, { v: 'cantos', label: 'Cantos' }, { v: 'lado', label: 'Escorrendo de um lado' }],
+      nameplates: [{ v: 'direita', label: 'Arte à direita' }, { v: 'inteira', label: 'Faixa inteira' }, { v: 'esquerda', label: 'Atrás do avatar' }, { v: 'centro', label: 'Centro' }, { v: 'bordas', label: 'Bordas (cima/baixo)' }, { v: 'pontas', label: 'Duas pontas' }],
+    };
+  }
+  /** Prévia pequena da forma: card/avatar em azul e a área da arte em branco. */
+  function shapePreview(cat, v, h = 64) {
+    const m = maskOf(cat, cat === 'effects' && v === 'loop' ? 'loop' : v === 'auto' ? undefined : v);
+    const { w: W, h: H } = CANVAS[cat];
+    const s = h / H, w = Math.max(1, Math.round(W * s));
+    const c = document.createElement('canvas'); c.width = cat === 'nameplates' ? 160 : w; c.height = cat === 'nameplates' ? 30 : h;
+    const x = c.getContext('2d');
+    const sx = c.width / W, sy = c.height / H;
+    x.fillStyle = '#1e1f22'; x.fillRect(0, 0, c.width, c.height);
+    x.fillStyle = '#5865F2';
+    if (cat === 'decorations') { x.beginPath(); x.arc(144 * sx, 144 * sy, 120 * sx, 0, 7); x.fill(); }
+    else if (cat === 'frames') { x.fillRect(56 * sx, 304 * sy, 1200 * sx, 2012 * sy); }
+    else if (cat === 'effects') { x.globalAlpha = 0.5; x.fillRect(0, 0, c.width, 120 * sy); x.globalAlpha = 1; x.beginPath(); x.arc(82 * sx, 138 * sy, 66 * sx, 0, 7); x.fill(); }
+    else { x.beginPath(); x.arc(20, 15, 10, 0, 7); x.fill(); }
+    const t = document.createElement('canvas'); t.width = c.width; t.height = c.height;
+    const tx = t.getContext('2d'); tx.drawImage(m, 0, 0, c.width, c.height);
+    tx.globalCompositeOperation = 'source-in'; tx.fillStyle = 'rgba(255,255,255,.9)'; tx.fillRect(0, 0, c.width, c.height);
+    x.drawImage(t, 0, 0);
+    return c.toDataURL('image/png');
+  }
+  /** Frase para o modelo de imagem seguir a forma escolhida. */
+  function shapeHint(cat, v) {
+    if (v === undefined || v === null || v === 'auto') return '';
+    if (cat === 'decorations') {
+      const t = STUDY && STUDY.shapes && STUDY.shapes[v];
+      const k = t ? shapeLabel(t).k : '';
+      return ({ anel: 'SHAPE: a full ring all around the avatar.', 'anel-orelhas': 'SHAPE: a ring around the avatar with ears or horns poking out past the circle at the top corners.', orelhas: 'SHAPE: only ears or horns on the top; the rest of the circle is empty.', topo: 'SHAPE: only one ornament sitting on top of the avatar (like a hat, hair, crown or creature); the sides and bottom are empty.', base: 'SHAPE: the art is mostly at the bottom of the avatar (like flames, plants or a creature below); the top is mostly empty.', lateral: 'SHAPE: a crescent on one side of the avatar; the other side is empty.', soltos: 'SHAPE: a few separate small elements scattered around the avatar edge, with gaps between them.', arco: 'SHAPE: two arcs or wings on the left and right of the avatar; top and bottom mostly empty.' })[k] || '';
+    }
+    if (cat === 'frames') return ({ 'coroa-base': 'SHAPE: no side borders at all: only the crown on top and a base ornament at the bottom.', borda: 'SHAPE: a complete slim border on all four sides plus the crown on top and a base.', coroa: 'SHAPE: only the crown on top; nothing on the sides or bottom.', 'coroa-alta': 'SHAPE: a tall, big crown on top and only a thin base at the bottom; no sides.', base: 'SHAPE: only a base ornament at the bottom; nothing on top or sides.', cantos: 'SHAPE: ornaments only on the four corners of the card.', lado: 'SHAPE: crown and base, with the art spilling down only the left side.', 'coroa-laterais': 'SHAPE: crown on top and base at the bottom, with elements spilling partway down the sides from the top and up from the bottom; the middle of the sides is empty.' })[v] || '';
+    if (cat === 'effects') return ({ 'loop:topo': 'SHAPE: keep the art in the top 30% of the image only.', 'loop:laterais': 'SHAPE: keep the art along the left and right edges only.', 'loop:base': 'SHAPE: keep the art in the bottom part only.', 'loop:cantos': 'SHAPE: put the art in the four corners only.', 'loop:cheio': 'SHAPE: a light scene over the whole image.' })[v] || '';
+    if (cat === 'effects' && String(v).startsWith('tipo:')) return 'SHAPE: ' + ({ 'Oficial: banner': 'keep the art mostly in the top banner area', 'Oficial: embaixo': 'keep the art mostly in the bottom part', 'Oficial: laterais': 'keep the art along the left and right edges', 'Oficial: meio': 'a light layer around the middle, leaving the name readable', 'Oficial: espalhado': 'small elements scattered sparsely' })[effLabel(((STUDY.etypes || [])[+String(v).slice(5)] || {}).mapa_16x9 || [[0]])] + '.';
+    if (cat === 'nameplates') return ({ inteira: 'SHAPE: the art may span the whole width, lighter and calmer on the left.', esquerda: 'SHAPE: the art sits on the left, behind the avatar.', centro: 'SHAPE: the art sits in the center.', bordas: 'SHAPE: the art runs along the top and bottom edges only.', pontas: 'SHAPE: art at both ends, the middle empty.' })[v] || '';
+    return '';
+  }
+
+  const maskCache = {};
+  const maskOf = (cat, v) => { const key = cat + ':' + (v ?? ''); return (maskCache[key] = maskCache[key] || mediaMask(cat, v)); };
+  function applyMask(ctx, cat, v) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.drawImage(maskOf(cat, v), 0, 0);
+    ctx.restore();
+  }
+
+  function finishArt(ctx, out, cat, W, H) {
     const palette = paletteOf(ctx, W, H);
     const enc = (c) => { const u = c.toDataURL('image/webp', 0.86); return /^data:image\/webp/.test(u) ? u : c.toDataURL('image/png'); };
     // Camada de brilhos: só as partes claras e saturadas (fogo, runas, joias, magia) — elas vão pulsar e tremeluzir
@@ -399,18 +759,36 @@
     return pts;
   }
 
+  /** Efeitos de movimento da animação (o usuário liga/desliga; a IA pode sugerir). */
+  const FX_DEFAULT = { wave: false, heat: false, breathe: true, glow: true, shine: true, sparkles: true, motes: true, licks: true };
+  const FX_LABELS = { wave: 'Ondular', heat: 'Distorção de calor', breathe: 'Respirar', glow: 'Brilho pulsando', shine: 'Faixa de luz', sparkles: 'Brilhos ✦', motes: 'Partículas', licks: 'Chamas lambendo' };
+  /** Lê pedidos do texto: "sem ondular", "com ondulação", "sem partículas"… */
+  function fxFromText(text) {
+    const t = String(text || '').toLowerCase().normalize('NFD').replace(/[^\x00-\x7f]/g, '');
+    const words = { wave: 'ondul|onda|wave|balanc', heat: 'distorc|calor|heat|tremul', breathe: 'respir|breath', glow: 'brilho pulsa|pulsar|glow', shine: 'faixa de luz|reflexo|shine|brilho passa', sparkles: 'brilhos|estrel|sparkle|cintil', motes: 'particula|brasa|poeira|particle', licks: 'chama|lambe|flame' };
+    const art = '(?:(?:o|a|os|as|esse|essa|esses|essas|aquele|efeitos? de|movimentos? de|animacao de) +)*';
+    const out = {};
+    Object.entries(words).forEach(([key, re]) => {
+      if (new RegExp('(?:sem|tira[a-z]*|remov[a-z]*|desliga[a-z]*|nao (?:quero|use|usa|usar|coloca)[a-z]*|without) +' + art + '(?:' + re + ')').test(t)) out[key] = false;
+      else if (new RegExp('(?:com|quero|liga[a-z]*|adiciona[a-z]*|coloca[a-z]*|with) +' + art + '(?:' + re + ')').test(t)) out[key] = true;
+    });
+    return out;
+  }
+
   function buildSvgs(cat, art, seed, motion = {}) {
     const { url, hl, palette, W, H } = art;
     const preset = motion.preset || 'rise';
+    // Efeitos de movimento: ondular e distorção de calor ficam DESLIGADOS por padrão.
+    const fx = { ...FX_DEFAULT, ...(motion.fx || {}) };
     const k = [0.6, 1, 1.6][(motion.intensity || 2) - 1] || 1;
     const R = rnd(seed || 7);
     const n = { decorations: 12, nameplates: 8, effects: 18, frames: 16 }[cat];
     const pts = sparklePoints(cat, W, H, n, R);
     const sz = { decorations: 5, nameplates: 4, effects: 7, frames: 10 }[cat];
-    const sparkles = pts.map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * (0.6 + R() * 0.8))}" fill="${palette[i % palette.length]}"/>`).join('');
+    const sparkles = !fx.sparkles ? '' : pts.map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * (0.6 + R() * 0.8))}" fill="${palette[i % palette.length]}"/>`).join('');
     // brasas/partículas subindo a partir das áreas com arte (todas as categorias)
     const rise = { decorations: 60, nameplates: 30, effects: Math.round(H * 0.3), frames: 120 }[cat];
-    const motes = sparklePoints(cat, W, H, cat === 'nameplates' ? 8 : 14, R).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f((cat === 'frames' ? 3 : 1.6) + R() * (cat === 'frames' ? 4 : 2.2))}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
+    const motes = !fx.motes ? '' : sparklePoints(cat, W, H, cat === 'nameplates' ? 8 : 14, R).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f((cat === 'frames' ? 3 : 1.6) + R() * (cat === 'frames' ? 4 : 2.2))}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
     const shineW = Math.round(W * 0.28);
     const sway = { decorations: 'scale(1.015)', nameplates: 'translateY(-1.5px)', effects: 'translateY(-5px)', frames: 'translateY(-2px)' }[cat];
     const dispScale = { decorations: 5, nameplates: 3, effects: 8, frames: 9 }[cat];
@@ -449,23 +827,23 @@ mask{mask-type:alpha}
     const sh = H / N;
     const clips = Array.from({ length: N }, (_, i) => `<clipPath id="c${i}"><rect x="-20" y="${f(i * sh - 0.6)}" width="${W + 40}" height="${f(sh + 1.2)}"/></clipPath>`).join('');
     const waveCss = Array.from({ length: 8 }, (_, k) => `.v${k}{animation-delay:-${f(k * 0.25)}s}`).join('');
-    const body = Array.from({ length: N }, (_, i) => `<g clip-path="url(#c${i})"><use class="wv v${i % 8}" href="#full"/></g>`).join('');
+    const body = !fx.wave ? '<use href="#full"/>' : Array.from({ length: N }, (_, i) => `<g clip-path="url(#c${i})"><use class="wv v${i % 8}" href="#full"/></g>`).join('');
     const up = { effects: 26, frames: 16, nameplates: 6, decorations: 10 }[cat] * k;
     const lick = cat === 'decorations' || preset === 'pulse' || preset === 'orbit' ? `scale(${(1 + 0.07 * k).toFixed(3)})`
       : preset === 'fall' ? `translateY(${f(up * 0.6)}px)`
         : preset === 'drift' || preset === 'sweep' ? `translateX(${f(up)}px)`
           : `translateY(-${f(up)}px)${cat === 'effects' ? ' scaleY(1.1)' : ''}`;
-    const licks = hl ? `<use class="lk" href="#hl"/><use class="lk lk2" href="#hl"/><use class="hlb" href="#hl"/>` : '';
+    const licks = hl && fx.licks ? `<use class="lk" href="#hl"/><use class="lk lk2" href="#hl"/><use class="hlb" href="#hl"/>` : '';
     const lights = '';
     const head = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">`;
     const fullDef = `<g id="full"><use href="#art"/>${hl ? '<use class="hl" href="#hl"/>' : ''}</g>`;
-    const css2 = css.replace(',heat .5s steps(1) infinite', '') + `
+    const css2 = (fx.heat ? css : css.replace(',heat .5s steps(1) infinite', '')) + `
 .wv{animation:wave 2s ease-in-out infinite}${waveCss}
 @keyframes wave{0%,100%{transform:translateX(-${A}px)}50%{transform:translateX(${A}px)}}
 .lk{transform-box:view-box;transform-origin:50% ${cat === 'decorations' ? '50%' : '100%'};mix-blend-mode:screen;opacity:0;animation:lick 1s ease-out infinite}.lk2{animation-delay:-.5s}
-@keyframes lick{0%{opacity:.7;transform:none}100%{opacity:0;transform:${lick}}}`;
+@keyframes lick{0%{opacity:.7;transform:none}100%{opacity:0;transform:${lick}}}${fx.breathe ? '' : ' .art{animation:none}'}${fx.glow ? '' : ' .glow{display:none}'}`;
     if (cat !== 'effects') {
-      const loop = `${head}<style>${css2}</style>${defs.replace('</defs>', clips + fullDef + '</defs>')}<g class="art"><use class="glow" href="#art"/>${body}${licks}${shine}</g>${motes}${sparkles}</svg>`;
+      const loop = `${head}<style>${css2}</style>${defs.replace('</defs>', clips + fullDef + '</defs>')}<g class="art"><use class="glow" href="#art"/>${body}${licks}${fx.shine ? shine : ''}</g>${motes}${sparkles}</svg>`;
       return { svg: loop, loopSeconds: 4 };
     }
 
@@ -480,8 +858,8 @@ mask{mask-type:alpha}
 <radialGradient id="ga"><stop offset=".55" stop-color="#000"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
 <mask id="lm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${H}" fill="url(#gv)"/><circle cx="82" cy="138" r="92" fill="url(#ga)"/></mask>`;
     const onSide = ([x, y]) => y < FADE && Math.hypot(x - 82, y - 138) > 90;
-    const fewSparks = sparkles.split('</path>').length > 1 ? pts.filter(onSide).slice(0, 8).map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * 0.8)}" fill="${palette[i % palette.length]}"/>`).join('') : '';
-    const fewMotes = sparklePoints(cat, W, H, 16, R).filter(onSide).slice(0, 8).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f(1.6 + R() * 2)}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
+    const fewSparks = fx.sparkles && sparkles.split('</path>').length > 1 ? pts.filter(onSide).slice(0, 8).map(([x, y], i) => `<path class="s s${i % 4}" d="${star(x, y, sz * 0.8)}" fill="${palette[i % palette.length]}"/>`).join('') : '';
+    const fewMotes = !fx.motes ? '' : sparklePoints(cat, W, H, 16, R).filter(onSide).slice(0, 8).map(([x, y], i) => `<circle class="m m${i % 4}" cx="${f(x)}" cy="${f(y)}" r="${f(1.6 + R() * 2)}" fill="${palette[(i + 1) % palette.length]}"/>`).join('');
     const loopDefs = defs.replace('</defs>', clips + fullDef + edge + '</defs>');
     const loop = `${head}<style>${css2}
 .lite{opacity:.5}
@@ -502,7 +880,7 @@ mask{mask-type:alpha}
 .full{animation:out .9s ease-in ${f(T - 1.1)}s both}
 .edge{opacity:0;animation:inn .9s ease-out ${f(T - 1.1)}s both}
 .fl{mix-blend-mode:screen;filter:url(#blur);opacity:0;animation:fl 1.6s ease-out .2s both}
-.hl{mix-blend-mode:screen;animation:flick 1s steps(1) infinite,heat .5s steps(1) infinite}
+.hl{mix-blend-mode:screen;animation:flick 1s steps(1) infinite${fx.heat ? ',heat .5s steps(1) infinite' : ''}}
 .sw{animation:sw 1.1s cubic-bezier(.45,0,.25,1) 1.1s both}
 .s{transform-box:fill-box;transform-origin:center;opacity:0}
 ${burst}
@@ -524,6 +902,469 @@ ${burst}
 <circle class="ring" cx="${cx}" cy="${cy}" r="60" stroke="${c0}"/><circle class="ring ring2" cx="${cx}" cy="${cy}" r="60" stroke="${palette[1] || '#fff'}"/>
 ${isparks}</svg>`;
     return { svg: loop, loopSeconds: 4, introSvg: intro, introSeconds: T };
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* MÍDIA COMO ARTE: usa o vídeo/GIF/imagem do usuário direto          */
+  /* ---------------------------------------------------------------- */
+  /** Máscara das zonas protegidas (alpha) para aplicar UMA vez sobre todos os quadros. */
+  function zoneMask(cat, v) {
+    return maskOf(cat, v).toDataURL('image/png');
+  }
+  /** Vários quadros → SVG que troca de quadro com fusão suave e emenda sem pulo. */
+  /**
+   * Folha de sprites: todos os quadros (já com a máscara) numa imagem só, em grade.
+   * Tocar = mover a folha quadro a quadro; uma 2ª cópia, um quadro à frente, entra em
+   * fusão durante cada quadro. Só 2 imagens desenhadas por vez (fluido, sem travar).
+   */
+  function spriteSheet(cat, canvases, variant) {
+    const { w: W, h: H } = CANVAS[cat];
+    const n = canvases.length, cols = Math.max(1, Math.min(n, Math.floor(16000 / W), Math.ceil(Math.sqrt(n * H / W))));
+    const rows = Math.ceil(n / cols);
+    const sh = document.createElement('canvas'); sh.width = W * cols; sh.height = H * rows;
+    const sx = sh.getContext('2d');
+    const t = document.createElement('canvas'); t.width = W; t.height = H;
+    const tx = t.getContext('2d');
+    canvases.forEach((c, i) => {
+      tx.clearRect(0, 0, W, H); tx.drawImage(c, 0, 0);
+      applyMask(tx, cat, variant);
+      sx.drawImage(t, (i % cols) * W, Math.floor(i / cols) * H);
+    });
+    let url = sh.toDataURL('image/webp', cat === 'frames' ? 0.72 : 0.74);
+    if (!/^data:image\/webp/.test(url)) url = sh.toDataURL('image/png');
+    return { url, n, cols, rows, W, H };
+  }
+  const p3 = (v) => Math.round(v * 1000) / 1000;
+  /** Camada CSS/SVG que toca uma folha. once = toca uma vez e para no último quadro. */
+  function sheetLayer(sh, T, id, once, delay = 0) {
+    const { n, cols, rows, W, H } = sh;
+    const pos = (i) => `translate(${-(i % cols) * W}px,${-Math.floor(i / cols) * H}px)`;
+    const kA = [], kB = [];
+    for (let i = 0; i < n; i++) {
+      const pc = p3((i / n) * 100);
+      kA.push(`${pc}%{transform:${pos(i)}}`);
+      kB.push(`${pc}%{transform:${pos(once ? Math.min(n - 1, i + 1) : (i + 1) % n)}}`);
+    }
+    kA.push(`100%{transform:${pos(once ? n - 1 : 0)}}`); kB.push(`100%{transform:${pos(once ? n - 1 : 1 % n)}}`);
+    const it = once ? '1' : 'infinite', fill = once ? 'both' : 'none', d = p3(T / n);
+    const css = `@keyframes ${id}a{${kA.join('')}}@keyframes ${id}b{${kB.join('')}}@keyframes ${id}f{from{opacity:0}to{opacity:1}}
+.${id}a{animation:${id}a ${p3(T)}s step-end ${delay}s ${it} ${fill}}.${id}b{animation:${id}b ${p3(T)}s step-end ${delay}s ${it} ${fill},${id}f ${d}s linear ${delay}s ${once ? n - 1 : 'infinite'} ${fill}}`;
+    const img = `<image href="${sh.url}" x="0" y="0" width="${W * cols}" height="${H * rows}"/>`;
+    const svg = `<g class="${id}a">${img}</g><g class="${id}b">${img.replace('<image ', '<image ')}</g>`;
+    return { css, svg };
+  }
+  /* ---- Elementos animados por cima da arte (aprendidos em vídeos de referência) ----
+   * Estudo quadro a quadro (docs/motion-study.md): corvos em bando, grama ao vento, penas e
+   * folhas caindo com profundidade, brasas/faíscas subindo, raios elétricos piscando, raios de
+   * luz, fragmentos se desfazendo, fumaça. Sempre em 3 planos: fundo pequeno e lento, meio,
+   * e poucos grandes, rápidos e desfocados na frente. */
+  const PARTS = {
+    folhas: { label: '🍃 Folhas', wind: 'vento', path: 'M0-10C6-6 7 4 0 10C-7 4-6-6 0-10Z', vein: 'M0-9L0 9', hue: 'g', flip: 1 },
+    petalas: { label: '🌸 Pétalas', wind: 'vento', path: 'M0-8C5-8 7-2 0 8C-7-2-5-8 0-8Z', hue: 'p', flip: 1 },
+    penas: { label: '🪶 Penas', wind: 'cair', path: 'M0-12C3-8 3 6 0 12C-3 6-3-8 0-12Z', vein: 'M0-12L0 12', hue: 'k', flip: 1 },
+    corvos: { label: '🐦‍⬛ Corvos / pássaros', wind: 'vento', bird: 1, hue: 'k' },
+    grama: { label: '🌾 Grama ao vento', grass: 1, hue: 'g' },
+    neve: { label: '❄️ Neve', wind: 'cair', circle: 1, hue: 'w' },
+    brilhos: { label: '✨ Brilhos', wind: 'subir', path: 'M0-9L2-2 9 0 2 2 0 9-2 2-9 0-2-2Z', hue: 'l', glow: 1 },
+    brasas: { label: '🔥 Brasas / faíscas', wind: 'subir', circle: 1, hue: 'f', glow: 1 },
+    raios: { label: '⚡ Raios elétricos', bolt: 1, hue: 'e', glow: 1 },
+    luz: { label: '🌤 Raios de luz', rays: 1, hue: 'l', glow: 1 },
+    fragmentos: { label: '🌑 Fragmentos se desfazendo', wind: 'vento', path: 'M-5-3L4-6 6 2-2 6-6 1Z', hue: 'k' },
+    fumaca: { label: '🌫 Fumaça / névoa', smoke: 1, wind: 'subir', hue: 'w' },
+    bolhas: { label: '🫧 Bolhas', wind: 'subir', ring: 1, hue: 'w' },
+  };
+  const PART_WINDS = { vento: '↙ Vento', cair: '↓ Caindo', subir: '↑ Subindo' };
+  const PART_REGIONS = { tudo: 'Tudo', topo: 'Topo', baixo: 'Embaixo', lados: 'Laterais' };
+  function partColors(kind, palette, color) {
+    if (color && /^#[0-9a-f]{6}$/i.test(color)) return [color, color];
+    const pal = (palette || []).filter(Boolean);
+    const fixed = { g: ['#7BC043', '#A8D86E', '#4E8F2A'], p: ['#FFC1D9', '#FF9EC4', '#FFE3EE'], w: ['#FFFFFF', '#E6F0FF'], l: ['#FFF6C8', '#FFFFFF', '#FFE08A'], f: ['#FFB347', '#FF7A2F', '#FFD27A'], k: ['#15151a', '#24242c', '#0b0b0e'], e: ['#BFE9FF', '#7FD3FF', '#FFFFFF'] }[PARTS[kind].hue];
+    return pal.length && (kind === 'folhas' || kind === 'petalas' || kind === 'grama') ? [...fixed.slice(0, 2), pal[0]] : fixed;
+  }
+  /** Uma camada. opts: { kind, wind, amount (0.3–2.5), region, color }; ring = moldura (em volta do avatar). */
+  function particleLayer(W, H, opts = {}, palette, seed = 7, uid = 'a', ring = null) {
+    const P = PARTS[opts.kind];
+    if (!P) return { css: '', svg: '' };
+    const wind = opts.wind || P.wind || 'vento';
+    let st = (seed * 9301 + 49297 + uid.charCodeAt(0) * 7) % 233280;
+    const rnd = () => ((st = (st * 9301 + 49297) % 233280) / 233280);
+    const cols = partColors(opts.kind, palette, opts.color);
+    const amt = Math.max(0.3, Math.min(2.5, opts.amount || 1));
+    const css = [], els = [], u = uid;
+    const reg = opts.region || 'tudo';
+    const inReg = () => {
+      if (ring) { const a = rnd() * Math.PI * 2, rr = ring.r0 + rnd() * (ring.r1 - ring.r0); return [ring.cx + Math.cos(a) * rr, ring.cy + Math.sin(a) * rr]; }
+      const x = rnd() * W;
+      if (reg === 'topo') return [x, rnd() * H * 0.35];
+      if (reg === 'baixo') return [x, H * (0.65 + rnd() * 0.35)];
+      if (reg === 'lados') return [rnd() < 0.5 ? rnd() * W * 0.18 : W * (0.82 + rnd() * 0.18), rnd() * H];
+      return [x, rnd() * H];
+    };
+    const filt = `<filter id="${u}bl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.6"/></filter><filter id="${u}bs" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation=".5"/></filter><filter id="${u}gl" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+    const S = ring ? 0.45 : 1; // moldura é pequena (288 px)
+
+    if (P.grass) {
+      // Grama: tufos na base balançando (frente maior e desfocada), como no pôr do sol do estudo.
+      const n = Math.round(46 * amt);
+      for (let i = 0; i < n; i++) {
+        const z = rnd() < 0.15 ? 2 : rnd() < 0.5 ? 1 : 0;
+        const x = ring ? ring.cx + (rnd() - 0.5) * ring.r1 * 1.6 : rnd() * W;
+        const base = ring ? ring.cy + ring.r0 * 0.95 : H + 4;
+        const h = (ring ? 26 : [60, 110, 190][z]) * (0.6 + 0.6 * rnd());
+        const lean = (rnd() - 0.3) * h * 0.4, w = [2.2, 3.5, 7][z] * S * (ring ? 1.6 : 1);
+        const c = cols[Math.floor(rnd() * cols.length)];
+        const dur = 2.4 + rnd() * 2.2, del = -rnd() * dur, sw = 4 + rnd() * 7;
+        css.push(`@keyframes ${u}g${i}{0%,100%{transform:rotate(${f(-sw * 0.3)}deg)}50%{transform:rotate(${f(sw)}deg)}}.${u}g${i}{transform-box:fill-box;transform-origin:50% 100%;animation:${u}g${i} ${f(dur)}s ${f(del)}s ease-in-out infinite}`);
+        els.push(`<path class="${u}g${i}" d="M${f(x - w)} ${f(base)}Q${f(x + lean * 0.4)} ${f(base - h * 0.55)} ${f(x + lean)} ${f(base - h)}Q${f(x + lean * 0.4 + w * 0.3)} ${f(base - h * 0.55)} ${f(x + w)} ${f(base)}Z" fill="${c}" opacity="${[0.7, 0.9, 0.95][z]}"${z === 2 ? ` filter="url(#${u}bl)"` : ''}/>`);
+      }
+      return { css: css.join(''), svg: `<defs>${filt}</defs><g>${els.join('')}</g>` };
+    }
+    if (P.rays) {
+      // Raios de luz: feixes diagonais largos e suaves, pulsando devagar.
+      const n = Math.max(3, Math.round(5 * amt));
+      const ox = W * (0.55 + rnd() * 0.4), oy = -H * 0.1;
+      for (let i = 0; i < n; i++) {
+        const ang = 100 + i * (40 / n) + rnd() * 8, len = H * 1.3, wd = (50 + rnd() * 80) * S;
+        const dur = 4 + rnd() * 4, del = -rnd() * dur;
+        css.push(`@keyframes ${u}r${i}{0%,100%{opacity:.08}50%{opacity:${f(0.25 + rnd() * 0.2)}}}.${u}r${i}{animation:${u}r${i} ${f(dur)}s ${f(del)}s ease-in-out infinite}`);
+        els.push(`<path class="${u}r${i}" d="M${f(ox)} ${f(oy)}l${f(Math.cos(ang * Math.PI / 180) * len - wd)} ${f(Math.sin(ang * Math.PI / 180) * len)}h${f(wd * 2)}Z" fill="url(#${u}rg)"/>`);
+      }
+      return { css: css.join(''), svg: `<defs>${filt}<linearGradient id="${u}rg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${cols[0]}" stop-opacity=".9"/><stop offset="1" stop-color="${cols[0]}" stop-opacity="0"/></linearGradient></defs><g style="mix-blend-mode:screen" filter="url(#${u}bl)">${els.join('')}</g>` };
+    }
+    if (P.bolt) {
+      // Raios elétricos: zigue-zagues que acendem num instante e somem (piscam fora de fase).
+      const n = Math.max(2, Math.round(5 * amt));
+      for (let i = 0; i < n; i++) {
+        let [x, y] = inReg();
+        const segs = 6 + Math.floor(rnd() * 5), dir = rnd() * Math.PI * 2, L = (ring ? 9 : 28) * (0.6 + rnd());
+        let d = `M${f(x)} ${f(y)}`;
+        for (let k = 0; k < segs; k++) { x += Math.cos(dir) * L + (rnd() - 0.5) * L * 1.4; y += Math.sin(dir) * L + (rnd() - 0.5) * L * 1.4; d += `L${f(x)} ${f(y)}`; }
+        const dur = 1.6 + rnd() * 2.6, del = -rnd() * dur, on = f(4 + rnd() * 6);
+        css.push(`@keyframes ${u}z${i}{0%,${on}%{opacity:1}${f(+on + 2)}%,100%{opacity:0}}.${u}z${i}{opacity:0;animation:${u}z${i} ${f(dur)}s ${f(del)}s steps(1,end) infinite}`);
+        els.push(`<path class="${u}z${i}" d="${d}" fill="none" stroke="${cols[i % cols.length]}" stroke-width="${f((ring ? 1.2 : 2.4) * (0.7 + rnd() * 0.6))}" stroke-linejoin="round" filter="url(#${u}gl)"/>`);
+      }
+      return { css: css.join(''), svg: `<defs>${filt}</defs><g style="mix-blend-mode:screen">${els.join('')}</g>` };
+    }
+    if (P.smoke) {
+      const n = Math.max(3, Math.round(7 * amt));
+      for (let i = 0; i < n; i++) {
+        const [x, y] = inReg(), r = (ring ? 14 : 60) * (0.6 + rnd()), dur = 7 + rnd() * 6, del = -rnd() * dur, dy = wind === 'subir' ? -(ring ? 30 : 160) : (ring ? 20 : 120);
+        css.push(`@keyframes ${u}s${i}{0%{transform:translate(0,0) scale(.6);opacity:0}30%{opacity:.35}100%{transform:translate(${f((rnd() - 0.5) * 80 * S)}px,${f(dy)}px) scale(1.4);opacity:0}}.${u}s${i}{transform-box:fill-box;transform-origin:50% 50%;animation:${u}s${i} ${f(dur)}s ${f(del)}s ease-out infinite}`);
+        els.push(`<circle class="${u}s${i}" cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${cols[i % cols.length]}" filter="url(#${u}bl)"/>`);
+      }
+      return { css: css.join(''), svg: `<defs><filter id="${u}bl" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="${ring ? 5 : 18}"/></filter></defs><g>${els.join('')}</g>` };
+    }
+
+    // Partículas que atravessam: folhas, pétalas, penas, corvos, neve, brilhos, brasas, fragmentos, bolhas
+    const base = P.bird ? 12 : P.circle && P.glow ? 22 : 16;
+    const n = Math.round(base * amt);
+    const shape = (c, z) => {
+      if (P.bird) {
+        // pássaro: corpo + duas asas que batem (escala vertical das asas)
+        const fl = f(0.22 + rnd() * 0.2);
+        css.push(`@keyframes ${u}w${els.length}{0%,100%{transform:scaleY(1)}50%{transform:scaleY(-.7)}}.${u}w${els.length}{transform-box:fill-box;transform-origin:50% 100%;animation:${u}w${els.length} ${fl}s ease-in-out infinite}`);
+        return `<ellipse rx="3.2" ry="1.6" fill="${c}"/><path class="${u}w${els.length}" d="M-1 0C-5-6-10-5-13-2C-9-3-5-2-1 0ZM1 0C5-6 10-5 13-2C9-3 5-2 1 0Z" fill="${c}"/>`;
+      }
+      if (P.circle) return `<circle r="${P.glow ? 2.4 : 4}" fill="${c}"/>`;
+      if (P.ring) return `<circle r="6" fill="none" stroke="${c}" stroke-width="1.4" opacity=".8"/><circle cx="-2" cy="-2" r="1.5" fill="#fff" opacity=".8"/>`;
+      return `<path d="${P.path}" fill="${c}"/>${P.vein ? `<path d="${P.vein}" stroke="rgba(0,0,0,.25)" stroke-width=".8" fill="none"/>` : ''}`;
+    };
+    for (let i = 0; i < n; i++) {
+      const z = rnd() < (P.bird ? 0.12 : 0.1) ? 2 : rnd() < 0.45 ? 1 : 0;
+      const sc = (P.bird ? [0.7, 1.3, 4.2] : [0.8, 1.5, 5])[z] * (0.8 + 0.4 * rnd()) * S;
+      const dur = (P.bird ? [11, 8, 3.6] : [9, 6.5, 3.2])[z] * (0.8 + 0.5 * rnd()) * (ring ? 0.7 : 1), del = -rnd() * dur;
+      const op = P.bird ? [0.6, 0.85, 0.95][z] : [0.75, 0.95, 0.85][z];
+      let x0, y0, x1, y1;
+      if (ring) {
+        // moldura: sobem/rodeiam colados à borda do avatar
+        const a0 = rnd() * Math.PI * 2, a1 = a0 + (rnd() < 0.5 ? -1 : 1) * (0.6 + rnd()), r0 = ring.r0 + rnd() * (ring.r1 - ring.r0), r1 = ring.r0 + rnd() * (ring.r1 - ring.r0);
+        x0 = ring.cx + Math.cos(a0) * r0; y0 = ring.cy + Math.sin(a0) * r0; x1 = ring.cx + Math.cos(a1) * r1; y1 = ring.cy + Math.sin(a1) * r1 - (wind === 'subir' ? 30 : 0);
+      } else {
+        const [rx, ry] = inReg();
+        if (wind === 'vento') { x0 = W + 40 + rnd() * 80; y0 = ry - H * 0.2; x1 = -80 - rnd() * 60; y1 = y0 + H * (P.bird ? (rnd() - 0.5) * 0.3 : 0.25 + 0.35 * rnd()); }
+        else if (wind === 'cair') { x0 = rx; y0 = -30; x1 = x0 + (rnd() - 0.5) * 120; y1 = H + 30; }
+        else { x0 = rx; y0 = H + 30; x1 = x0 + (rnd() - 0.5) * 100; y1 = -30; }
+      }
+      const mx = (x0 + x1) / 2 + (rnd() - 0.5) * 140 * S, my = (y0 + y1) / 2 + (rnd() - 0.5) * 120 * S;
+      const spin = P.bird ? (x1 < x0 ? 0 : 0) : (rnd() < 0.5 ? -1 : 1) * (180 + rnd() * 540);
+      const fade = wind === 'subir' || ring || opts.kind === 'fragmentos' ? '0%{opacity:0}15%{opacity:1}75%{opacity:1}100%{opacity:0}' : '0%,100%{opacity:1}';
+      const sy = P.flip ? 0.35 : 1, mir = P.bird && x1 > x0 ? -1 : 1;
+      css.push(`@keyframes ${u}m${i}{0%{transform:translate(${f(x0)}px,${f(y0)}px)}50%{transform:translate(${f(mx)}px,${f(my)}px)}100%{transform:translate(${f(x1)}px,${f(y1)}px)}}@keyframes ${u}r${i}{from{transform:rotate(0) scale(${f(sc * mir)},${f(sc)})}50%{transform:rotate(${f(spin / 2)}deg) scale(${f(sc * mir)},${f(sc * sy)})}to{transform:rotate(${f(spin)}deg) scale(${f(sc * mir)},${f(sc)})}}@keyframes ${u}f${i}{${fade}}
+.${u}m${i}{animation:${u}m${i} ${f(dur)}s ${f(del)}s linear infinite,${u}f${i} ${f(dur)}s ${f(del)}s linear infinite}.${u}r${i}{animation:${u}r${i} ${f(dur * 0.6)}s ${f(del)}s ease-in-out infinite}`);
+      const c = cols[Math.floor(rnd() * cols.length)];
+      const fl = P.glow ? ` filter="url(#${u}gl)"` : z === 2 ? ` filter="url(#${u}bl)"` : z === 0 ? ` filter="url(#${u}bs)"` : '';
+      els.push(`<g class="${u}m${i}" opacity="${op}"${fl}><g class="${u}r${i}">${shape(c, z)}</g></g>`);
+    }
+    const blend = P.glow ? ' style="mix-blend-mode:screen"' : '';
+    return { css: css.join(''), svg: `<defs>${filt}</defs><g${blend}>${els.join('')}</g>` };
+  }
+  /** Normaliza o pedido: um objeto {kind} antigo ou {layers:[…]} → lista de camadas. */
+  const layersOf = (opts) => (!opts ? [] : Array.isArray(opts) ? opts : Array.isArray(opts.layers) ? opts.layers : opts.kind ? [opts] : []).filter((l) => l && PARTS[l.kind]).slice(0, 5);
+  /** Põe as camadas de elementos por cima de um SVG pronto (efeito: tela toda; moldura: em volta do avatar). */
+  function withParticles(svg, cat, opts, palette, seed) {
+    const layers = layersOf(opts);
+    if (!svg || !layers.length) return svg;
+    const { w: W, h: H } = CANVAS[cat];
+    const ring = cat === 'decorations' ? { cx: 144, cy: 144, r0: 118, r1: 142 } : null;
+    let css = '', body = '';
+    layers.forEach((l, k) => { const L = particleLayer(W, H, l, palette, seed + k * 13, 'abcde'[k], ring); css += L.css; body += L.svg; });
+    if (!svg.includes('</style>')) svg = svg.replace(/(<svg[^>]*>)/, '$1<style></style>');
+    return svg.replace('</style>', css + '</style>').replace(/<\/svg>\s*$/, body + '</svg>');
+  }
+  /** Transição da entrada (estudo: flash de luz que estoura e revela; corte seco; dissolver). */
+  function withIntroFx(svg, cat, kind, color) {
+    if (!svg || !kind || kind === 'nenhuma') return svg;
+    const { w: W, h: H } = CANVAS[cat];
+    const c = /^#[0-9a-f]{6}$/i.test(color || '') ? color : '#FFF4C2';
+    let css = '', body = '';
+    if (kind === 'flash') {
+      css = `@keyframes tfl{0%{opacity:0}8%{opacity:1}40%{opacity:0}100%{opacity:0}}.tfl{opacity:0;animation:tfl 1.4s ease-out both;mix-blend-mode:screen}`;
+      body = `<defs><radialGradient id="tfg"><stop offset="0" stop-color="#fff"/><stop offset=".4" stop-color="${c}"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></radialGradient></defs><rect class="tfl" width="${W}" height="${H}" fill="url(#tfg)"/>`;
+    } else if (kind === 'dissolver') {
+      css = `@keyframes tds{0%{opacity:1}100%{opacity:0}}.tds{animation:tds 1.2s ease-in both}`;
+      body = `<defs><filter id="tdf"><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="3"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.3"/></filter></defs><rect class="tds" width="${W}" height="${H}" fill="#000" filter="url(#tdf)" opacity=".85"/>`;
+    } else if (kind === 'corte') {
+      css = `@keyframes tct{0%,12%{opacity:1}13%,100%{opacity:0}}.tct{animation:tct 1s steps(1,end) both}`;
+      body = `<rect class="tct" width="${W}" height="${H}" fill="#000"/>`;
+    }
+    if (!svg.includes('</style>')) svg = svg.replace(/(<svg[^>]*>)/, '$1<style></style>');
+    return svg.replace('</style>', css + '</style>').replace(/<\/svg>\s*$/, body + '</svg>');
+  }
+
+  function flipbookSvgs(cat, frames, seconds, variant, introFrames, introSeconds) {
+    const { w: W, h: H } = CANVAS[cat];
+    const T = Math.max(1, seconds);
+    const head = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><defs><clipPath id="cv"><rect width="${W}" height="${H}"/></clipPath></defs>`;
+    const lv = cat === 'effects' ? (variant ?? 'loop') : variant;
+    const L = sheetLayer(spriteSheet(cat, frames, lv), T, 'l', false);
+    const loop = `${head}<style>${L.css}</style><g clip-path="url(#cv)">${L.svg}</g></svg>`;
+    if (cat !== 'effects') return { svg: loop, loopSeconds: f(T) };
+    // ENTRADA: os quadros do começo tocam uma vez com a cena cheia (mapa da entrada) e,
+    // no fim, a cena se funde no loop, onde só ficam as partes do mapa do loop.
+    const iF = introFrames && introFrames.length ? introFrames : frames;
+    const TI = Math.min(6, Math.max(2, introSeconds || iF.length / 12)), XF = Math.min(0.8, TI * 0.2);
+    const I = sheetLayer(spriteSheet(cat, iF, 'intro'), TI, 'i', true);
+    const L2 = sheetLayer(spriteSheet(cat, frames.slice(0, 1), lv), 1, 'k', true);
+    const intro = `${head}<style>${I.css}${L2.css}
+.in{animation:zin .9s cubic-bezier(.16,1,.3,1) both,iout ${f(XF)}s ease-in ${f(TI - XF)}s both}
+.to{opacity:0;animation:ion ${f(XF)}s ease-out ${f(TI - XF)}s both}
+@keyframes zin{0%{opacity:0}100%{opacity:1}}
+@keyframes iout{to{opacity:0}}@keyframes ion{to{opacity:1}}</style><g clip-path="url(#cv)"><g class="in">${I.svg}</g><g class="to">${L2.svg}</g></g></svg>`;
+    return { svg: loop, loopSeconds: f(T), introSvg: intro, introSeconds: f(TI) };
+  }
+  /* ---- Moldura feita de OBJETOS da mídia (como as oficiais: poucos objetos grandes colados à borda) ----
+   * 1) acha os objetos em destaque (ou usa as caixas que a IA de visão apontou);
+   * 2) recorta cada um com fundo transparente (distância de cor ao fundo local da caixa);
+   * 3) posiciona nos ângulos onde a forma medida tem mais massa, encostando na borda do avatar;
+   * 4) anima com os quadros reais (vídeo) ou com um balanço leve (imagem). */
+  function findObjects(src, maxN = 3) {
+    const S = 128, k = S / Math.max(src.width, src.height);
+    const w = Math.max(8, Math.round(src.width * k)), h = Math.max(8, Math.round(src.height * k));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, w, h);
+    const d = x.getImageData(0, 0, w, h).data;
+    // fundo = cores da borda (várias amostras); destaque = longe de todas elas
+    const bord = [];
+    for (let i = 0; i < w; i += 3) { bord.push(i * 4, ((h - 1) * w + i) * 4); }
+    for (let j = 0; j < h; j += 3) { bord.push((j * w) * 4, (j * w + w - 1) * 4); }
+    const bc = bord.map((o) => [d[o], d[o + 1], d[o + 2]]);
+    const sal = new Float32Array(w * h);
+    let mx = 0;
+    for (let p = 0; p < w * h; p++) {
+      const r = d[p * 4], g = d[p * 4 + 1], b = d[p * 4 + 2];
+      let best = 1e9;
+      for (let q = 0; q < bc.length; q += 2) { const e = (r - bc[q][0]) ** 2 + (g - bc[q][1]) ** 2 + (b - bc[q][2]) ** 2; if (e < best) best = e; }
+      const sat = Math.max(r, g, b) - Math.min(r, g, b);
+      const cx = (p % w) / w - 0.5, cy = Math.floor(p / w) / h - 0.5;
+      sal[p] = Math.sqrt(best) * (0.75 + sat / 600) * (1 - 0.6 * (cx * cx + cy * cy));
+      if (sal[p] > mx) mx = sal[p];
+    }
+    // limiar de Otsu
+    const hist = new Array(64).fill(0);
+    for (let p = 0; p < w * h; p++) hist[Math.min(63, Math.floor((sal[p] / (mx || 1)) * 64))]++;
+    let sum = 0, sumB = 0, wB = 0, best = 0, th = 32; const tot = w * h;
+    hist.forEach((v, i) => { sum += i * v; });
+    for (let i = 0; i < 64; i++) { wB += hist[i]; if (!wB || wB === tot) continue; sumB += i * hist[i]; const mB = sumB / wB, mF = (sum - sumB) / (tot - wB); const v = wB * (tot - wB) * (mB - mF) ** 2; if (v > best) { best = v; th = i; } }
+    const on = new Uint8Array(w * h);
+    for (let p = 0; p < w * h; p++) on[p] = sal[p] / (mx || 1) * 64 > th ? 1 : 0;
+    // componentes conectados
+    const lab = new Int32Array(w * h).fill(-1), comps = [];
+    for (let p = 0; p < w * h; p++) {
+      if (!on[p] || lab[p] >= 0) continue;
+      const id = comps.length, st = [p]; lab[p] = id;
+      let n = 0, x0 = w, y0 = h, x1 = 0, y1 = 0;
+      while (st.length) {
+        const q = st.pop(), qx = q % w, qy = (q - qx) / w; n++;
+        if (qx < x0) x0 = qx; if (qx > x1) x1 = qx; if (qy < y0) y0 = qy; if (qy > y1) y1 = qy;
+        for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = qx + ax, ny = qy + ay; if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue; const nq = ny * w + nx; if (on[nq] && lab[nq] < 0) { lab[nq] = id; st.push(nq); } }
+      }
+      comps.push({ n, x0, y0, x1, y1 });
+    }
+    return comps
+      .filter((cp) => cp.n > w * h * 0.006 && cp.n < w * h * 0.7)
+      .sort((a, b) => b.n - a.n).slice(0, maxN)
+      .map((cp) => { const pad = 2; return { x0: Math.max(0, cp.x0 - pad) / w, y0: Math.max(0, cp.y0 - pad) / h, x1: Math.min(w, cp.x1 + pad + 1) / w, y1: Math.min(h, cp.y1 + pad + 1) / h, area: cp.n / (w * h) }; });
+  }
+  /** Recorta a caixa (0–1) de um quadro com fundo transparente, lado maior = size px. */
+  function cutObject(src, box, size = 160, bgRef = null) {
+    const sx = box.x0 * src.width, sy = box.y0 * src.height, sw = Math.max(2, (box.x1 - box.x0) * src.width), sh = Math.max(2, (box.y1 - box.y0) * src.height);
+    const k = size / Math.max(sw, sh), w = Math.max(2, Math.round(sw * k)), h = Math.max(2, Math.round(sh * k));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+    const img = x.getImageData(0, 0, w, h), d = img.data;
+    const ref = bgRef || (() => {
+      // fundo local = mediana da borda da caixa
+      const rs = [], gs = [], bs = [];
+      for (let i = 0; i < w; i++) for (const j of [0, h - 1]) { const o = (j * w + i) * 4; rs.push(d[o]); gs.push(d[o + 1]); bs.push(d[o + 2]); }
+      for (let j = 0; j < h; j++) for (const i of [0, w - 1]) { const o = (j * w + i) * 4; rs.push(d[o]); gs.push(d[o + 1]); bs.push(d[o + 2]); }
+      const med = (a) => a.sort((p, q) => p - q)[a.length >> 1];
+      return [med(rs), med(gs), med(bs)];
+    })();
+    for (let p = 0; p < w * h; p++) {
+      const o = p * 4, e = Math.sqrt((d[o] - ref[0]) ** 2 + (d[o + 1] - ref[1]) ** 2 + (d[o + 2] - ref[2]) ** 2);
+      const px = p % w, py = (p - px) / w;
+      const edge = Math.min(px, py, w - 1 - px, h - 1 - py) / Math.max(1, Math.min(w, h) * 0.08);
+      d[o + 3] = Math.round(255 * smooth(38, 80, e) * Math.min(1, edge));
+    }
+    x.putImageData(img, 0, 0);
+    return { canvas: c, w, h, ref };
+  }
+  /** Moldura montada com os objetos recortados. Devolve { svg } ou null se não achou nada bom. */
+  function decorationFromObjects(frames, variant, boxes, seed = 3) {
+    const shape = STUDY && STUDY.shapes && STUDY.shapes.length ? STUDY.shapes[(typeof variant === 'number' ? variant : 0) % STUDY.shapes.length] : null;
+    const found = (boxes && boxes.length ? boxes : findObjects(frames[Math.floor(frames.length / 2)], 3)).slice(0, 3);
+    if (!found.length) return null;
+    // ângulos com mais massa na forma medida (0° = topo, horário); separados ≥ 70°
+    const m = shape ? shape.massa_36 : [1, 0.6, 0.3, 0.2, 0.2, 0.3, 0.4, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.3, 0.4, 0.5, 0.4, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.3, 0.4, 0.3, 0.2, 0.2, 0.3, 0.4, 0.5, 0.7];
+    const order = m.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]);
+    const angs = [];
+    // só há espaço fora do avatar nos cantos (≈ 80 px) e um pouco no topo/base: encaixa nesses pontos
+    const SLOTS = [315, 45, 225, 135, 0, 180];
+    const snap = (a) => SLOTS.reduce((b, c) => (Math.min(Math.abs(a - c), 360 - Math.abs(a - c)) < Math.min(Math.abs(a - b), 360 - Math.abs(a - b)) ? c : b), SLOTS[0]);
+    for (const [, i] of order) { const a = snap(i * 10 + 5); if (!angs.includes(a)) angs.push(a); if (angs.length >= found.length) break; }
+    const nF = Math.min(frames.length, 16), step = Math.max(1, Math.floor(frames.length / nF));
+    const use = frames.filter((_, i) => i % step === 0).slice(0, nF);
+    const T = Math.max(1.5, use.length / 8);
+    let css = '', body = '', defs = '';
+    found.forEach((bx, k) => {
+      const big = k === 0;
+      const size = big ? 140 : 96;
+      const first = cutObject(use[0], bx, size);
+      const cuts = use.map((fr, i) => (i === 0 ? first : cutObject(fr, bx, size, first.ref)));
+      const { w, h } = first;
+      const a = (angs[k] ?? (k * 120)) * Math.PI / 180;
+      // centro do objeto: fora do avatar (r 120), só a ponta encosta (~10–20 px para dentro)
+      // borda interna do objeto ~16 px dentro do avatar; o objeto inteiro cabe no canvas 288
+      const half = (Math.abs(Math.sin(a)) * w + Math.abs(Math.cos(a)) * h) / 2;
+      const rr = 92 + half;
+      const cx = Math.max(w / 2, Math.min(288 - w / 2, 144 + Math.sin(a) * rr)), cy = Math.max(h / 2, Math.min(288 - h / 2, 144 - Math.cos(a) * rr));
+      const rot = ((angs[k] ?? 0) > 90 && (angs[k] ?? 0) < 270) ? 0 : 0;
+      const id = 'ob' + k;
+      if (cuts.length > 1) {
+        const sh = { n: cuts.length, cols: Math.min(cuts.length, Math.floor(4000 / w)), W: w, H: h };
+        sh.rows = Math.ceil(sh.n / sh.cols);
+        const sc = document.createElement('canvas'); sc.width = w * sh.cols; sc.height = h * sh.rows;
+        const sx = sc.getContext('2d'); cuts.forEach((cu, i) => sx.drawImage(cu.canvas, (i % sh.cols) * w, Math.floor(i / sh.cols) * h));
+        sh.url = sc.toDataURL('image/webp', 0.85); if (!/^data:image\/webp/.test(sh.url)) sh.url = sc.toDataURL('image/png');
+        const L = sheetLayer(sh, T, id, false);
+        css += L.css;
+        defs += `<clipPath id="${id}c"><rect width="${w}" height="${h}"/></clipPath>`;
+        body += `<g transform="translate(${f(cx - w / 2)} ${f(cy - h / 2)}) rotate(${rot} ${f(w / 2)} ${f(h / 2)})"><g clip-path="url(#${id}c)">${L.svg}</g></g>`;
+      } else {
+        const sway = 2 + (k % 2) * 2, dur = 3 + k * 0.7;
+        css += `@keyframes ${id}s{0%,100%{transform:translateY(0) rotate(${-sway / 2}deg)}50%{transform:translateY(-3px) rotate(${sway / 2}deg)}}.${id}s{transform-box:fill-box;transform-origin:50% 100%;animation:${id}s ${f(dur)}s ease-in-out infinite}`;
+        body += `<g class="${id}s"><image href="${first.canvas.toDataURL('image/png')}" x="${f(cx - w / 2)}" y="${f(cy - h / 2)}" width="${w}" height="${h}"/></g>`;
+      }
+    });
+    // sombra de contato fina na borda do avatar, para os objetos "sentarem" nela
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 288 288"><style>${css}</style><defs>${defs}<filter id="obs" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".45"/></filter></defs><g filter="url(#obs)">${body}</g></svg>`;
+    return { svg, loopSeconds: f(T), count: found.length };
+  }
+
+  /**
+   * Gera os formatos direto da mídia do usuário (sem IA).
+   * @param {{frames:HTMLCanvasElement[], seconds?:number, name?:string}} media
+   */
+  async function fromMedia(cats, media, motion = {}, shapes = {}) {
+    await loadStudy();
+    const out = [];
+    // Formas escolhidas na tela; molduras em "3 sorteadas" saem em três formas medidas
+    const nShapes = Math.min(3, (STUDY.shapes || []).length);
+    const jobs = [];
+    cats.forEach((cat) => {
+      const sv = shapes[cat];
+      if (cat === 'decorations' && typeof sv === 'number') jobs.push({ cat, variant: sv });
+      else if (cat === 'decorations' && nShapes) {
+        const off = Math.floor(Math.random() * STUDY.shapes.length);
+        for (let k = 0; k < nShapes; k++) jobs.push({ cat, variant: (off + k) % STUDY.shapes.length });
+      } else if (cat === 'effects') jobs.push({ cat, variant: sv || 'loop' });
+      else jobs.push({ cat, variant: sv });
+    });
+    const focus = focusOf(media.frames[Math.floor(media.frames.length / 2)]);
+    const enc = (c, q) => { const u = c.toDataURL('image/webp', q); return /^data:image\/webp/.test(u) ? u : c.toDataURL('image/jpeg', q); };
+    for (const { cat, variant } of jobs) {
+      const { w: W, h: H } = CANVAS[cat];
+      let asset, palette;
+      let objDeco = null;
+      if (cat === 'decorations' && shapes.decoMode !== 'anel') {
+        try { objDeco = decorationFromObjects(media.frames, variant, shapes.boxes); } catch (e) { console.warn('[Moldura de objetos]', e); }
+      }
+      if (objDeco) {
+        asset = { type: 'svg', svg: objDeco.svg, loopSeconds: objDeco.loopSeconds };
+        const c0 = document.createElement('canvas'); c0.width = W; c0.height = H;
+        coverInto(c0.getContext('2d', { willReadFrequently: true }), media.frames[0], cat, focus);
+        palette = paletteOf(c0.getContext('2d', { willReadFrequently: true }), W, H);
+      } else if (media.frames.length > 1) {
+        const max = { nameplates: 36, decorations: 36, effects: 60, frames: 8 }[cat];
+        const step = Math.max(1, Math.ceil(media.frames.length / max));
+        const pick = media.frames.filter((_, i) => i % step === 0);
+        const cvs = pick.map((fr) => {
+          const c = document.createElement('canvas'); c.width = W; c.height = H;
+          coverInto(c.getContext('2d'), fr, cat, focus);
+          return c;
+        });
+        const secs = media.seconds || pick.length / 12;
+        if (cat === 'effects' && pick.length >= 6) {
+          // começo = entrada (a cena acontecendo); o loop usa a segunda metade
+          const half = Math.floor(cvs.length / 2);
+          asset = { type: 'svg', ...flipbookSvgs(cat, cvs.slice(half), secs / 2, variant, cvs.slice(0, half + 1), secs / 2) };
+        } else {
+          asset = { type: 'svg', ...flipbookSvgs(cat, cvs, secs, variant) };
+        }
+        const c0 = document.createElement('canvas'); c0.width = W; c0.height = H;
+        coverInto(c0.getContext('2d', { willReadFrequently: true }), pick[0], cat, focus);
+        palette = paletteOf(c0.getContext('2d', { willReadFrequently: true }), W, H);
+      } else {
+        if (cat === 'effects' && STUDY.loop) {
+          // imagem parada: entrada com o mapa da entrada; loop leve com o mapa do loop
+          const artI = await processImage(null, cat, { canvas: media.frames[0], focus, variant: 'intro' });
+          const artL = await processImage(null, cat, { canvas: media.frames[0], focus, variant: variant || 'loop' });
+          const a1 = buildSvgs(cat, artI, 11, motion[cat] || {}), a2 = buildSvgs(cat, artL, 11, motion[cat] || {});
+          asset = { type: 'svg', ...a1, svg: a2.svg, loopSeconds: a2.loopSeconds };
+          palette = artI.palette;
+        } else {
+          const art = await processImage(null, cat, { canvas: media.frames[0], focus, variant });
+          asset = { type: 'svg', ...buildSvgs(cat, art, 11, motion[cat] || {}) };
+          palette = art.palette;
+        }
+      }
+      // elementos animados por cima (escolhidos na tela ou identificados pela IA nos quadros)
+      const el = shapes.elements && shapes.elements[cat];
+      if (el && (cat === 'effects' || cat === 'decorations')) {
+        asset.svg = withParticles(asset.svg, cat, el, palette, 7);
+        if (asset.introSvg) asset.introSvg = withParticles(asset.introSvg, cat, el, palette, 7);
+      }
+      if (cat === 'effects' && asset.introSvg && shapes.transition) asset.introSvg = withIntroFx(asset.introSvg, cat, shapes.transition, palette && palette[0]);
+      if (cat === 'frames') asset.wrap = FRAME_WRAP;
+      const base = (media.name || '').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim();
+      out.push({
+        cat,
+        palette,
+        raw: { ...metaFor(cat, base || 'Sua mídia'), ...(typeof variant === 'number' && cat === 'decorations' ? { name: (metaFor(cat, base || 'Sua mídia').name.slice(0, 14) + ' · ' + shapeLabel(STUDY.shapes[variant]).label).slice(0, 28) } : {}), prompt: base, engine: 'media', engineLabel: 'Sua mídia · ' + (media.kind || ''), asset },
+        quality: { ok: true, issues: [], summary: '✓ sua mídia · zonas protegidas' },
+      });
+    }
+    return out;
   }
 
   /* ---------------------------------------------------------------- */
@@ -550,8 +1391,8 @@ ${isparks}</svg>`;
    * @returns {Promise<Array<{cat:string, raw:object, quality:object}>>}
    */
   async function generate(req, cfg, opts = {}) {
-    const provider = cfg.provider === 'openai' ? 'openai' : cfg.provider === 'gemini' ? 'gemini' : null;
-    if (!provider) throw new Error('O modo Ilustração usa modelos de imagem: escolha Google Gemini ou OpenAI.');
+    await loadStudy();
+    const provider = imageApi(cfg);
     const theme = cleanTheme(req.prompt) || 'tema livre, item premium';
     let done = 0;
     const tick = () => opts.onProgress && opts.onProgress(`Pintando as ilustrações… ${done}/${req.cats.length}`);
@@ -562,13 +1403,18 @@ ${isparks}</svg>`;
     for (const [i, cat] of req.cats.entries()) results.push(await (async () => {
       try {
         const detail = req.details && req.details[cat] ? cleanTheme(req.details[cat]) : '';
-        const catTheme = detail ? `${detail}. General theme and art style: ${theme}` : theme;
+        const hint = shapeHint(cat, opts.shapes && opts.shapes[cat]);
+        const catTheme = (detail ? `${detail}. General theme and art style: ${theme}` : theme) + (hint ? `. ${hint}` : '');
         const paint = async (strict) => {
           for (let attempt = 0; ; attempt++) {
             try {
-              return provider === 'gemini'
-                ? await geminiImage(cat, catTheme, cfg, (opts.refs && opts.refs[cat]) || [], strict)
-                : await openaiImage(cat, catTheme, cfg, strict);
+              const refs = (opts.refs && opts.refs[cat]) || [];
+              if (provider === 'gemini') return await geminiImage(cat, catTheme, cfg, refs, strict, opts.fromMedia);
+              if (provider === 'openai') return await openaiImage(cat, catTheme, cfg, strict);
+              const pr = promptFor(cat, catTheme, 'gemini', refs.length > 0, strict, opts.fromMedia && refs.length > 0);
+              if (provider === 'dashscope') return await dashscopeImage(cat, pr, cfg, refs);
+              if (provider === 'chat-image') return await chatImage(cat, pr, cfg, refs);
+              return await imagesApi(cat, pr, cfg);
             } catch (e) {
               if (!e.retryAfter || attempt >= 2) throw e;
               for (let t = Math.ceil(e.retryAfter); t > 0; t--) {
@@ -592,7 +1438,7 @@ ${isparks}</svg>`;
           } catch (e) { console.warn('[Ilustração] nova tentativa falhou', e); }
         }
         const anim = buildSvgs(cat, art, 1 + i * 97 + theme.length, (opts.motion && opts.motion[cat]) || {});
-        const label = (provider === 'gemini' ? 'Gemini · ' : 'OpenAI · ') + gen.model;
+        const label = API_LABEL[provider] + ' · ' + gen.model;
         return {
           cat,
           raw: { ...metaFor(cat, (req.details && req.details[cat]) || theme),
@@ -696,16 +1542,22 @@ ${isparks}</svg>`;
   async function remake(cat, item, instruction, cfg, motion = {}) {
     const art = artOf(item.asset && item.asset.svg);
     if (!art) throw new Error('Não achei a ilustração deste item.');
-    const provider = cfg.provider === 'openai' ? 'openai' : 'gemini';
-    const gen = provider === 'gemini' ? await editGemini(cat, await onGreen(art), instruction, cfg) : await editOpenAI(cat, art, instruction, cfg);
+    const provider = imageApi(cfg);
+    const editText = [`This image is a Discord ${CAT_WORD[cat]} on a flat green background. EDIT it following this request: ${instruction}.`, 'Change only what the request asks for. Keep the same format, composition and art style.', LAYOUT[cat], 'Keep the background perfectly flat pure green (#00FF00), no text, one single object.'].join('\n\n');
+    const green = () => onGreen(art).then((data) => [{ mime: 'image/png', data }]);
+    const gen = provider === 'gemini' ? await editGemini(cat, await onGreen(art), instruction, cfg)
+      : provider === 'openai' ? await editOpenAI(cat, art, instruction, cfg)
+        : provider === 'dashscope' ? await dashscopeImage(cat, editText, cfg, await green())
+          : provider === 'chat-image' ? await chatImage(cat, editText, cfg, await green())
+            : (() => { throw new Error('Esta API não edita imagens: gere de novo com o pedido no texto.'); })();
     const out = await processImage(gen, cat);
     const anim = buildSvgs(cat, out, 7 + instruction.length, motion);
     return {
       asset: { type: 'svg', ...anim, ...(cat === 'frames' ? { wrap: FRAME_WRAP } : {}) },
       palette: out.palette,
-      label: (provider === 'gemini' ? 'Gemini · ' : 'OpenAI · ') + gen.model,
+      label: API_LABEL[provider] + ' · ' + gen.model,
     };
   }
 
-  window.CosmeticIllustration = { remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
+  window.CosmeticIllustration = { findObjects, cutObject, decorationFromObjects, PARTS, PART_WINDS, PART_REGIONS, particleLayer, withParticles, withIntroFx, layersOf, shapeOptions, shapePreview, fromMedia, imageApi, FX_DEFAULT, FX_LABELS, fxFromText, remake, artOf, cleanTheme, generate, processImage, buildSvgs, chromaKey, removeBackground, promptFor, geminiImageModel, openaiImageModel, CANVAS };
 })();

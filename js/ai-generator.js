@@ -452,8 +452,292 @@ Para CADA formato que tiver referências, estude todas as referências daquele f
 - "preset": o movimento que mais combina, um de: rise (partículas/chamas sobem), fall (caem: chuva, pétalas, neve), drift (passam na horizontal: peixes, nuvens, vento), orbit (giram em volta), pulse (pulsam/brilham), sway (ondulam/balançam), sweep (faixa de brilho passando).
 - "intensidade": 1 (sutil), 2 (médio) ou 3 (forte).
 - "cores": 3 a 5 cores em hex que dominam as referências.
+- "efeitos": quais efeitos de animação combinam com o que se vê nos quadros (true/false para cada): ondular (a arte toda balança em faixas, como água/bandeira; só se a própria referência ondula), calor (distorção tremida), respirar (leve zoom/sobe-desce), brilho (brilho pulsando), faixa (faixa de luz passando), brilhos (estrelinhas piscando), particulas (pontinhos subindo/caindo), chamas (chamas lambendo). Na dúvida, false para ondular e calor. Se o usuário pediu para tirar ou colocar um efeito, obedeça.
 - "pedido": 1 frase descrevendo um NOVO item daquele formato, no mesmo sentido das referências, mas com o TEMA do usuário (não copie as referências; traga algo novo que pareça da mesma família). Se o usuário deu um detalhe para o formato, respeite-o.
-Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"formato": "nameplate|decoration|effect|frame", "visual": "...", "movimento": "...", "preset": "...", "intensidade": 2, "cores": ["#..."], "pedido": "..."}]}`;
+Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"formato": "nameplate|decoration|effect|frame", "visual": "...", "movimento": "...", "preset": "...", "intensidade": 2, "cores": ["#..."], "efeitos": {"ondular": false, "calor": false, "respirar": true, "brilho": true, "faixa": true, "brilhos": true, "particulas": true, "chamas": false}, "pedido": "..."}]}`;
+
+  /* ---------- Efeitos de movimento (ondular, calor, brilhos…) ---------- */
+  const FX_STORAGE = 'cosmetic-studio:gen-fx';
+  const FX_AI_STORAGE = 'cosmetic-studio:gen-fx-ai';
+  const FX_AI_KEYS = { ondular: 'wave', calor: 'heat', respirar: 'breathe', brilho: 'glow', faixa: 'shine', brilhos: 'sparkles', particulas: 'motes', chamas: 'licks' };
+  function fxFromAi(e) {
+    const out = {};
+    if (e && typeof e === 'object') Object.entries(FX_AI_KEYS).forEach(([pt, key]) => { if (typeof e[pt] === 'boolean') out[key] = e[pt]; });
+    return out;
+  }
+  function fxState() {
+    if (!ui.fx) {
+      try { ui.fx = JSON.parse(store.get(FX_STORAGE) || '{}') || {}; } catch (e) { ui.fx = {}; }
+      ui.fxAi = store.get(FX_AI_STORAGE) !== '0';
+    }
+    return ui.fx;
+  }
+  /** Efeitos finais: escolhas na tela → sugestão da IA (se "IA escolhe") → o que o texto pede. */
+  function fxFor(text, aiFx) {
+    const I = window.CosmeticIllustration;
+    if (!I) return {};
+    return { ...I.FX_DEFAULT, ...fxState(), ...(ui.fxAi ? aiFx || {} : {}), ...I.fxFromText(text) };
+  }
+  function renderFx() {
+    const box = $('#gen-fx');
+    const I = window.CosmeticIllustration;
+    if (!box || !I) return;
+    const st = fxState();
+    box.innerHTML = '';
+    Object.entries(I.FX_LABELS).forEach(([key, label]) => {
+      const l = document.createElement('label');
+      l.className = 'gen-check';
+      const i = document.createElement('input');
+      i.type = 'checkbox';
+      i.checked = { ...I.FX_DEFAULT, ...st }[key];
+      i.addEventListener('change', () => { ui.fx[key] = i.checked; store.set(FX_STORAGE, JSON.stringify(ui.fx)); });
+      const sp = document.createElement('span');
+      sp.textContent = label;
+      l.append(i, sp);
+      box.appendChild(l);
+    });
+    const ai = $('#gen-fx-ai');
+    if (ai) ai.checked = ui.fxAi;
+  }
+
+  /* ---------- Forma de cada formato (escolhida pelo usuário) ---------- */
+  const SHAPES_STORAGE = 'cosmetic-studio:gen-shapes';
+  const CAT_NAMES = { nameplates: 'Nameplate', decorations: 'Moldura', effects: 'Efeito (loop)', frames: 'Profile Frame' };
+  async function renderShapes() {
+    const I = window.CosmeticIllustration;
+    if (!I || !I.shapeOptions) return;
+    if (!ui.shapes) { try { ui.shapes = JSON.parse(store.get(SHAPES_STORAGE) || '{}') || {}; } catch (e) { ui.shapes = {}; } }
+    const opts = await I.shapeOptions();
+    Object.keys(CAT_NAMES).forEach((cat) => {
+      const list = document.getElementById('gen-shapes-' + cat);
+      if (!list) return;
+      list.innerHTML = '';
+      const cur = ui.shapes[cat] ?? opts[cat][0].v;
+      opts[cat].forEach((o) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'shape-opt' + (o.v === 'auto' ? ' is-auto' : '') + (String(o.v) === String(cur) ? ' is-active' : '');
+        b.title = o.label;
+        if (o.v !== 'auto') {
+          const im = document.createElement('img');
+          im.alt = '';
+          im.src = I.shapePreview(cat, o.v, 56);
+          b.appendChild(im);
+        }
+        const sp = document.createElement('span');
+        sp.textContent = o.label;
+        b.appendChild(sp);
+        b.addEventListener('click', () => {
+          ui.shapes[cat] = o.v;
+          store.set(SHAPES_STORAGE, JSON.stringify(ui.shapes));
+          list.querySelectorAll('.shape-opt').forEach((x) => x.classList.toggle('is-active', x === b));
+        });
+        list.appendChild(b);
+      });
+    });
+  }
+
+  /* ---------- Elementos animados (efeito e moldura) ---------- */
+  const EL_STORAGE = 'cosmetic-studio:gen-elements';
+  function loadElements() {
+    if (ui.elements) return;
+    try { ui.elements = JSON.parse(store.get(EL_STORAGE) || 'null'); } catch (e) { ui.elements = null; }
+    if (!ui.elements || typeof ui.elements !== 'object') ui.elements = {};
+    ['effects', 'decorations'].forEach((c) => { if (!Array.isArray(ui.elements[c])) ui.elements[c] = []; });
+    if (!ui.elements.transition) ui.elements.transition = 'nenhuma';
+    if (ui.elements.ai === undefined) ui.elements.ai = true;
+  }
+  const saveElements = () => store.set(EL_STORAGE, JSON.stringify(ui.elements));
+  function renderElements() {
+    const I = window.CosmeticIllustration;
+    if (!I || !I.PARTS) return;
+    loadElements();
+    const chip = (label, on, fn, cls = '') => { const b = document.createElement('button'); b.type = 'button'; b.className = 'gen-chip ' + cls + (on ? ' is-active' : ''); b.textContent = label; b.addEventListener('click', fn); return b; };
+    ['effects', 'decorations'].forEach((cat) => {
+      const box = document.getElementById('gen-elements-' + cat);
+      if (!box) return;
+      const list = ui.elements[cat];
+      const draw = () => {
+        box.innerHTML = '';
+        const kinds = document.createElement('div'); kinds.className = 'flex flex-wrap gap-1.5';
+        Object.entries(I.PARTS).forEach(([k, p]) => {
+          if (cat === 'decorations' && (k === 'luz')) return;
+          const on = list.some((l) => l.kind === k);
+          kinds.appendChild(chip(p.label, on, () => {
+            const i = list.findIndex((l) => l.kind === k);
+            if (i >= 0) list.splice(i, 1); else if (list.length < 5) list.push({ kind: k, amount: 1, region: 'tudo' });
+            saveElements(); draw();
+          }));
+        });
+        box.appendChild(kinds);
+        list.forEach((l) => {
+          const row = document.createElement('div'); row.className = 'el-row';
+          const name = document.createElement('b'); name.textContent = I.PARTS[l.kind].label; row.appendChild(name);
+          const P = I.PARTS[l.kind];
+          if (!P.grass && !P.rays && !P.bolt) {
+            const cur = l.wind || P.wind;
+            Object.entries(I.PART_WINDS).forEach(([w, lb]) => row.appendChild(chip(lb, cur === w, () => { l.wind = w; saveElements(); draw(); }, 'gen-chip-sm')));
+          }
+          if (cat === 'effects' && !P.grass && !P.rays) {
+            const sel = document.createElement('select'); sel.className = 'dc-input !h-7 !py-0 text-xs w-auto';
+            Object.entries(I.PART_REGIONS).forEach(([v, lb]) => { const o = document.createElement('option'); o.value = v; o.textContent = lb; if ((l.region || 'tudo') === v) o.selected = true; sel.appendChild(o); });
+            sel.addEventListener('change', () => { l.region = sel.value; saveElements(); prev(); });
+            row.appendChild(sel);
+          }
+          const rg = document.createElement('input'); rg.type = 'range'; rg.min = '0.3'; rg.max = '2.5'; rg.step = '0.1'; rg.value = l.amount || 1; rg.className = 'accent-[#5865F2] w-24'; rg.title = 'Quantidade';
+          rg.addEventListener('input', () => { l.amount = +rg.value; saveElements(); prev(); });
+          row.appendChild(rg);
+          const col = document.createElement('input'); col.type = 'color'; col.value = l.color || '#ffffff'; col.title = 'Cor (deixe branco para usar as cores da mídia)'; col.className = 'el-color';
+          col.addEventListener('input', () => { l.color = col.value === '#ffffff' ? '' : col.value; saveElements(); prev(); });
+          row.appendChild(col);
+          box.appendChild(row);
+        });
+        const pv = document.createElement('div'); pv.className = 'part-prev mt-2' + (cat === 'decorations' ? ' is-deco' : ''); box.appendChild(pv);
+        const prev = () => {
+          if (!list.length) { pv.innerHTML = ''; return; }
+          const W = cat === 'decorations' ? 288 : 450, H = cat === 'decorations' ? 288 : 880;
+          const bg = cat === 'decorations' ? `<rect width="288" height="288" fill="#2b2d31"/><circle cx="144" cy="144" r="118" fill="#5865F2"/>` : `<rect width="450" height="880" fill="#2b2d31"/><rect width="450" height="160" fill="#5865F2" opacity=".35"/><circle cx="82" cy="160" r="60" fill="#5865F2"/>`;
+          pv.innerHTML = I.withParticles(`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg"><style></style>${bg}</svg>`, cat, list, null, 7);
+        };
+        prev();
+      };
+      draw();
+    });
+    const dm = document.getElementById('gen-deco-mode');
+    if (dm) {
+      const drawM = () => {
+        dm.innerHTML = '';
+        [['objetos', '✂️ Objetos recortados da mídia'], ['anel', '⭕ Anel recortado (forma)']].forEach(([v, lb]) => dm.appendChild(chip(lb, (ui.elements.decoMode || 'objetos') === v, () => { ui.elements.decoMode = v; saveElements(); drawM(); })));
+      };
+      drawM();
+    }
+    const tb = document.getElementById('gen-transition');
+    if (tb) {
+      const drawT = () => {
+        tb.innerHTML = '';
+        [['nenhuma', 'Nenhuma'], ['flash', '💥 Flash de luz'], ['corte', '✂️ Corte seco'], ['dissolver', '🌫 Dissolver']].forEach(([v, lb]) => tb.appendChild(chip(lb, ui.elements.transition === v, () => { ui.elements.transition = v; saveElements(); drawT(); })));
+      };
+      drawT();
+    }
+    const ai = document.getElementById('gen-el-ai');
+    if (ai) { ai.checked = !!ui.elements.ai; ai.onchange = () => { ui.elements.ai = ai.checked; saveElements(); }; }
+  }
+
+  /* ---------- IA identifica os elementos animados da mídia, quadro a quadro ---------- */
+  const IDENTIFY_SYSTEM = `Você é um diretor de animação. Recebe QUADROS em sequência de um vídeo/GIF (ou uma imagem) e identifica os ELEMENTOS ANIMADOS que se repetem e podem virar camadas de um efeito de perfil do Discord e de uma moldura de avatar.
+Elementos possíveis (use só estes nomes): folhas, petalas, penas, corvos (qualquer pássaro), grama, neve, brilhos, brasas (faíscas, fogo em partículas), raios (eletricidade), luz (raios de luz/feixes), fragmentos (algo se desfazendo em pedaços), fumaca, bolhas.
+Compare os quadros: o que se MOVE entre eles? Direção: vento (atravessa de lado), cair, subir. Região onde aparece: topo, baixo, lados, tudo. Quantidade 0.3 a 2.5 (1 = normal). Cor dominante em hex.
+Transição da entrada: flash (estouro de luz), corte (troca seca de cena), dissolver, nenhuma.
+Responda SÓ JSON: {"efeito":[{"elemento":"corvos","direcao":"vento","regiao":"topo","quantidade":1.2,"cor":"#111111"}],"moldura":[{"elemento":"brasas","direcao":"subir","quantidade":1,"cor":"#ffaa33"}],"transicao":"flash","resumo":"frase curta do que você viu"}
+No máximo 3 elementos por formato, só os que realmente aparecem. Para a moldura, escolha 1–2 que fiquem bonitos em volta do avatar.
+Também aponte os OBJETOS principais (personagem, bicho, flor, arma, criatura) que ficariam bonitos recortados em volta do avatar: "objetos":[{"nome":"corvo","caixa":[x0,y0,x1,y1]}], caixa em frações 0–1 da imagem (quadro do meio), justa no objeto, no máximo 3, o mais importante primeiro.`;
+  async function visionJson(system, blocks, cfg) {
+    const model = textModelFor(cfg);
+    let out = '';
+    if (cfg.provider === 'anthropic') {
+      const mod = await loadSdk();
+      const client = new mod.default({ apiKey: cfg.key, dangerouslyAllowBrowser: true });
+      const content = blocks.map((b) => (b.image ? { type: 'image', source: { type: 'base64', media_type: b.image.mime, data: b.image.data } } : { type: 'text', text: b.text }));
+      const res = await client.messages.create({ model, max_tokens: 1500, system, messages: [{ role: 'user', content }] });
+      out = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    } else if (PROVIDERS[cfg.provider].native === 'gemini') {
+      const parts = blocks.map((b) => (b.image ? { inlineData: { mimeType: b.image.mime, data: b.image.data } } : { text: b.text }));
+      const res = await fetch(`${GEMINI_BASE}/models/${encodeURIComponent(geminiModelName(model))}:generateContent`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.key },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.4 } }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw geminiError(res.status, data, model);
+      const cand = data && data.candidates && data.candidates[0];
+      out = ((cand && cand.content && cand.content.parts) || []).filter((pt) => !pt.thought).map((pt) => pt.text || '').join('');
+    } else {
+      const base = (cfg.baseUrl || PROVIDERS[cfg.provider].base || '').replace(/\/+$/, '');
+      const headers = { 'Content-Type': 'application/json' };
+      if (cfg.key) headers.Authorization = 'Bearer ' + cfg.key;
+      const content = blocks.map((b) => (b.image ? { type: 'image_url', image_url: { url: `data:${b.image.mime};base64,${b.image.data}` } } : { type: 'text', text: b.text }));
+      const res = await fetch(base + '/chat/completions', { method: 'POST', headers, body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content }], response_format: { type: 'json_object' } }) });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((data && data.error && (data.error.message || data.error)) || 'HTTP ' + res.status);
+      out = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+    }
+    return parseJsonLoose(out);
+  }
+  async function identifyElements(media, cfg) {
+    const I = window.CosmeticIllustration;
+    const fr = (media.frames || []).slice(0, 8);
+    const blocks = [{ text: `${fr.length} quadro(s) em ordem${media.animated ? ' (animado)' : ' (imagem parada: deduza o movimento que combina)'}:` }];
+    fr.forEach((c, i) => {
+      const s = document.createElement('canvas'); const k = Math.min(1, 384 / Math.max(c.width, c.height));
+      s.width = Math.round(c.width * k); s.height = Math.round(c.height * k); s.getContext('2d').drawImage(c, 0, 0, s.width, s.height);
+      blocks.push({ text: `Quadro ${i + 1}` }, { image: { mime: 'image/jpeg', data: s.toDataURL('image/jpeg', 0.7).split(',')[1] } });
+    });
+    const j = await visionJson(IDENTIFY_SYSTEM, blocks, cfg);
+    const norm = (arr) => (Array.isArray(arr) ? arr : []).map((e) => {
+      const kind = String((e && (e.elemento || e.tipo)) || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace('passaros', 'corvos').replace('fogo', 'brasas').replace('faiscas', 'brasas').replace('fumaça', 'fumaca');
+      if (!I.PARTS[kind]) return null;
+      return { kind, wind: ['vento', 'cair', 'subir'].includes(e.direcao) ? e.direcao : '', region: ['topo', 'baixo', 'lados', 'tudo'].includes(e.regiao) ? e.regiao : 'tudo', amount: Math.max(0.3, Math.min(2.5, +e.quantidade || 1)), color: /^#[0-9a-f]{6}$/i.test(e.cor || '') ? e.cor : '' };
+    }).filter(Boolean).slice(0, 3);
+    const boxes = (Array.isArray(j.objetos) ? j.objetos : []).map((o) => o && Array.isArray(o.caixa) && o.caixa.length === 4 ? o.caixa.map(Number) : null)
+      .filter((b) => b && b.every((v) => v >= 0 && v <= 1) && b[2] - b[0] > 0.04 && b[3] - b[1] > 0.04)
+      .slice(0, 3).map(([x0, y0, x1, y1]) => ({ x0, y0, x1, y1 }));
+    return { boxes, effects: norm(j.efeito), decorations: norm(j.moldura).slice(0, 2), transition: ['flash', 'corte', 'dissolver', 'nenhuma'].includes(j.transicao) ? j.transicao : '', summary: String(j.resumo || '').slice(0, 160) };
+  }
+
+  /* ---------- Mídia colada (Pinterest, imagem, GIF, vídeo) ---------- */
+  async function loadMedia(getter) {
+    if (!window.CosmeticMediaRef) return CS.toast('Módulo de mídia não carregou. Atualize a página.', 'danger');
+    const st = $('#gen-media-status');
+    st.textContent = 'Lendo a mídia…';
+    try {
+      const m = await getter();
+      if (!m.frames.length) throw new Error('Não achei nenhum quadro.');
+      ui.media = m;
+      renderMedia();
+      CS.toast(`Mídia carregada (${m.kind}, ${m.frames.length} quadro(s)). A IA vai usá-la para gerar os formatos marcados.`, 'success');
+      if (m.note) CS.toast(m.note, 'info');
+    } catch (e) {
+      console.warn('[Mídia]', e);
+      st.textContent = '';
+      CS.toast(e.message || 'Não deu para ler a mídia.', 'danger');
+    }
+  }
+  function renderMedia() {
+    const box = $('#gen-media-preview');
+    const st = $('#gen-media-status');
+    box.innerHTML = '';
+    const m = ui.media;
+    $('#gen-prompt').required = !m && !refsResolved().length;
+    if (!m) { st.textContent = ''; box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    m.frames.forEach((f) => {
+      const img = document.createElement('img');
+      img.src = f.toDataURL('image/jpeg', 0.7);
+      img.alt = '';
+      img.className = 'h-16 rounded-md border border-white/10';
+      box.appendChild(img);
+    });
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'btn btn-sm btn-secondary self-center';
+    x.textContent = '✕ Remover';
+    x.addEventListener('click', () => { ui.media = null; renderMedia(); });
+    box.appendChild(x);
+    st.textContent = `${m.kind} · ${m.frames.length} quadro(s)${m.animated ? ' ao longo do tempo' : ''} · ${m.name} `;
+    if (m.videoUrl) {
+      const a = document.createElement('a');
+      a.href = m.videoUrl; a.target = '_blank'; a.rel = 'noopener';
+      a.className = 'text-[#00A8FC] hover:underline';
+      a.textContent = '(abrir o vídeo para baixar)';
+      st.appendChild(a);
+    }
+  }
+  /** A mídia vira uma referência para CADA formato pedido. */
+  function mediaGroups(cats) {
+    if (!ui.media || !window.CosmeticMediaRef) return {};
+    const out = {};
+    cats.forEach((cat) => { out[cat] = [{ name: `Mídia do usuário (${ui.media.kind})`, ...window.CosmeticMediaRef.stripOf(ui.media, cat) }]; });
+    return out;
+  }
 
   /** Monta as tiras de quadros das referências, agrupadas por formato. */
   async function refStrips(refs, cats, limit = 10) {
@@ -521,6 +805,7 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
         preset: MOTIONS.includes(f.preset) ? f.preset : 'rise',
         intensidade: Math.min(3, Math.max(1, Math.round(+f.intensidade || 2))),
         cores: (Array.isArray(f.cores) ? f.cores : []).filter((c) => /^#[0-9a-f]{6}$/i.test(c)).slice(0, 5),
+        fx: fxFromAi(f.efeitos),
       };
     });
     return res;
@@ -612,7 +897,7 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
     const system = systemFor(req, true);
     const user = userTextFor(req);
     const images = req.images.filter((i) => i.url || i.data).map((i) => (i.url ? i : { url: `data:${i.mime || 'image/png'};base64,${i.data}` }));
-    const userContent = images.length && cfg.provider === 'openai'
+    const userContent = images.length
       ? [{ type: 'text', text: user }, ...images.map((i) => ({ type: 'image_url', image_url: { url: i.url } }))]
       : user;
     const headers = { 'Content-Type': 'application/json' };
@@ -1398,7 +1683,7 @@ ${lines.join('\n\n')}`;
     $('#gen-prompt').placeholder = list.length
       ? 'Opcional: descreva o que mudar (ex.: versão sombria, com nuvens escuras)'
       : 'Ex.: dragão de jade cuspindo fogo verde em um templo nas nuvens';
-    $('#gen-prompt').required = !list.length;
+    $('#gen-prompt').required = !list.length && !ui.media;
   }
   /** Miniatura de um item para chips e para o seletor. */
   function refThumb(cat, item, size) {
@@ -1528,6 +1813,7 @@ ${lines.join('\n\n')}`;
     return {
       provider: PROVIDERS[cfg.provider] ? cfg.provider : 'gemini',
       models: cfg.models || {},
+      imageModels: cfg.imageModels || {},
       baseUrls: cfg.baseUrls || {},
       keys: cfg.keys || {},
       remember: !!cfg.remember,
@@ -1536,15 +1822,28 @@ ${lines.join('\n\n')}`;
   const ai = loadAiSettings();
   function persistAiSettings() {
     store.set(AI_STORAGE, JSON.stringify({
-      provider: ai.provider, models: ai.models, baseUrls: ai.baseUrls, remember: ai.remember,
+      provider: ai.provider, models: ai.models, imageModels: ai.imageModels, baseUrls: ai.baseUrls, remember: ai.remember,
       keys: ai.remember ? ai.keys : {},
     }));
   }
 
-  /** Modelo sugerido: no modo Ilustração, o modelo de IMAGEM do provedor (se tiver). */
+  /** Modelo de texto/visão sugerido do provedor. */
   function defaultModel(provider) {
+    return PROVIDERS[provider].model;
+  }
+  const isImageModel = (m) => /(^|[-/._])image|gpt-image|dall-e|imagen|^wan\d|flux|stable-diffusion|sdxl|seedream|recraft/i.test(String(m || ''));
+  /** Modelo de imagem sugerido (Alibaba: qwen-image). */
+  function defaultImageModel(provider) {
     const p = PROVIDERS[provider];
-    return (ui.mode === 'raster' && p.imageModel) || p.model;
+    if (p.imageModel) return p.imageModel;
+    const base = ai.baseUrls[provider] ?? p.base ?? '';
+    if (/aliyuncs|dashscope/i.test(base)) return 'qwen-image-3.0';
+    return '';
+  }
+  function imageModelValue() {
+    const v = ($('#gen-image-model') && $('#gen-image-model').value.trim()) || '';
+    const txt = $('#gen-model').value.trim();
+    return v || (isImageModel(txt) ? txt : '') || defaultImageModel(ai.provider);
   }
 
   function renderProvider() {
@@ -1552,6 +1851,8 @@ ${lines.join('\n\n')}`;
     $('#gen-provider').value = ai.provider;
     $('#gen-model').value = ai.models[ai.provider] ?? defaultModel(ai.provider);
     $('#gen-model').placeholder = defaultModel(ai.provider) || 'nome-do-modelo';
+    $('#gen-image-model').value = ai.imageModels[ai.provider] ?? defaultImageModel(ai.provider);
+    $('#gen-image-model').placeholder = defaultImageModel(ai.provider) || 'sem modelo de imagem';
     $('#gen-baseurl').value = ai.baseUrls[ai.provider] ?? p.base ?? '';
     $('#gen-baseurl-box').classList.toggle('hidden', !p.editableBase);
     $('#gen-key').value = ai.keys[ai.provider] || '';
@@ -1564,25 +1865,56 @@ ${lines.join('\n\n')}`;
 
   /** Preenche a lista de modelos (hoje: Gemini) a partir da chave informada. */
   let modelListSeq = 0;
+  function fillList(dl, ids) {
+    dl.innerHTML = '';
+    ids.forEach((m) => { const o = document.createElement('option'); o.value = m.id || m; if (m.label) o.label = m.label; dl.appendChild(o); });
+  }
   async function refreshModelList() {
     const dl = $('#gen-models');
+    const il = $('#gen-image-models');
     dl.innerHTML = '';
+    il.innerHTML = '';
     const p = PROVIDERS[ai.provider];
     const key = $('#gen-key').value.trim();
+    const info = $('#gen-models-info');
+    info.textContent = '';
+    if (p.native !== 'gemini' && ai.provider !== 'anthropic') {
+      const base = ($('#gen-baseurl').value.trim() || p.base || '').replace(/\/+$/, '');
+      if (!/^https?:\/\//.test(base) || (!key && !p.keyOptional)) return;
+      const seq = ++modelListSeq;
+      try {
+        const res = await fetch(base + '/models', { headers: key ? { Authorization: 'Bearer ' + key } : {} });
+        const j = await res.json().catch(() => null);
+        if (seq !== modelListSeq) return;
+        if (!res.ok) throw new Error((j && j.error && (j.error.message || j.error)) || 'HTTP ' + res.status);
+        const ids = ((j && j.data) || []).map((m) => m.id).filter(Boolean).sort();
+        const imgs = ids.filter(isImageModel);
+        const txt = ids.filter((m) => !isImageModel(m));
+        fillList(dl, txt);
+        fillList(il, imgs);
+        const vision = txt.filter((m) => /vl|vision|omni|4o|gemini|claude|pixtral|llava|qwen3\.[5-9]|qwen4|kimi-k[23]/i.test(m));
+        info.textContent = `${ids.length} modelos na sua conta: ${txt.length} de texto${vision.length ? ` (com visão, para ler vídeo/imagem: ${vision.slice(0, 4).join(', ')}${vision.length > 4 ? '…' : ''})` : ''} e ${imgs.length} de imagem${imgs.length ? ` (${imgs.slice(0, 4).join(', ')}${imgs.length > 4 ? '…' : ''})` : ''}. Clique no campo para ver a lista.`;
+        const cur = $('#gen-model').value.trim();
+        if (ids.length && cur && !ids.includes(cur)) info.textContent = `⚠ "${cur}" não existe nesta conta. ` + info.textContent;
+        if (!ai.imageModels[ai.provider] && imgs.length && !imgs.includes($('#gen-image-model').value.trim())) {
+          $('#gen-image-model').value = imgs.find((m) => /qwen-image|gpt-image|image/i.test(m) && !/edit|pro/i.test(m)) || imgs[0];
+        }
+      } catch (e) {
+        if (seq === modelListSeq) info.textContent = `Não deu para listar os modelos (${e.message}). Você pode digitar o nome.`;
+      }
+      return;
+    }
     if (p.native !== 'gemini' || !key) return;
     const seq = ++modelListSeq;
     try {
       const models = await listGeminiModels(key);
       if (seq !== modelListSeq) return;
-      models.forEach((m) => {
-        const o = document.createElement('option');
-        o.value = m.id;
-        o.label = m.label;
-        dl.appendChild(o);
-      });
+      fillList(dl, models.filter((m) => !isImageModel(m.id)));
+      fillList(il, models.filter((m) => isImageModel(m.id)));
+      if (!ai.imageModels[ai.provider]) { const bi = pickGeminiImageModel(models); if (bi) $('#gen-image-model').value = bi; }
       const current = geminiModelName($('#gen-model').value);
       if (models.length && !models.some((m) => m.id === current) && !ai.models[ai.provider]) {
-        const best = (ui.mode === 'raster' && pickGeminiImageModel(models)) || pickGeminiModel(models);
+        const best = pickGeminiModel(models);
         if (best) {
           $('#gen-model').value = best;
           $('#gen-provider-hint').textContent = `${p.hint} Modelo escolhido automaticamente: ${best} (${models.length} disponíveis).`;
@@ -1669,12 +2001,59 @@ ${lines.join('\n\n')}`;
     return added;
   }
 
+  /** Mídia como arte: os formatos saem da própria mídia, animados com os quadros reais. */
+  async function generateFromMedia(cats, prompt) {
+    if (!window.CosmeticIllustration || !window.CosmeticMediaRef) return CS.toast('Módulos não carregaram. Atualize a página.', 'danger');
+    setBusy(true, 'Recortando a sua mídia em cada formato…');
+    showSkeletons(cats.length);
+    try {
+      const hi = await window.CosmeticMediaRef.artFrames(ui.media);
+      const motion = {};
+      cats.forEach((cat) => { motion[cat] = { fx: fxFor(prompt || '') }; });
+      loadElements();
+      const elements = { effects: ui.elements.effects.slice(), decorations: ui.elements.decorations.slice() };
+      let transition = ui.elements.transition !== 'nenhuma' ? ui.elements.transition : '';
+      let boxes = null;
+      // A IA assiste os quadros e identifica os elementos que se movem (corvos, folhas, brasas…)
+      const cfg = ui.engine === 'ai' ? aiConfig() : null;
+      if (ui.elements.ai && cfg && (cfg.key || cfg.provider === 'ollama') && (cats.includes('effects') || cats.includes('decorations'))) {
+        try {
+          setBusy(true, 'A IA está assistindo os quadros e identificando os elementos animados…');
+          const id = await identifyElements(ui.media, cfg);
+          if (!elements.effects.length) elements.effects = id.effects;
+          if (!elements.decorations.length) elements.decorations = id.decorations;
+          if (!transition && id.transition && id.transition !== 'nenhuma') transition = id.transition;
+          if (id.boxes.length) boxes = id.boxes;
+          const names = [...new Set([...id.effects, ...id.decorations].map((l) => window.CosmeticIllustration.PARTS[l.kind].label))];
+          if (names.length || id.summary) CS.toast(`IA identificou: ${names.join(', ') || 'nada que se repita'}${id.summary ? ' — ' + id.summary : ''}`, 'info');
+          setBusy(true, 'Recortando a sua mídia em cada formato…');
+        } catch (err) {
+          console.warn('[Identificar elementos]', err);
+          CS.toast('A IA não conseguiu identificar os elementos (' + (err.message || 'erro') + '). Usando o que você escolheu.', 'info');
+        }
+      }
+      const list = await window.CosmeticIllustration.fromMedia(cats, { ...hi, name: ui.media.name, kind: ui.media.kind }, motion, { ...(ui.shapes || {}), elements, transition, boxes, decoMode: ui.elements.decoMode || 'objetos' });
+      list.forEach((it) => {
+        if (it.cat === 'nameplates' && it.palette && it.palette[0]) it.raw.asset.discordPalette = nearestDiscordPalette(it.palette[0]);
+      });
+      $$('#gen-results .gen-skeleton').forEach((n) => n.remove());
+      const added = addResults(list);
+      added.forEach((a, i) => { if (list[i] && list[i].quality) ui.quality.set(a.id, list[i].quality); });
+      renderResults();
+      CS.toast(`${list.length} item(ns) feitos com a sua mídia${hi.frames.length > 1 ? `, animados com ${hi.frames.length} quadros reais` : ''}.`, 'success');
+    } catch (err) {
+      console.error('[Mídia como arte]', err);
+      $$('#gen-results .gen-skeleton').forEach((n) => n.remove());
+      renderResults();
+      CS.toast(err.message || 'Falha ao usar a mídia.', 'danger');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /** Modo Ilustração: o modelo de imagem pinta, o app recorta, protege as zonas e anima. */
   async function generateIllustrations(prompt, cats, refs, cfg, details = {}) {
     const native = PROVIDERS[cfg.provider] && PROVIDERS[cfg.provider].native === 'gemini' ? 'gemini' : cfg.provider;
-    if (native !== 'gemini' && native !== 'openai') {
-      return CS.toast('O modo Ilustração precisa do Google Gemini (modelo "…-image") ou da OpenAI (gpt-image).', 'danger');
-    }
     if (!window.CosmeticIllustration) return CS.toast('Módulo de ilustração não carregou. Atualize a página.', 'danger');
     setBusy(true, 'Pintando as ilustrações… isso leva de 10 a 40 s por item.');
     showSkeletons(cats.length);
@@ -1685,9 +2064,10 @@ ${lines.join('\n\n')}`;
       // descrição + 1 quadro de referência (mais que isso ele cola as referências lado a lado).
       const refsByCat = {}, motion = {}, perCat = { ...details };
       const mine = refs.filter((r) => cats.includes(r.cat));
-      if (mine.length) {
-        setBusy(true, `Lendo ${mine.length} referência(s) quadro a quadro…`);
+      if (mine.length || ui.media) {
+        setBusy(true, ui.media ? 'Assistindo a mídia quadro a quadro…' : `Lendo ${mine.length} referência(s) quadro a quadro…`);
         const groups = await refStrips(mine, cats, 12);
+        Object.entries(mediaGroups(cats)).forEach(([cat, list]) => { groups[cat] = [...list, ...(groups[cat] || [])]; });
         if (Object.keys(groups).length) {
           setBusy(true, 'Estudando as referências (visual e movimento)…');
           let an = {};
@@ -1697,9 +2077,9 @@ ${lines.join('\n\n')}`;
           }
           Object.entries(an).forEach(([cat, a]) => {
             perCat[cat] = [details[cat], a.pedido, a.visual && `Keep the look of the user's references: ${a.visual}`, a.movimento && `Their motion: ${a.movimento}`].filter(Boolean).join('. ');
-            motion[cat] = { preset: a.preset, intensity: a.intensidade };
+            motion[cat] = { preset: a.preset, intensity: a.intensidade, fx: fxFor([prompt, details[cat]].join(' '), a.fx) };
           });
-          if (native === 'gemini') Object.entries(groups).forEach(([cat, list]) => { refsByCat[cat] = [{ mime: 'image/png', data: list[0].first }]; });
+          if (native !== 'openai') Object.entries(groups).forEach(([cat, list]) => { refsByCat[cat] = [{ mime: 'image/png', data: list[0].first }]; });
         }
         cats.forEach((cat) => {
           if (perCat[cat]) return;
@@ -1707,9 +2087,12 @@ ${lines.join('\n\n')}`;
           if (names.length) perCat[cat] = 'In the spirit of: ' + names.join(', ');
         });
       }
-      const theme = prompt || 'tema livre, item premium';
-      const list = await window.CosmeticIllustration.generate({ prompt: theme, cats, details: perCat }, { ...cfg, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl }, {
+      cats.forEach((cat) => { if (!motion[cat]) motion[cat] = { fx: fxFor([prompt, details[cat]].join(' ')) }; });
+      const theme = prompt || (ui.media ? 'o mesmo tema e visual da mídia de referência' : 'tema livre, item premium');
+      const list = await window.CosmeticIllustration.generate({ prompt: theme, cats, details: perCat }, { ...cfg, model: cfg.imageModel, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl }, {
         refs: refsByCat,
+        fromMedia: !!ui.media,
+        shapes: ui.shapes || {},
         motion,
         onProgress: (msg) => setBusy(true, msg + ' (10 a 40 s por item)'),
       });
@@ -1739,11 +2122,14 @@ ${lines.join('\n\n')}`;
     let details = {};
     const cats = selectedCats();
     const refs = refsResolved();
-    if (!prompt && !refs.length) {
+    if (!prompt && !refs.length && !ui.media) {
       $('#gen-prompt').focus();
       return CS.toast('Descreva um tema ou escolha referências da biblioteca.', 'danger');
     }
     if (!cats.length) return CS.toast('Escolha pelo menos uma categoria.', 'danger');
+
+    // Mídia do usuário como arte: recorta, protege as zonas e anima com os quadros reais (sem IA)
+    if (ui.media && ui.mediaArt) return generateFromMedia(cats, prompt);
 
     if (ui.engine === 'ai') {
       const preset = PROVIDERS[ai.provider];
@@ -1751,8 +2137,10 @@ ${lines.join('\n\n')}`;
         provider: ai.provider,
         key: $('#gen-key').value.trim(),
         model: $('#gen-model').value.trim() || preset.model,
+        imageModel: imageModelValue(),
         baseUrl: $('#gen-baseurl').value.trim() || preset.base,
       };
+      if (isImageModel(cfg.model)) cfg.model = textModelFor(cfg);
       if (!cfg.key && !preset.keyOptional) {
         $('#gen-key').focus();
         return CS.toast(`Cole sua chave da ${preset.label} ou troque para o motor Local.`, 'danger');
@@ -1776,17 +2164,14 @@ ${lines.join('\n\n')}`;
         }
       }
       ({ theme: prompt, details } = parsePrompt(prompt));
+      // campos próprios de cada formato têm prioridade sobre as linhas do prompt
+      ['nameplates', 'decorations', 'effects', 'frames'].forEach((c) => { const el = document.getElementById('gen-pp-' + c); const v = el && el.value.trim(); if (v) details[c] = v; });
       let mode = cats.includes('frames') && ui.mode === 'particles' ? 'svg' : ui.mode;
       if (mode !== ui.mode) CS.toast('Profile frames são desenhados no estilo Arte (SVG).', 'info');
-      // Modelo de IMAGEM escolhido num modo de código: ele escreve SVG muito mal — usa o modo Ilustração
-      if (mode !== 'raster' && /(^|[-/])image|gpt-image|dall-e|imagen/i.test(cfg.model)) {
-        mode = 'raster';
-        CS.toast(`"${cfg.model}" é um modelo de imagem: usando o modo Ilustração.`, 'info');
-      }
-      // Ilustração (padrão) só existe no Gemini e na OpenAI: nos demais provedores, desenha em SVG
-      if (mode === 'raster' && preset.native !== 'gemini' && ai.provider !== 'openai') {
+      // Ilustração precisa de um modelo de IMAGEM; sem ele, desenha em SVG
+      if (mode === 'raster' && !cfg.imageModel) {
         mode = 'svg';
-        CS.toast(`${preset.label.replace(/\s*\(.*\)$/, '')} não gera imagens: usando o estilo Arte (SVG).`, 'info');
+        CS.toast('Escolha um "Modelo de imagem" para o modo Ilustração. Sem ele, usando o estilo Arte (SVG).', 'info');
       }
       if (mode === 'raster') return generateIllustrations(prompt, cats, refs, cfg, details);
       setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está ${mode === 'svg' ? 'desenhando a arte' : 'montando'} do seu kit… ${mode === 'svg' ? 'isso pode levar até 1–2 minutos.' : 'isso leva alguns segundos.'}`);
@@ -1807,6 +2192,11 @@ ${lines.join('\n\n')}`;
         }
       }
       setBusy(true, `${preset.label.replace(/\s*\(.*\)$/, '')} está ${mode === 'svg' ? 'desenhando a arte' : 'montando'} do seu kit…`);
+      if (ui.media && window.CosmeticMediaRef) {
+        const st = window.CosmeticMediaRef.stripOf(ui.media, cats[0]);
+        req.images.unshift({ mime: st.mime, data: st.data });
+        req.refs.unshift({ cat: cats[0], item: { name: `Mídia do usuário (${ui.media.kind})`, description: 'Vale para TODOS os formatos pedidos: reproduza o tema, as cores, os elementos e o movimento que aparecem nos quadros.', asset: { type: 'image' } }, hasImage: true, frames: st.frames, animated: st.animated });
+      }
       if (mode === 'svg' && ui.styleRefs) {
         req.styleRefs = styleExamples(cats, prompt, cats.length > 2 ? 1 : 2).slice(0, Math.max(0, 4 - req.images.length));
         for (const x of req.styleRefs) {
@@ -1960,7 +2350,7 @@ ${lines.join('\n\n')}`;
   /** Configuração do provedor atual (ou null, com aviso). */
   function aiConfig() {
     const preset = PROVIDERS[ai.provider];
-    const cfg = { provider: ai.provider, key: $('#gen-key').value.trim(), model: $('#gen-model').value.trim() || preset.model, baseUrl: $('#gen-baseurl').value.trim() || preset.base };
+    const cfg = { provider: ai.provider, key: $('#gen-key').value.trim(), model: $('#gen-model').value.trim() || preset.model, imageModel: imageModelValue(), baseUrl: $('#gen-baseurl').value.trim() || preset.base };
     if (!cfg.key && !preset.keyOptional) { $('#gen-key').focus(); CS.toast(`Para refazer, cole sua chave da ${preset.label}.`, 'danger'); return null; }
     return cfg;
   }
@@ -1982,8 +2372,8 @@ ${lines.join('\n\n')}`;
       let raw, quality;
       if (isIllustration) {
         const native = PROVIDERS[cfg.provider].native === 'gemini' ? 'gemini' : cfg.provider;
-        if (native !== 'gemini' && native !== 'openai') throw new Error('Ilustrações são refeitas com o Gemini (modelo "…-image") ou a OpenAI (gpt-image).');
-        const r = await window.CosmeticIllustration.remake(cat, item, instruction, { ...cfg, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl });
+        if (!cfg.imageModel) throw new Error('Escolha um "Modelo de imagem" para refazer ilustrações.');
+        const r = await window.CosmeticIllustration.remake(cat, item, instruction, { ...cfg, model: cfg.imageModel, provider: native, baseUrl: native === 'gemini' ? '' : cfg.baseUrl }, { fx: fxFor(instruction) });
         if (cat === 'nameplates' && r.palette && r.palette[0]) r.asset.discordPalette = nearestDiscordPalette(r.palette[0]);
         raw = { name: name + ' ✎', description: instruction.slice(0, 150), rarity: item.rarity, tags: item.tags, prompt: [item.prompt, instruction].filter(Boolean).join(' — ').slice(0, 2000), engine: native, engineLabel: r.label, asset: r.asset };
         quality = { ok: true, issues: [], summary: '✓ refeito · zonas protegidas' };
@@ -2065,9 +2455,19 @@ ${current}`;
       ai.models[ai.provider] = e.target.value.trim();
       persistAiSettings();
     });
+    $('#gen-image-model').addEventListener('change', (e) => {
+      ai.imageModels[ai.provider] = e.target.value.trim();
+      persistAiSettings();
+    });
+    const mart = $('#gen-media-art');
+    ui.mediaArt = store.get('cosmetic-studio:gen-media-art') !== '0';
+    mart.checked = ui.mediaArt;
+    mart.addEventListener('change', () => { ui.mediaArt = mart.checked; store.set('cosmetic-studio:gen-media-art', ui.mediaArt ? '1' : '0'); });
     $('#gen-baseurl').addEventListener('change', (e) => {
       ai.baseUrls[ai.provider] = e.target.value.trim();
       persistAiSettings();
+      if (!ai.imageModels[ai.provider]) $('#gen-image-model').value = defaultImageModel(ai.provider);
+      refreshModelList();
     });
     $('#gen-key').addEventListener('change', (e) => {
       ai.keys[ai.provider] = e.target.value.trim();
@@ -2095,6 +2495,65 @@ ${current}`;
 
     $('#gen-form').addEventListener('submit', onGenerate);
     $('#gen-refs-add').addEventListener('click', openPicker);
+    renderFx();
+    renderShapes();
+    renderElements();
+    // abas de formato (a caixinha marca se gera; o clique no resto abre o painel)
+    $$('#gen-cats .fmt-tab').forEach((tab) => {
+      const open = () => {
+        $$('#gen-cats .fmt-tab').forEach((x) => x.classList.toggle('is-active', x === tab));
+        $$('.fmt-panel').forEach((p) => p.classList.toggle('hidden', p.dataset.panel !== tab.dataset.tab));
+      };
+      tab.addEventListener('click', (e) => { if (e.target.tagName !== 'INPUT') open(); });
+      tab.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+    });
+    // abas da ideia: texto / mídia / biblioteca
+    $$('.gen-src-tabs [data-src]').forEach((btn) => btn.addEventListener('click', () => {
+      $$('.gen-src-tabs [data-src]').forEach((x) => x.classList.toggle('is-active', x === btn));
+      $$('[data-src-panel]').forEach((p) => p.classList.toggle('hidden', p.dataset.srcPanel !== btn.dataset.src));
+    }));
+    const dots = () => {
+      const m = $('#gen-media-dot'), r = $('#gen-refs-dot');
+      if (m) m.classList.toggle('hidden', !ui.media);
+      if (r) r.classList.toggle('hidden', !$$('#gen-refs > *').length);
+    };
+    setInterval(dots, 800);
+    // sem chave salva: abre a etapa do provedor
+    if (!$('#gen-key').value) $('#gen-ai-fold').open = true;
+    ['nameplates', 'decorations', 'effects', 'frames'].forEach((c) => {
+      const el = document.getElementById('gen-pp-' + c); if (!el) return;
+      const k = 'cosmetic-studio:gen-pp-' + c;
+      el.value = store.get(k) || '';
+      el.addEventListener('input', () => store.set(k, el.value));
+    });
+    const fxAi = $('#gen-fx-ai');
+    if (fxAi) fxAi.addEventListener('change', () => { ui.fxAi = fxAi.checked; store.set(FX_AI_STORAGE, ui.fxAi ? '1' : '0'); });
+    const mUrl = $('#gen-media-url');
+    const loadUrl = () => { const v = mUrl.value.trim(); if (v) loadMedia(() => window.CosmeticMediaRef.fromUrl(v)); };
+    $('#gen-media-load').addEventListener('click', loadUrl);
+    mUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); loadUrl(); } });
+    mUrl.addEventListener('paste', () => setTimeout(loadUrl, 0));
+    $('#gen-media-file').addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (file) loadMedia(() => window.CosmeticMediaRef.fromFile(file));
+    });
+    const drop = $('#gen-media-box');
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('ring-2', 'ring-[#5865F2]'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('ring-2', 'ring-[#5865F2]'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('ring-2', 'ring-[#5865F2]');
+      const file = e.dataTransfer.files && e.dataTransfer.files[0];
+      const txt = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+      if (file) loadMedia(() => window.CosmeticMediaRef.fromFile(file));
+      else if (txt) { mUrl.value = txt.trim(); loadUrl(); }
+    });
+    // Colar uma imagem/vídeo (Ctrl+V) em qualquer lugar do gerador
+    $('#gen-form').addEventListener('paste', (e) => {
+      const file = [...((e.clipboardData && e.clipboardData.files) || [])].find((f) => /^(image|video)\//.test(f.type));
+      if (file) { e.preventDefault(); loadMedia(() => window.CosmeticMediaRef.fromFile(file)); }
+    });
     const rv = $('#gen-review');
     const sr = $('#gen-style');
     if (sr) {
@@ -2146,8 +2605,6 @@ ${current}`;
       if (!b) return;
       ui.mode = b.dataset.mode;
       store.set(MODE_STORAGE, ui.mode);
-      // Sem modelo escolhido pelo usuário: o campo acompanha o modo (imagem × texto)
-      if (!ai.models[ai.provider]) renderProvider();
       $$('#gen-mode button').forEach((x) => x.classList.toggle('is-active', x === b));
     });
     renderRefs();

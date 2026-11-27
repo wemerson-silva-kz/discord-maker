@@ -465,7 +465,7 @@
     'feturbulence', 'fedisplacementmap', 'fedropshadow', 'fecomponenttransfer', 'fefunca', 'fefuncr', 'fefuncg', 'fefuncb', 'image']);
   const SVG_MAX = 60000;
   /* SVG com ilustração embutida (modo Ilustração): só imagens raster em data: base64. */
-  const SVG_MAX_RASTER = 3000000;
+  const SVG_MAX_RASTER = 12000000; // efeitos da mídia: folhas de sprites com até 60 quadros
   const RASTER_HREF = /^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/=]+$/;
 
   /**
@@ -1059,10 +1059,12 @@
       customEntries = customEntries.filter((e) => !drop.has(e.item.id));
       for (const cat in CATS) DATA[cat] = DATA[cat].filter((it) => !drop.has(it.id));
     }
-    // Ilustrações embutidas pesam (~100–300 KB): se o localStorage encher,
-    // guarda primeiro sem as ilustrações não salvas e, por fim, sem nenhuma.
-    const heavy = (e) => e.item.asset && e.item.asset.type === 'svg' && /<image[\s>]/.test(e.item.asset.svg || '');
-    const tries = [() => true, (e) => e.item._saved || equipped.has(e.item.id) || !heavy(e), (e) => !heavy(e)];
+    // Itens com ilustração/quadros embutidos pesam (até vários MB): vão para o IndexedDB,
+    // que tem espaço de sobra; o localStorage guarda só os leves.
+    const heavy = (e) => e.item.asset && e.item.asset.type === 'svg' && /<image[\s>]/.test((e.item.asset.svg || '') + (e.item.asset.introSvg || ''));
+    const row = (e) => ({ c: e.cat, s: !!e.item._saved, t: e.item._createdAt, i: publicItem(e.item) });
+    if (idbReady) idbPutAll(customEntries.filter(heavy).map(row)).catch((err) => console.warn('[Criações] IndexedDB indisponível', err));
+    const tries = [(e) => !heavy(e)];
     for (const keep of tries) {
       try {
         localStorage.setItem(CUSTOM_KEY, JSON.stringify(customEntries.filter(keep).map((e) => ({ c: e.cat, s: !!e.item._saved, t: e.item._createdAt, i: publicItem(e.item) }))));
@@ -1071,9 +1073,39 @@
     }
   }
   const saveCustom = persistCustom;
-  function loadCustom() {
-    let list = [];
-    try { list = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]'); } catch (e) { list = []; }
+
+  /* ---- IndexedDB para as criações pesadas ---- */
+  let idbReady = false; // só grava depois de ler (senão apagaria o que está lá)
+  const IDB_NAME = 'cosmetic-studio', IDB_STORE = 'custom-heavy';
+  let idbP = null;
+  function idb() {
+    if (!idbP) idbP = new Promise((res, rej) => {
+      if (!window.indexedDB) return rej(new Error('sem IndexedDB'));
+      const q = indexedDB.open(IDB_NAME, 1);
+      q.onupgradeneeded = () => q.result.createObjectStore(IDB_STORE);
+      q.onsuccess = () => res(q.result);
+      q.onerror = () => rej(q.error);
+    });
+    return idbP;
+  }
+  async function idbPutAll(rows) {
+    const db = await idb();
+    await new Promise((res, rej) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(rows, 'list');
+      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+  }
+  async function idbGetAll() {
+    const db = await idb();
+    return new Promise((res, rej) => {
+      const q = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get('list');
+      q.onsuccess = () => res(q.result || []); q.onerror = () => rej(q.error);
+    });
+  }
+  function loadCustom(list) {
+    if (!list) { try { list = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]'); } catch (e) { list = []; } }
+    let n = 0;
     (Array.isArray(list) ? list : []).forEach((e) => {
       const item = sanitizeCustomItem(e && e.c, e && e.i);
       if (!item || findItem(e.c, item.id)) return;
@@ -1082,7 +1114,9 @@
       item._createdAt = e.t || Date.now();
       DATA[e.c].push(item);
       customEntries.push({ cat: e.c, item });
+      n++;
     });
+    return n;
   }
   function deleteCustom(id) {
     const entry = customEntries.find((e) => e.item.id === id);
@@ -2229,6 +2263,15 @@
     } else {
       state = sanitizeState(loadLocal());
     }
+    // criações pesadas (IndexedDB) chegam depois: registra, reequipa e redesenha
+    idbGetAll().then((rows) => {
+      idbReady = true;
+      if (!loadCustom(rows)) return;
+      if (!fromLink) state = sanitizeState(loadLocal());
+      renderGallery();
+      renderList();
+      persistCustom();
+    }).catch((err) => { idbReady = true; console.warn('[Criações] não deu para ler o IndexedDB', err); });
 
     $('#member-since').textContent = new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' });
 

@@ -128,8 +128,15 @@
                 </div>
               </div>
 
-              <form id="gen-form" class="p-4 sm:p-5 space-y-4" autocomplete="off">
-                <div>
+              <form id="gen-form" class="gen-studio" autocomplete="off">
+                <div class="gen-card">
+                  <div class="gen-card-h"><span class="gen-step">1</span><div><h3>Ideia</h3><p>Escreva um tema, cole uma mídia ou escolha referências. Dá para combinar.</p></div></div>
+                  <div class="gen-src-tabs" role="tablist">
+                    <button type="button" class="is-active" data-src="text">✍️ Texto</button>
+                    <button type="button" data-src="media">🎬 Vídeo, GIF ou imagem <span id="gen-media-dot" class="gen-dot hidden"></span></button>
+                    <button type="button" data-src="refs">🧬 Biblioteca <span id="gen-refs-dot" class="gen-dot hidden"></span></button>
+                  </div>
+                  <div data-src-panel="text">
                   <div class="flex items-center justify-between gap-2 mb-1.5">
                     <label class="field-label !mb-0" for="gen-prompt">Descreva o seu tema</label>
                     <button type="button" id="gen-rewrite-now" class="btn btn-sm btn-secondary" title="A IA reescreve o texto em tema + uma linha por formato">🪄 Ajustar com IA</button>
@@ -144,29 +151,96 @@
                     <span><b class="text-dc-text">Ajustar o prompt com IA antes de gerar</b> quando não houver linhas por formato (usa o modelo de texto do provedor; o resultado aparece aqui para você editar).</span>
                   </label>
                   <div class="flex flex-wrap gap-1.5 mt-2" id="gen-examples"></div>
-                </div>
-
-                <div>
-                  <div class="flex items-center justify-between gap-2 mb-2">
-                    <span class="field-label !mb-0">Referências da biblioteca (opcional)</span>
-                    <button type="button" id="gen-refs-add" class="btn btn-sm btn-secondary">🧬 Escolher da biblioteca</button>
                   </div>
-                  <div id="gen-refs" class="flex flex-wrap gap-2"></div>
-                  <p id="gen-refs-empty" class="text-[11px] text-dc-faint">Escolha até 12 itens (da galeria, da loja do Discord ou criações suas). Cada um guia o item do mesmo formato; os animados são lidos quadro a quadro.</p>
-                </div>
-
-                <div class="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <span class="field-label">O que gerar</span>
-                    <div class="flex flex-wrap gap-2" id="gen-cats">
-                      <label class="gen-check"><input type="checkbox" value="nameplates" checked /><span>Nameplate</span></label>
-                      <label class="gen-check"><input type="checkbox" value="decorations" checked /><span>Moldura</span></label>
-                      <label class="gen-check"><input type="checkbox" value="effects" checked /><span>Efeito de Perfil</span></label>
-                      <label class="gen-check"><input type="checkbox" value="frames" /><span>Profile Frame</span></label>
+                  <div data-src-panel="media" class="hidden">
+                    <div id="gen-media-box" class="gen-drop">
+                    <div class="flex flex-wrap gap-2">
+                    <input id="gen-media-url" type="url" class="dc-input text-sm flex-1 min-w-[220px]" placeholder="Cole um link do Pinterest, de uma imagem, GIF ou vídeo .mp4" spellcheck="false" autocomplete="off" />
+                    <button type="button" id="gen-media-load" class="btn btn-sm btn-secondary">Carregar</button>
+                    <label class="btn btn-sm btn-secondary cursor-pointer">📁 Enviar arquivo<input id="gen-media-file" type="file" accept="image/*,video/*" class="hidden" /></label>
+                  </div>
+                  <p class="text-[11px] text-dc-faint mt-1.5">Também dá para arrastar o arquivo aqui ou colar com Ctrl+V. A IA assiste os quadros e gera os formatos marcados abaixo no mesmo visual e movimento. No Pinterest, vídeos só dão para ler enviando o arquivo baixado (o site bloqueia a leitura direta; aí uso a capa).</p>
+                  <label class="flex items-start gap-2 mt-2 text-xs text-dc-muted cursor-pointer select-none">
+                    <input type="checkbox" id="gen-media-art" class="accent-[#5865F2] mt-0.5" checked />
+                    <span><b class="text-dc-text">Usar a própria mídia como arte</b> (sem IA, instantâneo): recorta cada formato da sua imagem/vídeo, deixa avatar e nome livres e anima com os quadros reais. Desmarque para a IA criar uma arte nova inspirada nela.</span>
+                  </label>
+                  <div id="gen-media-preview" class="hidden flex flex-wrap gap-2 mt-2"></div>
+                  <p id="gen-media-status" class="text-[11px] text-dc-muted mt-1"></p>
                     </div>
                   </div>
-                  <div>
-                    <span class="field-label">Motor</span>
+                  <div data-src-panel="refs" class="hidden">
+                    <div class="flex items-center justify-between gap-2 mb-2">
+                      <span class="sub-label !mb-0">Referências da biblioteca</span>
+                      <button type="button" id="gen-refs-add" class="btn btn-sm btn-secondary">🧬 Escolher da biblioteca</button>
+                    </div>
+                    <div id="gen-refs" class="flex flex-wrap gap-2"></div>
+                  <p id="gen-refs-empty" class="text-[11px] text-dc-faint">Escolha até 12 itens (da galeria, da loja do Discord ou criações suas). Cada um guia o item do mesmo formato; os animados são lidos quadro a quadro.</p>
+                  </div>
+                </div>
+
+                <div class="gen-card">
+                  <div class="gen-card-h"><span class="gen-step">2</span><div><h3>Formatos</h3><p>Marque o que gerar. Em cada formato, escolha a forma (medida nos itens oficiais) e, se quiser, um prompt só dele.</p></div></div>
+                  <div id="gen-cats" class="fmt-tabs" role="tablist">
+                    <div class="fmt-tab is-active" data-tab="nameplates" role="tab" tabindex="0">
+                      <input type="checkbox" value="nameplates" checked aria-label="Gerar Nameplate" title="Gerar este formato" />
+                      <span class="fmt-ico" aria-hidden="true">🏷</span><span class="fmt-name">Nameplate</span>
+                    </div>
+                    <div class="fmt-tab" data-tab="decorations" role="tab" tabindex="0">
+                      <input type="checkbox" value="decorations" checked aria-label="Gerar Moldura" title="Gerar este formato" />
+                      <span class="fmt-ico" aria-hidden="true">⭕</span><span class="fmt-name">Moldura</span>
+                    </div>
+                    <div class="fmt-tab" data-tab="effects" role="tab" tabindex="0">
+                      <input type="checkbox" value="effects" checked aria-label="Gerar Efeito de perfil" title="Gerar este formato" />
+                      <span class="fmt-ico" aria-hidden="true">✨</span><span class="fmt-name">Efeito de perfil</span>
+                    </div>
+                    <div class="fmt-tab" data-tab="frames" role="tab" tabindex="0">
+                      <input type="checkbox" value="frames"  aria-label="Gerar Profile Frame" title="Gerar este formato" />
+                      <span class="fmt-ico" aria-hidden="true">🖼</span><span class="fmt-name">Profile Frame</span>
+                    </div>
+                  </div>
+                  <div class="fmt-panels">
+                    <div class="fmt-panel" data-panel="nameplates" role="tabpanel">
+                      <label class="block"><span class="sub-label">Prompt só para a nameplate</span>
+                        <textarea id="gen-pp-nameplates" rows="2" maxlength="600" class="dc-input h-auto py-2 text-sm resize-y" placeholder="Ex.: ondas e a lua à direita"></textarea></label>
+                      <div class="flex items-baseline justify-between gap-2 mt-3 mb-1.5"><span class="sub-label !mb-0">Forma</span><span class="text-[11px] text-dc-faint">branco = arte · azul = avatar/card</span></div>
+                      <div id="gen-shapes-nameplates" class="shape-grid"></div>
+                    </div>
+                    <div class="fmt-panel hidden" data-panel="decorations" role="tabpanel">
+                      <label class="block"><span class="sub-label">Prompt só para a moldura</span>
+                        <textarea id="gen-pp-decorations" rows="2" maxlength="600" class="dc-input h-auto py-2 text-sm resize-y" placeholder="Ex.: só as nuvens no topo, sem cobrir o rosto"></textarea></label>
+                      <div class="flex items-baseline justify-between gap-2 mt-3 mb-1.5"><span class="sub-label !mb-0">Forma</span><span class="text-[11px] text-dc-faint">branco = arte · azul = avatar/card</span></div>
+                      <div class="mb-3"><span class="sub-label">Como montar a moldura com a mídia</span><div id="gen-deco-mode" class="flex flex-wrap gap-1.5"></div>
+                        <p class="text-[11px] text-dc-faint mt-1">Objetos: acha o personagem/bicho/elemento principal, recorta sem fundo e encaixa nos cantos do avatar seguindo a forma escolhida (com a IA ligada, ela aponta os objetos).</p></div>
+                      <div id="gen-shapes-decorations" class="shape-grid"></div>
+                      <div class="mt-4"><span class="sub-label">Elementos animados em volta do avatar</span>
+                        <p class="text-[11px] text-dc-faint mb-2">Além do recorte da mídia: brasas subindo, folhas girando, raios piscando colados à borda.</p>
+                        <div id="gen-elements-decorations"></div></div>
+                    </div>
+                    <div class="fmt-panel hidden" data-panel="effects" role="tabpanel">
+                      <label class="block"><span class="sub-label">Prompt só para o efeito</span>
+                        <textarea id="gen-pp-effects" rows="2" maxlength="600" class="dc-input h-auto py-2 text-sm resize-y" placeholder="Ex.: barco entra velejando; no loop só estrelas no céu"></textarea></label>
+                      <div class="flex items-baseline justify-between gap-2 mt-3 mb-1.5"><span class="sub-label !mb-0">Forma</span><span class="text-[11px] text-dc-faint">branco = arte · azul = avatar/card</span></div>
+                      <div id="gen-shapes-effects" class="shape-grid"></div>
+                      <div class="mt-4"><span class="sub-label">Elementos animados por cima</span>
+                        <p class="text-[11px] text-dc-faint mb-2">Camadas que passam no efeito (até 5), em 3 planos de profundidade. Escolha aqui ou deixe a IA identificar nos quadros da mídia.</p>
+                        <div id="gen-elements-effects"></div></div>
+                      <div class="mt-4"><span class="sub-label">Transição da entrada</span><div id="gen-transition" class="flex flex-wrap gap-1.5"></div></div>
+                      <label class="flex items-start gap-2 mt-3 text-xs text-dc-muted cursor-pointer select-none"><input type="checkbox" id="gen-el-ai" class="accent-[#5865F2] mt-0.5" /><span><b class="text-dc-text">IA identifica os elementos</b> assistindo os quadros (corvos, folhas, brasas, raios…) quando você não escolher. Usa o modelo de texto/visão.</span></label>
+                    </div>
+                    <div class="fmt-panel hidden" data-panel="frames" role="tabpanel">
+                      <label class="block"><span class="sub-label">Prompt só para o profile frame</span>
+                        <textarea id="gen-pp-frames" rows="2" maxlength="600" class="dc-input h-auto py-2 text-sm resize-y" placeholder="Ex.: coroa de nuvens e base de ondas"></textarea></label>
+                      <div class="flex items-baseline justify-between gap-2 mt-3 mb-1.5"><span class="sub-label !mb-0">Forma</span><span class="text-[11px] text-dc-faint">branco = arte · azul = avatar/card</span></div>
+                      <div id="gen-shapes-frames" class="shape-grid"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <details class="gen-card gen-fold">
+                  <summary class="gen-card-h"><span class="gen-step">3</span><div><h3>Estilo e movimento</h3><p>Motor, estilo da IA, revisão e efeitos de animação.</p></div><span class="gen-chev" aria-hidden="true"></span></summary>
+                  <div class="gen-fold-body grid gap-5 md:grid-cols-2">
+                    <div>
+                      <span class="field-label">Motor</span>
                     <div class="seg" id="gen-engine">
                       <button type="button" data-engine="ai">✨ IA (sua chave)</button>
                       <button type="button" data-engine="local">⚡ Local (offline)</button>
@@ -186,20 +260,38 @@
                       <input type="checkbox" id="gen-style" class="accent-[#5865F2] mt-0.5" checked />
                       <span><b class="text-dc-text">Estilo oficial</b>: segue o guia medido em 160 itens da loja e anexa exemplos oficiais da mesma categoria como referência de acabamento (modelos com visão).</span>
                     </label>
+                    </div>
+                    <div>
+                      <span class="sub-label">🌀 Movimento da animação (Ilustração)</span>
+                      <div id="gen-fx" class="flex flex-wrap gap-2"></div>
+                  <label class="flex items-start gap-2 mt-2 text-xs text-dc-muted cursor-pointer select-none">
+                    <input type="checkbox" id="gen-fx-ai" class="accent-[#5865F2] mt-0.5" checked />
+                    <span><b class="text-dc-text">Deixar a IA escolher</b> pelos quadros da mídia/referências. Você também pode pedir no texto: “sem ondular”, “com distorção de calor”, “sem partículas”. O que você escrever vale mais.</span>
+                  </label>
+                    </div>
                   </div>
-                </div>
+                </details>
 
-                <div id="gen-key-box" class="rounded-xl bg-dc-dark/60 border border-white/5 p-3 space-y-3">
+                <details class="gen-card gen-fold" id="gen-ai-fold">
+                  <summary class="gen-card-h"><span class="gen-step">4</span><div><h3>Provedor e modelos</h3><p>Sua chave e os modelos de texto e de imagem.</p></div><span class="gen-chev" aria-hidden="true"></span></summary>
+                  <div class="gen-fold-body">
+                  <div id="gen-key-box" class="rounded-xl bg-dc-dark/60 border border-white/5 p-3 space-y-3">
                   <div class="grid gap-3 sm:grid-cols-2">
                     <div>
                       <label class="field-label !mb-1" for="gen-provider">Provedor de IA</label>
                       <select id="gen-provider" class="dc-input text-sm"></select>
                     </div>
                     <div>
-                      <label class="field-label !mb-1" for="gen-model">Modelo</label>
-                      <input id="gen-model" type="text" list="gen-models" class="dc-input font-mono text-sm" spellcheck="false" autocomplete="off" />
+                      <label class="field-label !mb-1" for="gen-model">Modelo de texto / visão</label>
+                      <input id="gen-model" type="text" list="gen-models" class="dc-input font-mono text-sm" spellcheck="false" autocomplete="off" title="Ajusta o prompt, assiste o vídeo/imagem e desenha a Arte (SVG) e as Partículas" />
                       <datalist id="gen-models"></datalist>
                     </div>
+                  </div>
+                  <div>
+                    <label class="field-label !mb-1" for="gen-image-model">Modelo de imagem (modo Ilustração)</label>
+                    <input id="gen-image-model" type="text" list="gen-image-models" class="dc-input font-mono text-sm" spellcheck="false" autocomplete="off" title="Pinta a arte no modo Ilustração e no ✏️ Refazer" />
+                    <datalist id="gen-image-models"></datalist>
+                    <p id="gen-models-info" class="text-[11px] leading-snug text-dc-faint mt-1"></p>
                   </div>
                   <div id="gen-baseurl-box">
                     <label class="field-label !mb-1" for="gen-baseurl">URL base da API (compatível com OpenAI)</label>
@@ -218,8 +310,10 @@
                   <p class="text-[11px] leading-snug text-dc-faint" id="gen-provider-hint"></p>
                   <p class="text-[11px] leading-snug text-dc-faint">A chave fica só no seu navegador e vai direto para o provedor escolhido — este site não tem servidor. Não salve a chave em computadores compartilhados. Sem chave? Use o motor <b>Local</b>.</p>
                 </div>
+                  </div>
+                </details>
 
-                <div class="flex flex-wrap items-center gap-3">
+                <div class="gen-go">
                   <button type="submit" id="gen-submit" class="btn btn-primary !h-11 !px-6 !text-[15px]">
                     <span class="gen-btn-label">✨ Gerar cosméticos</span>
                   </button>
@@ -430,6 +524,7 @@
   <script src="js/data.js"></script>
   <script src="js/app.js"></script>
   <script src="js/ref-frames.js"></script>
+  <script src="js/media-ref.js"></script>
   <script src="js/ai-illustration.js"></script>
   <script src="js/ai-generator.js"></script>
   <script src="js/itemshop.js"></script>
