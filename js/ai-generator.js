@@ -454,6 +454,7 @@ Para CADA formato que tiver referências, estude todas as referências daquele f
 - "cores": 3 a 5 cores em hex que dominam as referências.
 - "efeitos": quais efeitos de animação combinam com o que se vê nos quadros (true/false para cada): ondular (a arte toda balança em faixas, como água/bandeira; só se a própria referência ondula), calor (distorção tremida), respirar (leve zoom/sobe-desce), brilho (brilho pulsando), faixa (faixa de luz passando), brilhos (estrelinhas piscando), particulas (pontinhos subindo/caindo), chamas (chamas lambendo). Na dúvida, false para ondular e calor. Se o usuário pediu para tirar ou colocar um efeito, obedeça.
 - "pedido": 1 frase descrevendo um NOVO item daquele formato, no mesmo sentido das referências, mas com o TEMA do usuário (não copie as referências; traga algo novo que pareça da mesma família). Se o usuário deu um detalhe para o formato, respeite-o.
+Quando a referência for a MÍDIA DO USUÁRIO (uma cena de vídeo/imagem), NÃO peça para copiar a cena: identifique os elementos marcantes (símbolos e acessórios do personagem, arma, padrão da roupa, criaturas como corvos, fenômenos como fogo, raios, penas, folhas, fumaça) e, no "pedido", descreva ornamentos NOVOS feitos desses elementos no padrão oficial do Discord — moldura: 2 a 4 objetos grandes colados à borda do avatar, centro vazio; frame: coroa no topo e base embaixo com esses elementos e borda fina; efeito: esses elementos passando em camadas, deixando o perfil legível.
 Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"formato": "nameplate|decoration|effect|frame", "visual": "...", "movimento": "...", "preset": "...", "intensidade": 2, "cores": ["#..."], "efeitos": {"ondular": false, "calor": false, "respirar": true, "brilho": true, "faixa": true, "brilhos": true, "particulas": true, "chamas": false}, "pedido": "..."}]}`;
 
   /* ---------- Efeitos de movimento (ondular, calor, brilhos…) ---------- */
@@ -611,6 +612,8 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
       };
       drawM();
     }
+    const cr = document.getElementById('gen-create');
+    if (cr) { cr.checked = ui.elements.create !== false; cr.onchange = () => { ui.elements.create = cr.checked; saveElements(); }; }
     const fm = document.getElementById('gen-frame-mode');
     if (fm) {
       const drawF = () => {
@@ -2011,6 +2014,20 @@ ${lines.join('\n\n')}`;
 
   /** Mídia como arte: os formatos saem da própria mídia, animados com os quadros reais. */
   async function generateFromMedia(cats, prompt) {
+    loadElements();
+    const cfg = ui.engine === 'ai' ? aiConfig() : null;
+    const canCreate = cfg && cfg.imageModel && (cfg.key || PROVIDERS[cfg.provider].keyOptional);
+    const create = ui.elements.create !== false && canCreate ? cats.filter((c) => c === 'decorations' || c === 'frames') : [];
+    const rest = cats.filter((c) => !create.includes(c));
+    if (rest.length) await mediaArtOnly(rest, prompt);
+    if (create.length) {
+      CS.toast('Criando moldura/frame novos a partir dos elementos da cena…', 'info');
+      await generateIllustrations(prompt, create, [], cfg, {});
+    } else if (ui.elements.create !== false && !canCreate && cats.some((c) => c === 'decorations' || c === 'frames')) {
+      CS.toast('Para CRIAR moldura e frame a partir da cena, escolha um "Modelo de imagem" na etapa 4. Por enquanto saíram montados com recortes.', 'info');
+    }
+  }
+  async function mediaArtOnly(cats, prompt) {
     if (!window.CosmeticIllustration || !window.CosmeticMediaRef) return CS.toast('Módulos não carregaram. Atualize a página.', 'danger');
     setBusy(true, 'Recortando a sua mídia em cada formato…');
     showSkeletons(cats.length);
@@ -2106,6 +2123,12 @@ ${lines.join('\n\n')}`;
       });
       list.forEach((it) => {
         if (it.cat === 'nameplates' && it.palette && it.palette[0]) it.raw.asset.discordPalette = nearestDiscordPalette(it.palette[0]);
+        loadElements();
+        const el = ui.elements[it.cat];
+        if (el && el.length && it.raw && it.raw.asset && it.raw.asset.svg) {
+          it.raw.asset.svg = window.CosmeticIllustration.withParticles(it.raw.asset.svg, it.cat, el, it.palette, 7);
+          if (it.raw.asset.introSvg) it.raw.asset.introSvg = window.CosmeticIllustration.withParticles(it.raw.asset.introSvg, it.cat, el, it.palette, 7);
+        }
       });
       dropSkeletons();
       const added = addResults(list);

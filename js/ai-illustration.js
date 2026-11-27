@@ -69,7 +69,12 @@
       bg,
       'Also reply with one short line of text: NOME: <a creative item name in Brazilian Portuguese, 2 to 4 words>.',
       strict ? STRICT : '',
-      fromMedia ? 'The attached image is the SOURCE ARTWORK chosen by the user. Recreate it as this format: keep exactly its art style, line work, shading, colors, subject and elements (e.g. the same moon, the same waves, the same clouds), only re-composed to fit the format above. It must clearly look like the same artwork.'
+      fromMedia ? (cat === 'decorations' || cat === 'frames'
+        ? 'The attached image is a SCENE chosen by the user, NOT something to paste. First identify its key elements: the character signature symbols and props (weapon, clothing pattern, mask, accessories), creatures (crows, birds, animals), and effects (fire, lightning, feathers, leaves, petals, smoke, light). Then DESIGN BRAND-NEW ornaments built from those elements, in the same colors and art style, the way official Discord cosmetics do. '
+          + (cat === 'decorations'
+            ? 'Avatar decoration: 2 to 4 large, bold objects made from those elements hugging the circle edge (e.g. crows perched on the rim, a katana crossing the bottom, cloud emblems, flames licking up one side), with a thin connecting accent; heavier on top and sides; the round center stays EMPTY. Never draw the scene, the sky, the background or the whole character.'
+            : 'Profile frame: an ornate crown on top and a base at the bottom built from those elements (e.g. crows and feathers around a central emblem, crossed swords, flames, clouds), with a thin decorative border; the card area stays EMPTY. Never draw the scene, the sky or the background.')
+        : 'The attached image is the SOURCE ARTWORK chosen by the user. Recreate it as this format: keep exactly its art style, line work, shading, colors, subject and elements (e.g. the same moon, the same waves, the same clouds), only re-composed to fit the format above. It must clearly look like the same artwork.')
         : hasRefs ? 'The attached image is only an inspiration for colors and mood. Do NOT copy it and do NOT place it in the result.' : '',
       'The output must be ONE image containing ONE object. No numbers, no captions, no panels, no grid.',
     ].filter(Boolean).join('\n\n');
