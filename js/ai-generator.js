@@ -611,6 +611,14 @@ Escreva em português do Brasil. Responda SOMENTE com JSON: {"formatos": [{"form
       };
       drawM();
     }
+    const fm = document.getElementById('gen-frame-mode');
+    if (fm) {
+      const drawF = () => {
+        fm.innerHTML = '';
+        [['objetos', '✂️ Borda + objetos recortados'], ['recorte', '🖼 Recorte da cena']].forEach(([v, lb]) => fm.appendChild(chip(lb, (ui.elements.frameMode || 'objetos') === v, () => { ui.elements.frameMode = v; saveElements(); drawF(); })));
+      };
+      drawF();
+    }
     const tb = document.getElementById('gen-transition');
     if (tb) {
       const drawT = () => {
@@ -2032,7 +2040,7 @@ ${lines.join('\n\n')}`;
           CS.toast('A IA não conseguiu identificar os elementos (' + (err.message || 'erro') + '). Usando o que você escolheu.', 'info');
         }
       }
-      const list = await window.CosmeticIllustration.fromMedia(cats, { ...hi, name: ui.media.name, kind: ui.media.kind }, motion, { ...(ui.shapes || {}), elements, transition, boxes, decoMode: ui.elements.decoMode || 'objetos' });
+      const list = await window.CosmeticIllustration.fromMedia(cats, { ...hi, name: ui.media.name, kind: ui.media.kind }, motion, { ...(ui.shapes || {}), elements, transition, boxes, decoMode: ui.elements.decoMode || 'objetos', frameMode: ui.elements.frameMode || 'objetos' });
       list.forEach((it) => {
         if (it.cat === 'nameplates' && it.palette && it.palette[0]) it.raw.asset.discordPalette = nearestDiscordPalette(it.palette[0]);
       });
