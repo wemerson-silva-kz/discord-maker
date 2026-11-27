@@ -940,6 +940,7 @@ ${isparks}</svg>`;
     return { url, n, cols, rows, W, H };
   }
   const p3 = (v) => Math.round(v * 1000) / 1000;
+  const FPS_MIN = 24; // animações da mídia: no mínimo 24 quadros por segundo
   /** Camada CSS/SVG que toca uma folha. once = toca uma vez e para no último quadro. */
   function sheetLayer(sh, T, id, once, delay = 0) {
     const { n, cols, rows, W, H } = sh;
@@ -954,8 +955,8 @@ ${isparks}</svg>`;
     const it = once ? '1' : 'infinite', fill = once ? 'both' : 'none', d = p3(T / n);
     const css = `@keyframes ${id}a{${kA.join('')}}@keyframes ${id}b{${kB.join('')}}@keyframes ${id}f{from{opacity:0}to{opacity:1}}
 .${id}a{animation:${id}a ${p3(T)}s step-end ${delay}s ${it} ${fill}}.${id}b{animation:${id}b ${p3(T)}s step-end ${delay}s ${it} ${fill},${id}f ${d}s linear ${delay}s ${once ? n - 1 : 'infinite'} ${fill}}`;
-    const img = `<image href="${sh.url}" x="0" y="0" width="${W * cols}" height="${H * rows}"/>`;
-    const svg = `<g class="${id}a">${img}</g><g class="${id}b">${img.replace('<image ', '<image ')}</g>`;
+    // a imagem entra uma vez só; as duas camadas (quadro atual + fusão) usam <use>
+    const svg = `<defs><image id="${id}i" href="${sh.url}" x="0" y="0" width="${W * cols}" height="${H * rows}"/></defs><g class="${id}a"><use href="#${id}i"/></g><g class="${id}b"><use href="#${id}i"/></g>`;
     return { css, svg };
   }
   /* ---- Elementos animados por cima da arte (aprendidos em vídeos de referência) ----
@@ -1138,7 +1139,7 @@ ${isparks}</svg>`;
 
   function flipbookSvgs(cat, frames, seconds, variant, introFrames, introSeconds) {
     const { w: W, h: H } = CANVAS[cat];
-    const T = Math.max(1, seconds);
+    const T = Math.max(0.5, Math.min(seconds || 99, frames.length / FPS_MIN)); // mínimo 24 quadros/s
     const head = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><defs><clipPath id="cv"><rect width="${W}" height="${H}"/></clipPath></defs>`;
     const lv = cat === 'effects' ? (variant ?? 'loop') : variant;
     const L = sheetLayer(spriteSheet(cat, frames, lv), T, 'l', false);
@@ -1147,7 +1148,7 @@ ${isparks}</svg>`;
     // ENTRADA: os quadros do começo tocam uma vez com a cena cheia (mapa da entrada) e,
     // no fim, a cena se funde no loop, onde só ficam as partes do mapa do loop.
     const iF = introFrames && introFrames.length ? introFrames : frames;
-    const TI = Math.min(6, Math.max(2, introSeconds || iF.length / 12)), XF = Math.min(0.8, TI * 0.2);
+    const TI = Math.max(0.5, Math.min(introSeconds || 99, iF.length / FPS_MIN)), XF = Math.min(0.8, TI * 0.2);
     const I = sheetLayer(spriteSheet(cat, iF, 'intro'), TI, 'i', true);
     const L2 = sheetLayer(spriteSheet(cat, frames.slice(0, 1), lv), 1, 'k', true);
     const intro = `${head}<style>${I.css}${L2.css}
@@ -1235,7 +1236,7 @@ ${isparks}</svg>`;
     return { canvas: c, w, h, ref };
   }
   /** Moldura montada com os objetos recortados. Devolve { svg } ou null se não achou nada bom. */
-  function decorationFromObjects(frames, variant, boxes, seed = 3) {
+  function decorationFromObjects(frames, variant, boxes, seed = 3, seconds) {
     const shape = STUDY && STUDY.shapes && STUDY.shapes.length ? STUDY.shapes[(typeof variant === 'number' ? variant : 0) % STUDY.shapes.length] : null;
     const found = (boxes && boxes.length ? boxes : findObjects(frames[Math.floor(frames.length / 2)], 3)).slice(0, 3);
     if (!found.length) return null;
@@ -1247,9 +1248,9 @@ ${isparks}</svg>`;
     const SLOTS = [315, 45, 225, 135, 0, 180];
     const snap = (a) => SLOTS.reduce((b, c) => (Math.min(Math.abs(a - c), 360 - Math.abs(a - c)) < Math.min(Math.abs(a - b), 360 - Math.abs(a - b)) ? c : b), SLOTS[0]);
     for (const [, i] of order) { const a = snap(i * 10 + 5); if (!angs.includes(a)) angs.push(a); if (angs.length >= found.length) break; }
-    const nF = Math.min(frames.length, 16), step = Math.max(1, Math.floor(frames.length / nF));
+    const nF = Math.min(frames.length, 120), step = Math.max(1, Math.floor(frames.length / nF));
     const use = frames.filter((_, i) => i % step === 0).slice(0, nF);
-    const T = Math.max(1.5, use.length / 8);
+    const T = Math.max(0.5, Math.min(seconds || 99, use.length / FPS_MIN));
     let css = '', body = '', defs = '';
     found.forEach((bx, k) => {
       const big = k === 0;
@@ -1304,22 +1305,23 @@ ${isparks}</svg>`;
     const sh = { n: cuts.length, cols, rows: Math.ceil(cuts.length / cols), W: w, H: h };
     const sc = document.createElement('canvas'); sc.width = w * cols; sc.height = h * sh.rows;
     const sx = sc.getContext('2d'); cuts.forEach((cu, i) => sx.drawImage(cu.canvas, (i % cols) * w, Math.floor(i / cols) * h));
-    sh.url = sc.toDataURL('image/webp', 0.82); if (!/^data:image\/webp/.test(sh.url)) sh.url = sc.toDataURL('image/png');
+    sh.url = sc.toDataURL('image/webp', 0.74); if (!/^data:image\/webp/.test(sh.url)) sh.url = sc.toDataURL('image/png');
     const L = sheetLayer(sh, T, id, false);
     return { w, h, css: L.css, svg: `<clipPath id="${id}c"><rect width="${w}" height="${h}"/></clipPath><g clip-path="url(#${id}c)">${L.svg}</g>` };
   }
-  function frameFromObjects(frames, style, boxes, palette) {
+  function frameFromObjects(frames, style, boxes, palette, seconds) {
     const found = (boxes && boxes.length ? boxes : findObjects(frames[Math.floor(frames.length / 2)], 3)).slice(0, 3);
     const W = 1312, H = 2528, L = 56, R = 1256, T = 304, B = 2316;
     // cores mais vivas e claras da mídia primeiro (fundo escuro não serve para a borda)
     const vivid = (hx) => { const n = parseInt(String(hx).slice(1, 7), 16); const r = n >> 16, g = (n >> 8) & 255, b = n & 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b); return (mx - mn) + mx * 0.6; };
     const pal = (palette || []).filter((c) => /^#[0-9a-f]{6}/i.test(c || '')).sort((a, b) => vivid(b) - vivid(a)).filter((c) => vivid(c) > 120);
     const c1 = pal[0] || '#FFD36B', c2 = pal[1] || pal[0] || '#FF8A3D', c3 = pal[2] || '#FFFFFF';
-    const nF = Math.min(frames.length, 12), step = Math.max(1, Math.floor(frames.length / nF));
+    // fluido e longo: até 48 quadros, com a duração real da mídia (≈ 10–12 quadros/s + fusão)
+    const nF = Math.min(frames.length, 120), step = Math.max(1, Math.floor(frames.length / nF));
     const use = frames.filter((_, i) => i % step === 0).slice(0, nF);
-    const TT = Math.max(1.5, use.length / 8);
+    const TT = Math.max(0.5, Math.min(seconds || 99, use.length / FPS_MIN)); // nunca abaixo de 24 quadros/s
     const st = style || 'coroa-laterais';
-    let css = '', body = '';
+    let css = '', body = '', defsX = '';
     // borda fina: dupla linha com gradiente + brilho; cantos com joia
     const sides = st !== 'coroa-base' && st !== 'coroa' && st !== 'base';
     const rr = 34;
@@ -1334,8 +1336,11 @@ ${isparks}</svg>`;
     if (st !== 'coroa') body += `<path d="M${L + 120} ${B + 6}H${R - 120}" stroke="url(#fbg)" stroke-width="6" stroke-linecap="round" filter="url(#fgl)"/>`;
     // objetos: principal = coroa (centro), outros = base; sem outros, cópia menor espelhada na base
     if (found.length) {
-      const top = objectSprite(use, found[0], 760, 330, 'fo0', TT);
-      css += top.css;
+      const top0 = objectSprite(use, found[0], 760, 330, 'fo0', TT);
+      css += top0.css;
+      // a folha de sprites entra UMA vez (defs) e as cópias usam <use>: o arquivo não triplica
+      defsX += `<g id="fo0g">${top0.svg}</g>`;
+      const top = { w: top0.w, h: top0.h, svg: '<use href="#fo0g"/>' };
       if (st !== 'base') {
         // coroa simétrica: o objeto no centro e duas cópias menores espelhadas dos lados
         const k = 0.62, sw = top.w * k, shh = top.h * k;
@@ -1353,19 +1358,18 @@ ${isparks}</svg>`;
             body += `<g transform="translate(${f(x)} ${f(B - 32)})">${o.svg}</g>`;
           });
         } else {
-          const o = objectSprite(use, found[0], 300, 200, 'fob', TT);
-          css += o.css;
-          body += `<g transform="translate(${f(R - 30)} ${f(B - 40)}) scale(-1 1)">${o.svg}</g>`;
+          const k2 = Math.min(1, 300 / top.w, 200 / top.h);
+          body += `<g transform="translate(${f(R - 30)} ${f(B - 40)}) scale(${-k2} ${k2})">${top.svg}</g>`;
         }
       }
-      if (st === 'base') body += `<g transform="translate(${f(W / 2 - top.w / 2)} ${f(B - 30)})">${top.svg.replace(/fo0/g, 'fz0')}</g>`.replace(/fz0/g, 'fo0');
+      if (st === 'base') body += `<g transform="translate(${f(W / 2 - top.w / 2)} ${f(B - 30)})">${top.svg}</g>`;
     }
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><style>${css}</style><defs>
 <linearGradient id="fbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset=".5" stop-color="${c3}"/><stop offset="1" stop-color="${c2}"/></linearGradient>
 <filter id="fgl" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 <linearGradient id="fsg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".3" stop-color="#fff" stop-opacity="0"/><stop offset=".72" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff"/></linearGradient>
 <mask id="fsm" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="url(#fsg)"/></mask>
-<filter id="fsh" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-opacity=".5"/></filter></defs>${border}<g filter="url(#fsh)">${body}</g></svg>`;
+<filter id="fsh" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-opacity=".5"/></filter>${defsX}</defs>${border}<g filter="url(#fsh)">${body}</g></svg>`;
     return { svg, loopSeconds: f(TT), count: found.length };
   }
 
@@ -1395,14 +1399,14 @@ ${isparks}</svg>`;
       let asset, palette;
       let objDeco = null;
       if (cat === 'decorations' && shapes.decoMode !== 'anel') {
-        try { objDeco = decorationFromObjects(media.frames, variant, shapes.boxes); } catch (e) { console.warn('[Moldura de objetos]', e); }
+        try { objDeco = decorationFromObjects(media.frames, variant, shapes.boxes, 3, media.seconds); } catch (e) { console.warn('[Moldura de objetos]', e); }
       }
       if (cat === 'frames' && shapes.frameMode !== 'recorte') {
         try {
           const c0 = document.createElement('canvas'); c0.width = 400; c0.height = 400;
           coverInto(c0.getContext('2d', { willReadFrequently: true }), media.frames[0], 'decorations', focus);
           const pal = paletteOf(c0.getContext('2d', { willReadFrequently: true }), 288, 288);
-          objDeco = frameFromObjects(media.frames, variant, shapes.boxes, pal);
+          objDeco = frameFromObjects(media.frames, variant, shapes.boxes, pal, media.seconds);
           if (objDeco) objDeco.palette = pal;
         } catch (e) { console.warn('[Frame de objetos]', e); }
       }
@@ -1412,7 +1416,7 @@ ${isparks}</svg>`;
         if (objDeco.palette) palette = objDeco.palette;
         else { coverInto(c0.getContext('2d', { willReadFrequently: true }), media.frames[0], cat, focus); palette = paletteOf(c0.getContext('2d', { willReadFrequently: true }), W, H); }
       } else if (media.frames.length > 1) {
-        const max = { nameplates: 36, decorations: 36, effects: 60, frames: 8 }[cat];
+        const max = { nameplates: 120, decorations: 120, effects: 120, frames: 12 }[cat];
         const step = Math.max(1, Math.ceil(media.frames.length / max));
         const pick = media.frames.filter((_, i) => i % step === 0);
         const cvs = pick.map((fr) => {
