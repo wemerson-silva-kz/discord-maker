@@ -176,9 +176,9 @@
     try {
       if (src.video || src.videoUrl) {
         const url = src.video ? URL.createObjectURL(src.video) : src.videoUrl;
-        try { return await framesFromVideo(url, 60, 900, 5); } finally { if (src.video) URL.revokeObjectURL(url); }
+        try { return await framesFromVideo(url, 120, 720, 5); /* 24 quadros/s × 5 s */ } finally { if (src.video) URL.revokeObjectURL(url); }
       }
-      if (src.blob) return await framesFromBlob(src.blob, 48, 1000);
+      if (src.blob) return await framesFromBlob(src.blob, 120, 800);
     } catch (e) { console.warn('[Mídia] quadros em alta falharam; usando os da prévia', e); }
     return { frames: media.frames, animated: media.animated, seconds: media.seconds || media.duration };
   }
